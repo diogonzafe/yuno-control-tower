@@ -27,6 +27,7 @@
 | DD17 | **Gatilho em merchant × país** | Sem isso, emissor caindo para um único merchant pode não mover o agregado e o critério #5 falha. |
 | DD18 | **Peeling** para incidentes simultâneos, **parcimônia** como desempate | Peeling termina quando o déficit residual deixa de ser material. Parcimônia é obrigatória por causa de `PIX ⇒ BR`. |
 | DD19 | **Profundidade máxima 3** · sem Benjamini-Hochberg | A poda hierárquica já reduz os testes em ordens de grandeza. |
+| DD21 | **18 decline codes internos em 6 famílias** · código de rede fora do cubo | Fecha P2. Ver `control-tower-decline-codes.md`. Famílias `funds` e `instrument` nunca alertam sozinhas. |
 | DD20 | **Máquina de estados enxuta** · 4 playbooks · harness de 30 incidentes | Estado "em recuperação" cortado por escopo de 24h. |
 
 **Sobre a normalização em USD:** a taxa e a data usadas ficam gravadas **na própria transação**, não só na tabela de câmbio. É o padrão contábil e resolve o problema de auditoria: o custo de um incidente de ontem é sempre medido com o dólar de ontem, independentemente do que a tabela de câmbio contenha hoje. Nunca recalcular USD histórico. Isso importa mais com ARS do que com BRL ou MXN.
@@ -243,10 +244,15 @@ CREATE TABLE issuer_banks (
 );
 
 CREATE TABLE decline_codes (
-  code         TEXT PRIMARY KEY,
-  family       TEXT NOT NULL
-    CHECK (family IN ('issuer','provider','fraud','funds','technical')),
-  description  TEXT NOT NULL
+  code           TEXT NOT NULL,
+  payment_method TEXT NOT NULL,          -- CARD | PIX (os espaços são disjuntos)
+  family         TEXT NOT NULL
+    CHECK (family IN ('issuer','funds','fraud','credential',
+                      'network','auth','merchant')),
+  description    TEXT NOT NULL,
+  baseline_share NUMERIC(5,4) NOT NULL,  -- fração das recusas em operação normal
+  diagnostic     BOOLEAN NOT NULL,       -- carrega causa raiz, ou é ruído estrutural
+  PRIMARY KEY (code, payment_method)
 );
 
 -- combinações que existem de fato
@@ -287,7 +293,8 @@ CREATE TABLE transactions (
   amount_usd_minor   BIGINT NOT NULL,    -- derivado, congelado na criação
 
   status             TEXT NOT NULL CHECK (status IN ('SUCCESS','DECLINED')),
-  decline_code       TEXT REFERENCES decline_codes,
+  decline_code       TEXT REFERENCES decline_codes,   -- interno, entra no cubo
+  raw_decline_code   TEXT,                             -- código de rede, fora do cubo
 
   card_brand         TEXT,               -- NULL em PIX
   card_type          TEXT CHECK (card_type IN ('debit','credit')),
@@ -418,7 +425,64 @@ CREATE TABLE playbooks (
 
 **Bandeiras:** Visa, Mastercard, Elo (só BR). Não são dimensão do cubo (DD12), só carga da transação.
 
-**Decline codes** — mínimo 12, distribuídos entre as famílias. Os de família `issuer` e `provider` são os que carregam o diagnóstico; os de `funds` e `fraud` são o ruído de fundo que sempre existe e nunca deve gerar alerta sozinho.
+### Decline codes (P2 fechada)
+
+Códigos reais. Cartão segue ISO 8583, PIX segue os códigos de retorno do SPI. Os dois espaços são **disjuntos** — nenhum código aparece nos dois métodos, o que na prática facilita o diagnóstico.
+
+**Cartão** — `baseline_share` é a fração das recusas em operação normal e precisa somar 1.0 no gerador.
+
+| Código | Motivo | Família | Share | Diagnóstico? |
+|---|---|---|---|---|
+| 05 | Do not honor | `issuer` | 32% | ⭐ sim, pela **mudança de share** |
+| 51 | Saldo ou limite insuficiente | `funds` | 26% | não — ruído estrutural |
+| 54 | Cartão expirado | `credential` | 11% | não |
+| 01 | Refer to card issuer | `issuer` | 8% | sim |
+| 59 / 34 | Suspeita de fraude | `fraud` | 5% | sim |
+| 1A / 65 | Authentication required (SCA) | `auth` | 4% | ⭐ sim |
+| 57 | Transação não permitida ao portador | `issuer` | 3% | sim |
+| 62 | Cartão restrito | `issuer` | 3% | sim |
+| 63 | Violação de segurança | `fraud` | 2% | sim |
+| 04 / 41 / 43 | Retenção, perdido, roubado | `fraud` | 2% | não |
+| 91 | Emissor indisponível | `network` | 2% | ⭐⭐ sim, o mais informativo |
+| 14 | Número de cartão inválido | `credential` | 1,5% | não |
+| 61 | Limite de valor ou de uso excedido | `funds` | 0,5% | não |
+
+**PIX**
+
+| Código | Motivo | Família | Share | Diagnóstico? |
+|---|---|---|---|---|
+| AM05 | Saldo insuficiente | `funds` | 55% | não — ruído estrutural |
+| AB03 | Timeout no SPI | `network` | 15% | ⭐⭐ sim |
+| BE01 / CH11 | CPF/CNPJ inconsistente | `credential` | 15% | não |
+| DS0G | Operação não autorizada (antifraude) | `fraud` | 10% | sim |
+| BE17 | Recebedor rejeitou (conta inativa) | `merchant` | 5% | ⭐ sim |
+
+### O código 91 é o mais valioso do catálogo
+
+Vale entender antes de escrever o gerador. `91` significa que o emissor está inacessível — mas **quem não conseguiu alcançá-lo pode ser o emissor ou o provider**. A desambiguação sai da distribuição, não do código:
+
+- Pico de 91 **concentrado num provider, atravessando vários emissores** → o provider perdeu conectividade
+- Pico de 91 **concentrado num emissor, atravessando vários providers** → o emissor caiu
+
+Esse é o único caso em que o mesmo código sustenta dois diagnósticos opostos, e resolvê-lo corretamente na demo é um momento forte. O mesmo raciocínio vale para AB03 no PIX, com a diferença de que ali o rail é único (Bacen), então AB03 espalhado em todos os providers significa SPI instável e não é problema de ninguém no sistema — um caso legítimo de "não há ação recomendada".
+
+### Assinaturas de incidente
+
+Isto alimenta ao mesmo tempo o motor de injeção (`kinds.py`) e o passo 4 da investigação do agente:
+
+| Cenário | Assinatura na mistura de recusas |
+|---|---|
+| Emissor over-declining | `05` salta de 32% para 70%+, concentrado num emissor |
+| Provider degradado | `91` dispara, concentrado num provider, atravessando emissores |
+| Emissor fora do ar | `91` dispara, concentrado num emissor, atravessando providers |
+| Regra antifraude apertada demais | `59/34` e `63` sobem juntos |
+| 3DS quebrado | `1A/65` dispara — soft decline em massa |
+| SPI instável | `AB03` dispara em todos os providers no Brasil |
+| Conta recebedora do merchant quebrada | `BE17` dispara num único merchant |
+
+**O ponto que precisa estar codificado:** o sinal nunca é a presença de um código, é a **mudança do share**. O `05` existe sempre a 32%; incidente é quando vira 70%. Por isso o `rollup_declines_minute` guarda contagem por código e a comparação é contra o mix normal da célula, não contra zero.
+
+⚠️ **Volume de recusas no PIX.** Com aprovação em ~96%, uma célula de PIX gera cerca de 3 recusas por minuto. Isso é pouco demais para analisar mistura. A análise de decline mix no PIX precisa usar a janela móvel de 5 ou 15 minutos, não a de 1 minuto. Codificar essa exceção junto com a regra de célula fina do §6.3.
 
 **Dimensionamento do cubo (DD13–DD14)**
 

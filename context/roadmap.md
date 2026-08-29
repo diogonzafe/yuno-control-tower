@@ -56,11 +56,11 @@ O agente sabe que Adyen está anômalo. Não sabe por quê. Ele faz perguntas, e
 | 1 | Adyen caiu em todos os países? | BR 38% · MX 67% · AR 66% | Fixa `country=BR` |
 | 2 | Dentro de Adyen×BR, qual método? | CARD 31% · PIX 96% | Fixa `method=CARD` |
 | 3 | Qual emissor? | Itaú 12% · Nubank 71% · Bradesco 69% | Fixa `issuer=Itaú` |
-| 4 | Mudou o perfil de recusa? | 78% em `do_not_honor` (família issuer), contra 8% normal | Evidência de causa |
+| 4 | Mudou o perfil de recusa? | `05` em 78%, contra 32% de baseline | Evidência de causa |
 
 Cada linha dessa tabela vira uma linha em `investigation_steps`. É isso que aparece na tela como evidência e é isso que ganha a sabatina.
 
-O passo 4 é o que transforma localização em diagnóstico. Saber que caiu em Adyen×BR×CARD×Itaú é localização. Saber que 78% das recusas viraram código de família `issuer` é a diferença entre "Adyen está degradado" e "o Itaú está recusando e a Adyen só está reportando".
+O passo 4 é o que transforma localização em diagnóstico. Saber que caiu em Adyen×BR×CARD×Itaú é localização. Saber que o código `05` saltou de 32% para 78% das recusas é a diferença entre "Adyen está degradado" e "o Itaú está recusando e a Adyen só está reportando".
 
 ### 14:06 — o teste residual confirma e limpa o eco
 Neste momento, três outros nós também parecem anômalos: `country=BR`, `method=CARD`, e o merchant mais exposto à Adyen no Brasil. Um sistema ingênuo emitiria quatro alertas.
@@ -182,6 +182,7 @@ flowchart TD
 | DD18 | Peeling para incidentes simultâneos; parcimônia como desempate |
 | DD19 | Profundidade máxima da busca: 3 dimensões |
 | DD20 | Harness de avaliação com 30 incidentes gerados |
+| DD21 | 18 decline codes internos em 6 famílias; código de rede fora do cubo |
 
 ### Fechadas nesta rodada, com a justificativa
 
@@ -202,7 +203,7 @@ flowchart TD
 | | Pendência | O que trava |
 |---|---|---|
 | P1 | Distribuição exata do tráfego entre os 3 merchants | Define quais células ficam na cauda e onde o caso de evidência insuficiente aparece |
-| P2 | Quais 12 decline codes e como se distribuem entre as 5 famílias | Define a força da evidência de causa raiz no passo 4 da investigação |
+| ~~P2~~ | ~~Decline codes~~ | ✅ **Fechada.** 13 códigos ISO 8583 para cartão e 5 códigos SPI para PIX, com 7 famílias, shares de baseline e assinaturas de incidente. Ver schema §8 |
 
 **Consequência de DD5 a documentar:** com só cartão e PIX, e PIX existindo apenas no Brasil, a dimensão `payment_method` é constante em AR e MX. Ela não tem irmãos fora do Brasil, então o corte transversal não a usa lá. Isso é uma restrição conhecida do cubo, não um bug. Declarar no decision log antes que um juiz encontre.
 
@@ -218,7 +219,7 @@ As trilhas rodam em paralelo. As horas são de relógio, não de pessoa.
 **Todo mundo junto. Nada paraleliza antes disso terminar.**
 
 - Contrato do evento congelado
-- Seeds: 3 merchants, 3 providers, 3 emissores por país, 12 decline codes com família, 12 linhas de `routing_coverage`, `fx_rates`
+- Seeds: 3 merchants, 3 providers, 3 emissores por país, 18 decline codes com família e escopo (CSV pronto), 12 linhas de `routing_coverage`, `fx_rates`
 - Gerador a ~60 TPS com distribuição desigual e taxa estacionária
 - Motor de injeção parametrizável nas 6 dimensões
 - `docker-compose` com Redis e Postgres, migrations aplicadas
