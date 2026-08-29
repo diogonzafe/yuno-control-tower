@@ -1,3 +1,16 @@
+---
+title: "The Control Tower — Regras de engenharia"
+doc_id: "YCT-RULES-001"
+doc_related:
+  - "YCT-AGENTS-001"
+  - "context/spec.md"
+  - "context/schema.md"
+  - "context/roadmap.md"
+domain: "engineering-governance"
+dimension_schema: []
+time: "2026-08-29T22:47:03Z"
+---
+
 # The Control Tower — Regras de engenharia
 
 Como o time escreve código neste projeto. Não repete o que já está em `spec.md`, `schema.md` e `roadmap.md` — assume que quem lê isto já leu aqueles.
@@ -40,6 +53,36 @@ const affectedCost = optimisticDeclineRate * ticketAverage;
 ```
 
 Sem docstring de parágrafo, sem bloco de comentário decorativo (`// ======`), sem comentário que vira obsoleto porque descreve comportamento em vez de motivo. Se o comentário some e ninguém fica confuso, ele não devia existir.
+
+### 2.1 Cabeçalho obrigatório de documentação Markdown
+
+Todo arquivo `.md` criado no repositório começa com YAML front matter, antes do
+primeiro título, delimitado por `---`. Os seis campos são obrigatórios e não
+podem ser duplicados:
+
+```yaml
+---
+title: "Título humano e específico"
+doc_id: "YCT-AREA-001"
+doc_related: []
+domain: "domain-slug"
+dimension_schema: []
+time: "2026-08-29T22:47:03Z"
+---
+```
+
+| Campo | Contrato |
+|---|---|
+| `title` | Título legível, específico e coerente com o primeiro `#` do documento. |
+| `doc_id` | ID estável e único no formato `YCT-<AREA>-<NNN>`. Nunca renomear nem reutilizar. |
+| `doc_related` | Lista YAML de `doc_id` relacionados. Para legado sem ID, usar temporariamente o caminho relativo. Usar `[]` sem relações. |
+| `domain` | Slug em inglês do domínio primário do documento. |
+| `dimension_schema` | Lista com apenas `merchant`, `provider`, `country`, `payment_method`, `issuer` e/ou `decline_code`. Usar `[]` quando não se aplicar. |
+| `time` | Última alteração substantiva em UTC/RFC 3339 (`YYYY-MM-DDTHH:mm:ssZ`). Não atualizar em mudança só de formatação. |
+
+Antes de criar o arquivo, buscar `doc_id:` no repositório e reservar o próximo ID
+livre da área. Antes de concluir, validar o YAML, os seis campos, o UTC e a
+unicidade do `doc_id`.
 
 ---
 
@@ -84,3 +127,5 @@ Antes de abrir PR, confirmar:
 - [ ] Lógica de agregação não duplicada entre rollup, teste residual e varredura retroativa
 - [ ] Se toca em decisão travada (DD1–DD11), o PR não a contradiz sem discussão prévia registrada
 - [ ] Se toca em pendência aberta (P1–P4) ainda não resolvida, a lacuna está anotada, não resolvida por suposição
+- [ ] Todo `.md` novo possui front matter válido com `title`, `doc_id`, `doc_related`, `domain`, `dimension_schema` e `time`
+- [ ] Cada `doc_id` novo é único e cada `time` alterado representa mudança substantiva em UTC/RFC 3339
