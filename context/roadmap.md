@@ -1,6 +1,6 @@
-# The Control Tower — Roadmap (v2)
+# The Control Tower — Roadmap (v3)
 
-Atualizado após DD1–DD11. Substitui a seção de roadmap do documento de arquitetura.
+Atualizado após DD1–DD20. Prazo do desafio: **24 horas**. Substitui a seção de roadmap do documento de arquitetura.
 
 Esta versão foi reescrita para **entendimento do time**: antes das fases vem uma explicação de como o sistema funciona de ponta a ponta, com um incidente inteiro percorrido passo a passo. Quem for implementar qualquer frente deveria conseguir ler as seções 1 a 3 e saber onde seu pedaço encaixa.
 
@@ -34,7 +34,7 @@ O gerador emite eventos normalmente. A ingestão grava cada transação em `tran
 ### 14:04 — o detector roda a primeira vez
 Duas checagens, ambas sobre a janela de 1 minuto que acabou de fechar.
 
-**Gatilho absoluto.** O agregado do Merchant A está em 62%, contra 65% configurado em `merchants.expected_conversion`. Queda de 3pp, no limite do material. Sozinho, isso não abre nada.
+**Gatilho absoluto.** O agregado do Merchant A **no Brasil** (DD17) está em 62%, contra 65% configurado em `merchants.expected_conversion`. Queda de 3pp, no limite do material. Sozinho, isso não abre nada.
 
 **Corte transversal, profundidade 1.** Aqui aparece o sinal. Entre os filhos da raiz, na mesma janela: Adyen em 41%, Stripe em 66%, Mercado Pago em 65%. O esperado de Adyen não vem de histórico nenhum, vem dos irmãos dele agora. O intervalo de Wilson sobre a amostra de Adyen fica em [36%, 46%], inteiramente abaixo do limiar material. Mesmo o cenário mais otimista compatível com os dados já é queda.
 
@@ -55,7 +55,7 @@ O agente sabe que Adyen está anômalo. Não sabe por quê. Ele faz perguntas, e
 |---|---|---|---|
 | 1 | Adyen caiu em todos os países? | BR 38% · MX 67% · AR 66% | Fixa `country=BR` |
 | 2 | Dentro de Adyen×BR, qual método? | CARD 31% · PIX 96% | Fixa `method=CARD` |
-| 3 | Qual emissor? | Itaú 12% · demais ~70% | Fixa `issuer=Itaú` |
+| 3 | Qual emissor? | Itaú 12% · Nubank 71% · Bradesco 69% | Fixa `issuer=Itaú` |
 | 4 | Mudou o perfil de recusa? | 78% em `do_not_honor` (família issuer), contra 8% normal | Evidência de causa |
 
 Cada linha dessa tabela vira uma linha em `investigation_steps`. É isso que aparece na tela como evidência e é isso que ganha a sabatina.
@@ -96,7 +96,7 @@ O motor de playbooks casa `causal_dimension=issuer` com `decline_family=issuer` 
 ```mermaid
 flowchart TD
     subgraph SIM["Simulação"]
-        G["Gerador de stream<br/><small>volume sazonal · taxa estacionária</small>"]
+        G["Gerador de stream<br/><small>~60 TPS · 90 células · taxa estacionária</small>"]
         J["Console do júri<br/><small>injeção parametrizável</small>"]
     end
 
@@ -107,7 +107,7 @@ flowchart TD
     end
 
     subgraph DET["Detecção · determinística"]
-        D1["Gatilho absoluto<br/><small>vs constante do merchant</small>"]
+        D1["Gatilho absoluto<br/><small>vs constante, em merchant × país</small>"]
         D2["Corte transversal<br/><small>vs irmãos, mesma janela</small>"]
         D3["Intervalo de Wilson + persistência<br/><small>3 janelas · 4 estados</small>"]
     end
@@ -115,14 +115,14 @@ flowchart TD
     subgraph DIAG["Diagnóstico"]
         O["Orquestrador<br/><small>dedup · fingerprint · ciclo de vida</small>"]
         A["Agente investigador<br/><small>1 instância por incidente</small>"]
-        T["Ferramentas<br/><small>query_slice · residual_test<br/>decline_mix · varredura retroativa</small>"]
+        T["Ferramentas<br/><small>query_slice · residual_test · peeling<br/>decline_mix · varredura retroativa</small>"]
         FB["Fallback<br/><small>beam search determinístico</small>"]
     end
 
     subgraph OUT["Saída"]
         N["Narrador<br/><small>ops + executivo</small>"]
         P["Playbooks<br/><small>ação estruturada, não executada</small>"]
-        UI["Painel web + Slack"]
+        UI["Painel web · SSE"]
     end
 
     MEM[("Memória de incidentes<br/><small>fingerprint + pgvector</small>")]
@@ -173,88 +173,113 @@ flowchart TD
 | DD9 | Câmbio: taxa e data congeladas na transação, referência diária |
 | DD10 | `account_id` = `merchant_id`, mesma entidade |
 | DD11 | Intervalo de Wilson + persistência de 3 janelas |
+| DD12 | Cubo = as 6 dimensões do enunciado. `card_brand` e `card_type` ficam fora |
+| DD13 | 3 emissores por país, malha completa de provider × país, PIX só BR. 90 células |
+| DD14 | Bucket de 1 min · `min_volume` 30 · `δ` 3pp · gerador a ~60 TPS desigual |
+| DD15 | pgvector mantido; fingerprint exato é o caminho primário |
+| DD16 | Só UI web, transporte SSE. Sem bot |
+| DD17 | Gatilho em merchant × país |
+| DD18 | Peeling para incidentes simultâneos; parcimônia como desempate |
+| DD19 | Profundidade máxima da busca: 3 dimensões |
+| DD20 | Harness de avaliação com 30 incidentes gerados |
 
-### Abertas — decidir no kickoff, não durante a implementação
+### Fechadas nesta rodada, com a justificativa
+
+| | Decisão | Por quê, em uma linha |
+|---|---|---|
+| DD17 | Gatilho em **merchant × país**, não só merchant | Sem isso, o emissor mexicano caindo para um único merchant pode não mover o agregado e o cenário obrigatório do briefing falha |
+| DD18 | **Peeling** para incidentes simultâneos | Termina naturalmente quando o déficit residual deixa de ser material, e o caso obrigatório é disjunto. Clusterização é mais geral e mais fácil de errar sob pressão |
+| — | **Parcimônia** como desempate | Entre células que explicam igualmente bem, reportar a que fixa menos dimensões. Necessário porque PIX ⇒ BR cria empates estruturais |
+| DD19 | Profundidade máxima **3** | Fixar as 5 dimensões dá célula única, quase sempre específica demais e com amostra minúscula |
+| — | **Sem Benjamini-Hochberg** | A poda hierárquica já reduz os testes em ordens de grandeza. Ter a resposta pronta para a sabatina vale mais que o código |
+| — | Máquina de estados **enxuta**: `candidato → confirmado → em curso → resolvido` | O estado "em recuperação" foi cortado por escopo. `em curso` atualiza sem re-alertar, que é o que evita 36 alertas num incidente de 3h |
+| — | **Um modelo de LLM, rápido**, com cache por fingerprint + estado | Latência na narrativa é percebida como sistema lento, e sem cache o texto é regerado a cada atualização |
+| — | **4 playbooks**, um por dimensão causal | provider · emissor · método × país · merchant |
+| DD20 | **Harness de 30 incidentes**, não 200 | Vocês injetam, logo têm ground truth. 30 cabe em 24h e já dá número para o slide |
+
+### Ainda abertas
 
 | | Pendência | O que trava |
 |---|---|---|
-| P1 | Matriz `routing_coverage` | Sem ela, célula que nunca existiu vira falso positivo |
-| P2 | Gatilho no nível merchant ou merchant × país | Decide se o cenário do emissor mexicano num único merchant é detectável |
-| P3 | Quantos emissores por país | Define onde o caso de evidência insuficiente vai aparecer naturalmente |
-| P4 | Volume alvo do gerador (TPS) | Dimensiona o rollup e define se as células finas têm amostra |
+| P1 | Distribuição exata do tráfego entre os 3 merchants | Define quais células ficam na cauda e onde o caso de evidência insuficiente aparece |
+| P2 | Quais 12 decline codes e como se distribuem entre as 5 famílias | Define a força da evidência de causa raiz no passo 4 da investigação |
 
 **Consequência de DD5 a documentar:** com só cartão e PIX, e PIX existindo apenas no Brasil, a dimensão `payment_method` é constante em AR e MX. Ela não tem irmãos fora do Brasil, então o corte transversal não a usa lá. Isso é uma restrição conhecida do cubo, não um bug. Declarar no decision log antes que um juiz encontre.
 
 ---
 
-## 5. As fases
+## 5. Plano de 24 horas
 
-Uma regra acima do cronograma: **toda fase termina com o sistema rodando.** Nunca existe um estado em que nada funciona. Se o tempo acabar na F3, ainda há demo.
+Duas regras acima do cronograma. **Toda etapa termina com o sistema rodando** — nunca existe um estado em que nada funciona. E **o relógio manda**: se H+12 chegar sem o teste residual pronto, a camada agêntica é sacrificada, não o diagnóstico.
 
-### F0 · Fundações
-**Bloqueia todo mundo. Ninguém trabalha em paralelo antes de terminar.**
+As trilhas rodam em paralelo. As horas são de relógio, não de pessoa.
 
-- Contrato do evento de transação, congelado
-- Gerador com volume sazonal e taxa de conversão estacionária
-- Ticket médio variando por método e país
-- Motor de injeção de incidente parametrizável
-- `docker-compose` subindo Redis e Postgres, migrations aplicadas
-- Catálogos populados: emissores, bandeiras, decline codes com família, `fx_rates`
+### H+0 → H+3 · Fundações
+**Todo mundo junto. Nada paraleliza antes disso terminar.**
 
-**Saída:** stream rodando, `rollup_minute` populando sozinho.
-**Da demo, funciona:** nada ainda.
+- Contrato do evento congelado
+- Seeds: 3 merchants, 3 providers, 3 emissores por país, 12 decline codes com família, 12 linhas de `routing_coverage`, `fx_rates`
+- Gerador a ~60 TPS com distribuição desigual e taxa estacionária
+- Motor de injeção parametrizável nas 6 dimensões
+- `docker-compose` com Redis e Postgres, migrations aplicadas
 
-### F1 · Detecção
+**Porta de saída:** stream rodando, `rollup_minute` populando sozinho. Se isso escorregar para H+4, cortar o harness (DD20) do escopo agora e não depois.
+
+### H+3 → H+7 · Detecção
 - Ingestão e os dois rollups
-- Gatilho absoluto contra `merchants.expected_conversion`
+- Gatilho absoluto contra a constante do merchant, em merchant × país
 - Corte transversal de profundidade 1
-- Intervalo de Wilson com quatro estados, mais persistência de 3 janelas
+- Wilson com quatro estados, persistência de 3 janelas, fallback de 5 min para célula fina
 - Varredura retroativa para o `started_at`
 
-**Saída:** roda uma hora em operação normal sem disparar. Dispara em até 3 minutos quando um incidente é injetado.
-**Da demo, funciona:** critérios 1 e 2. Já há algo de pé para mostrar.
+**Porta de saída:** roda 30 minutos em operação normal sem disparar; detecta em até 3 minutos um incidente injetado.
+**Da demo:** critérios 1 e 2.
 
-### F2 · Diagnóstico
-**A fase mais importante. Se algo atrasar, que atrase em cima desta.**
+### H+7 → H+13 · Diagnóstico
+**A etapa que decide o resultado. Se algo atrasar, que atrase em cima desta.**
 
-- Beam search top-down por poder explicativo
-- **Teste residual**, com o loop de separação de incidentes simultâneos
+- Beam search top-down, profundidade 3
+- **Teste residual** com o loop de peeling
+- Desempate por parcimônia
 - Análise de mudança no perfil de decline codes
-- Custo por minuto em moeda local e em USD
-- Priorização por custo ponderado pela confiança
+- Custo por minuto, conservador, local e USD
+- Priorização por custo ponderado
 
-**Saída:** o cenário do briefing, provider degradando no Brasil somado a emissor mexicano caindo para um merchant, é separado em dois incidentes corretamente ordenados.
-**Da demo, funciona:** critérios 3 e 5. O sistema está completo sem uma linha de LLM.
+**Porta de saída:** o cenário obrigatório do briefing sai como dois incidentes separados e ordenados.
+**Da demo:** critérios 3 e 5. O sistema está completo sem uma linha de LLM.
 
-### F3 · Camada agêntica
-- Ferramentas expostas ao agente, envolvendo o que a F2 já faz
-- Agente investigador em LangGraph, com budget de passos e timeout
-- Fallback automático para o beam search da F2
-- `investigation_steps` gravando cada pergunta e cada número recebido
-- Narrador com saída operacional e executiva
+### H+13 → H+17 · Camada agêntica
+- Ferramentas envolvendo o que a etapa anterior já faz
+- Investigador em LangGraph, budget de 12 passos, timeout
+- Fallback automático para o beam search
+- `investigation_steps` gravando cada pergunta e cada número
+- Narrador com saída de operações e executiva, com template determinístico de reserva
 
-**Saída:** o agente resolve os mesmos casos que a F2 resolve, e a trilha de investigação aparece na tela.
-**Da demo, funciona:** critério 4 e o bônus dos dois públicos.
+**Porta de saída:** o agente resolve os mesmos casos que o beam search resolve, e a trilha aparece na tela.
+**Da demo:** critério 4 e o bônus dos dois públicos.
 
-### F4 · Memória, ação e console
+### H+17 → H+20 · Memória, ação e console
 - Fingerprint e reconhecimento de repetição
-- Embedding em pgvector para o caso aproximado
-- Catálogo de playbooks em YAML
+- pgvector para o caso aproximado
+- 4 playbooks em YAML
 - Console de injeção do júri
-- Bot Slack
+- **Harness de 30 incidentes**, rodando em lote
 
-**Saída:** alguém de fora do time injeta um incidente sem instrução verbal e o sistema responde.
-**Da demo, funciona:** bônus de repetição. O *trial by fire* passa a ser ensaiável.
+**Porta de saída:** alguém de fora do time injeta sem instrução verbal e o sistema responde.
 
-### F5 · Endurecimento e defesa
-- **Ensaio adversarial:** alguém que não escreveu o detector inventa 5 incidentes e injeta sem avisar. Medir taxa de acerto de causa raiz.
-- Caso deliberado de evidência insuficiente, para o bônus
-- Decision log escrito, diagrama de arquitetura no README
-- Ensaio da sabatina: cada pessoa defende uma camada que **não** escreveu
+### H+20 → H+23 · Endurecimento e defesa
+- Ensaio adversarial com quem não escreveu o detector
+- Caso deliberado de evidência insuficiente no roteiro
+- Decision log, diagrama, README
+- Ensaio da sabatina: cada pessoa defende uma camada que não escreveu
 
-**Saída:** 5 de 5 no ensaio adversarial, ou saber exatamente por que falhou nos que falhou.
+### H+23 → H+24 · Congelamento
+Nada de código novo. Só ensaio da demo, do começo ao fim, três vezes.
 
----
+### Trilha paralela · UI
+Começa em **H+3**, assim que o contrato existe, e nunca bloqueia ninguém. Mínimo viável: gráfico de conversão ao vivo, feed de incidentes, painel de evidência com o caminho do drill-down visível, console de injeção. Transporte por SSE.
+
+O painel de evidência é o que prova o RF3. Mostrar quais dimensões foram testadas, qual concentrou o déficit e o que foi suprimido como eco vale mais do que qualquer gráfico bonito.
 
 ## 6. Dependências e divisão do time
 
@@ -271,7 +296,7 @@ F4 depende de F0 e F2, mas não de F3. Pode andar em paralelo com a camada agên
 | Dados | Gerador, injeção, console do júri, catálogos | contrato (F0) |
 | Estatística | Rollups, gatilhos, intervalo de Wilson, varredura retroativa, custo | contrato |
 | Diagnóstico | Beam search, teste residual, priorização | rollups |
-| Agente e UI | Ferramentas, LangGraph, narrador, front, bot | interface das ferramentas, pode mockar |
+| Agente e UI | Ferramentas, LangGraph, narrador, front SSE | interface das ferramentas, pode mockar |
 
 Quem cuida da frente de Dados **não deve** ler a implementação do detector. É isso que mantém o ensaio adversarial da F5 honesto.
 
@@ -279,9 +304,12 @@ Quem cuida da frente de Dados **não deve** ler a implementação do detector. �
 
 ## 7. Lista de corte, de baixo pra cima
 
-1. Bot Slack
+Em 24 horas isto não é hipótese, é procedimento. Cortar nesta ordem, sem discussão no momento do corte:
+
+1. Harness de avaliação
 2. Similaridade vetorial, mantendo só o fingerprint exato
-3. Camada agêntica completa, ficando o beam search mais o narrador
+3. Reconhecimento de repetição inteiro
+4. Camada agêntica completa, ficando o beam search mais o narrador
 
 **Nunca cortar:** teste residual, console de injeção, estado de evidência insuficiente, decision log.
 
