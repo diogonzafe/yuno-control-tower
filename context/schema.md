@@ -1,6 +1,7 @@
 # The Control Tower — Schema de dados (v3)
 
-> **v3:** sai o CUSUM (DD8), entram as colunas de câmbio no padrão de mercado (DD9). Ver §1 e §6.
+> **v4:** cubo fechado nas 6 dimensões do enunciado (DD12), dimensionamento do mundo simulado (DD13–DD14), pgvector mantido (DD15), só UI (DD16). Prazo do desafio: **24 horas**.
+> **v3:** sai o CUSUM (DD8), sai o beta-binomial em favor do intervalo de Wilson (DD11), entram as colunas de câmbio no padrão de mercado (DD9).
 > **v2:** incorpora a decisão de usar taxa de conversão esperada pré-definida por merchant, em vez de baseline sazonal aprendido. Isso remove duas tabelas e uma etapa inteira do pipeline. Ver §1 (DD7) e §6.
 
 ## 1. Decisões travadas
@@ -17,7 +18,16 @@
 | DD8 | **Sem CUSUM** e sem detector de ponto de mudança | O "desde quando" passa a vir de varredura retroativa no `rollup_minute`. Ver §6.1. |
 | DD9 | **Câmbio no padrão de mercado**: valor local + taxa + data da cotação, congelados na transação | Três colunas novas em `transactions`. `fx_rates` passa a ser série por data. Ver §6.2. |
 | DD10 | **`account_id` = `merchant_id`** — mesma entidade | Coluna única. O cubo continua com 6 dimensões, sem nível de subconta. |
-| DD11 | **Teste beta-binomial mantido**, junto com persistência de 3 janelas | Não conflita com DD7: o merchant define a taxa, o teste só julga se a amostra a contradiz. Zero tabela nova, zero histórico. Ver §6.3. |
+| DD11 | **Intervalo de Wilson** + persistência de 3 janelas | Não conflita com DD7: o merchant define a taxa, o teste só julga se a amostra a contradiz. Fórmula fechada, sem dependência, sem parâmetro de prior. Ver §6.3. |
+| DD12 | **Cubo = as 6 dimensões do enunciado**: merchant × provider × método × país × emissor × decline code | `card_brand` e `card_type` continuam em `transactions`, mas **não** são dimensões do cubo. Rollup de conversão chaveado por 5 dimensões; rollup de recusas por 5 + código. |
+| DD13 | **3 emissores por país** · **malha completa** de provider × país (PIX só BR) | 90 células no total. `routing_coverage` fica com 12 linhas. |
+| DD14 | **Bucket de 1 minuto** · `min_volume = 30` · `δ = 3pp` | Gerador calibrado a ~60 TPS com distribuição desigual. |
+| DD15 | **pgvector mantido** para incidentes similares | Fingerprint exato continua sendo o caminho primário; o vetor cobre o caso aproximado. |
+| DD16 | **Só UI web.** Sem bot Slack ou WhatsApp | Transporte por SSE. |
+| DD17 | **Gatilho em merchant × país** | Sem isso, emissor caindo para um único merchant pode não mover o agregado e o critério #5 falha. |
+| DD18 | **Peeling** para incidentes simultâneos, **parcimônia** como desempate | Peeling termina quando o déficit residual deixa de ser material. Parcimônia é obrigatória por causa de `PIX ⇒ BR`. |
+| DD19 | **Profundidade máxima 3** · sem Benjamini-Hochberg | A poda hierárquica já reduz os testes em ordens de grandeza. |
+| DD20 | **Máquina de estados enxuta** · 4 playbooks · harness de 30 incidentes | Estado "em recuperação" cortado por escopo de 24h. |
 
 **Sobre a normalização em USD:** a taxa e a data usadas ficam gravadas **na própria transação**, não só na tabela de câmbio. É o padrão contábil e resolve o problema de auditoria: o custo de um incidente de ontem é sempre medido com o dólar de ontem, independentemente do que a tabela de câmbio contenha hoje. Nunca recalcular USD histórico. Isso importa mais com ARS do que com BRL ou MXN.
 
@@ -50,9 +60,11 @@ Consequências concretas:
 - O cenário do briefing "um método fora do ar em um país" fica fraco em 2 dos 3 países.
 - A busca precisa saber que dimensões implicadas não devem ser exploradas (descer por `method` dentro de `country=AR` é desperdício de passo do agente).
 
-**Recomendação:** adicionar **wallet** como terceiro método, disponível nos três países (Mercado Pago wallet é plausível em AR, BR e MX). Custo: uma linha no gerador. Ganho: `payment_method` vira dimensão real em todo o cubo e o cenário de método fora do ar volta a fazer sentido em qualquer país.
+**Decisão tomada (DD5): fica só cartão e PIX.** Wallet como terceiro método foi considerado e descartado. Consequências a codificar e a declarar no decision log:
 
-**Se mantiverem só cartão + PIX:** documentar a implicação `PIX ⇒ BR` como restrição conhecida do cubo e fazer a busca respeitá-la explicitamente.
+- A implicação `PIX ⇒ BR` é restrição conhecida do cubo. A busca precisa respeitá-la: não descer por `payment_method` dentro de `country=AR` ou `country=MX`, onde a dimensão é constante e não tem irmãos.
+- O cenário "método fora do ar em um país" só é demonstrável no Brasil. Não prometer esse caso para AR ou MX na apresentação.
+- Quando PIX degrada, `país=BR`, `método=PIX` e a interseção são a mesma população. O desempate é por parcimônia: reportar a célula que fixa menos dimensões (ver contrato de dados, §B).
 
 ---
 
@@ -60,7 +72,17 @@ Consequências concretas:
 
 Nem toda combinação provider × país × método existe. Se o detector tratar célula inexistente como célula com volume zero, ele vai enxergar anomalia onde não há nada.
 
-A tabela `routing_coverage` declara quais combinações são válidas. O detector só avalia células que existem nela. É uma tabela de 20 linhas que evita uma classe inteira de falso positivo — e é uma boa resposta pra sabatina.
+A tabela `routing_coverage` declara quais combinações são válidas. O detector só avalia células que existem nela, e uma classe inteira de falso positivo desaparece.
+
+**Decisão (DD13): malha completa.** Os 3 providers atendem os 3 países com cartão, e os 3 atendem PIX no Brasil. São **12 linhas**.
+
+| | AR | MX | BR |
+|---|---|---|---|
+| Stripe | cartão | cartão | cartão, PIX |
+| Adyen | cartão | cartão | cartão, PIX |
+| Mercado Pago | cartão | cartão | cartão, PIX |
+
+Perde-se realismo (na vida real a cobertura é irregular) e ganha-se um cubo denso, onde toda célula tem irmãos para o corte transversal e o júri tem mais combinações para atacar no trial by fire. Em 24 horas é a troca certa. Registrar a simplificação no decision log.
 
 ---
 
@@ -99,9 +121,9 @@ O motivo: 92% no merchant é a média de um mix. Dentro dele convivem PIX no Bra
 ### Consequências a declarar no decision log
 
 - **A taxa de conversão no gerador deve ser estacionária no tempo; só o volume é sazonal.** Sem baseline por hora, uma taxa que oscila com o horário gera falso positivo à meia-noite. Isso é defensável e realista: em pagamentos, o volume varia muito mais com a hora do que a taxa de aprovação. Declarar como premissa explícita, não esconder.
-- **O ruído de madrugada continua coberto** — mas pelo beta-binomial, não pelo baseline. Volume baixo produz posterior largo e o sistema não dispara. A resposta na sabatina para "como vocês não disparam às 3h?" muda de "temos perfil sazonal" para "o posterior não fecha com 6 transações", que é igualmente boa.
+- **O ruído de madrugada continua coberto** — mas pelo intervalo de confiança, não pelo baseline. Volume baixo produz intervalo largo que cobre o esperado, e o sistema não dispara. A resposta na sabatina para "como vocês não disparam às 3h?" é direta: com 6 transações o intervalo vai de 20% a 80%, e não dá pra afirmar nada.
 - **O gatilho roda em dois níveis**: checagem absoluta contra a constante no agregado do merchant, e varredura transversal de profundidade 1 (algum filho da raiz destoando dos irmãos?). O segundo é o que pega o cenário "emissor mexicano cai para um único merchant", que pode ser pequeno demais para mover o agregado.
-- **O `prior_strength` do beta-binomial** deixa de ser coluna configurada e passa a ser derivado do volume dos irmãos na janela.
+- **Não há parâmetro de força de prior a configurar.** O único parâmetro do teste é o nível de confiança, fixo em 95%. Uma peça a menos para justificar na defesa técnica.
 
 ### 6.1 O "desde quando" sem CUSUM (DD8)
 
@@ -129,34 +151,56 @@ Para uma célula C numa janela de 1 minuto, com `n` tentativas e `k` aprovaçõe
 
 **Entradas**
 - `p_e` — taxa esperada. No agregado do merchant vem da constante configurada; na célula vem do corte transversal contra os irmãos (§6).
-- `s` — força do prior. Derivada do volume dos irmãos na mesma janela, com teto. Contra a constante do merchant, usar `s = 200` fixo, para que o número declarado não seja teimoso demais diante da evidência.
 - `δ` — queda mínima material, `merchants.min_material_drop_pp` (default 3pp).
+- `z` — 1.96, para 95% de confiança. É o único parâmetro do teste.
+
+O limiar contra o qual tudo é comparado: `p_lim = p_e − δ`.
 
 **Cálculo**
 
 ```python
-from scipy.stats import beta
-
-def drop_probability(k, n, p_e, s, delta):
-    """P(taxa real < p_e - delta) dado o observado. Sem histórico, sem treino."""
-    a = s * p_e + k
-    b = s * (1 - p_e) + (n - k)
-    return float(beta.cdf(p_e - delta, a, b))
+def wilson(k, n, z=1.96):
+    """Intervalo de confiança de Wilson para uma proporção.
+    Fórmula fechada. Sem scipy, sem histórico, sem prior."""
+    if n == 0:
+        return (0.0, 1.0)
+    p = k / n
+    d = 1 + z*z/n
+    center = (p + z*z/(2*n)) / d
+    half = (z/d) * ((p*(1-p)/n + z*z/(4*n*n)) ** 0.5)
+    return (max(0.0, center - half), min(1.0, center + half))
 ```
 
 **Decisão**
 
-| Condição | Estado |
-|---|---|
-| `n < min_volume` | `INSUFFICIENT_EVIDENCE` — nunca alerta, mas também nunca declara saudável |
-| `P > 0.95` por 3 janelas consecutivas | `CONFIRMED` — abre incidente |
-| `P > 0.95` sem persistência ainda | `MONITORING` — acumula, não alerta |
-| `0.80 < P ≤ 0.95` | `MONITORING` |
-| `P ≤ 0.80` | saudável |
+Compara-se o intervalo `[ci_low, ci_high]` contra `p_lim`:
 
-O valor de `P` vai direto para `incidents.confidence` e daí para a narrativa. É o "por que o sistema acredita nisso" do RF3, sem o narrador precisar inventar linguagem de certeza.
+| Condição | Estado | Leitura |
+|---|---|---|
+| `ci_high < p_lim` | **queda material** | mesmo o cenário mais otimista compatível com os dados já está abaixo do aceitável |
+| `ci_low > p_lim` | **saudável** | mesmo o cenário mais pessimista está acima do aceitável |
+| intervalo cruza `p_lim` **e** `n < min_volume` | `INSUFFICIENT_EVIDENCE` | dado insuficiente para afirmar qualquer coisa |
+| intervalo cruza `p_lim` **e** `n ≥ min_volume` | `MONITORING` | volume existe, mas a queda está genuinamente na fronteira |
 
-**Por que a persistência além do teste:** o teste protege contra amostra pequena; a persistência protege contra soluço genuíno de um minuto (um deploy do provider, uma janela de rede). Os dois cobrem falhas diferentes e juntos custam um contador.
+Incidente só é aberto (`CONFIRMED`) com **queda material em 3 janelas consecutivas**.
+
+Repare que `INSUFFICIENT_EVIDENCE` e `MONITORING` são estados diferentes por um motivo real: o primeiro diz "não sei", o segundo diz "sei, e está na fronteira". O briefing pontua o primeiro como bônus, então convém que ele exista de verdade e não como sinônimo de silêncio.
+
+**O intervalo é o que aparece na tela.** Em vez de uma probabilidade abstrata, a evidência visual é direta:
+
+```
+Adyen · BR · CARD · Itaú
+observado  12%  ├──────┤  [8% – 17%]
+esperado   70%                    ▲
+```
+
+O caso de evidência insuficiente é a mesma imagem com o intervalo largo cobrindo o esperado, o que torna o bônus autoexplicativo sem uma linha de texto.
+
+**O custo usa a ponta conservadora.** As aprovações perdidas são calculadas com `ci_high`, não com a taxa observada. O número que vai para o executivo passa a ser um piso: "estamos perdendo **pelo menos** USD 3.8k por minuto". Isso é mais defensável do que uma estimativa pontual e evita a pergunta desconfortável sobre superestimar prejuízo.
+
+**Célula fina (DD14).** Se `n < min_volume` na janela de 1 minuto, o teste é refeito sobre a janela móvel de 5 minutos da mesma célula. Se ainda assim não alcançar o mínimo, o estado é `INSUFFICIENT_EVIDENCE`. São cinco linhas e é o que impede que um terço do cubo fique permanentemente indiagnosticável com 3 emissores por país.
+
+**Por que a persistência além do teste:** o teste protege contra amostra pequena; a persistência protege contra soluço genuíno de um minuto, como um deploy do provider ou uma janela de rede. Cobrem falhas diferentes e juntos custam um contador.
 
 **Custo de detecção:** 3 minutos no pior caso. Aceitável contra a linha de base do briefing, que é "horas até alguém perceber".
 
@@ -164,8 +208,9 @@ O valor de `P` vai direto para `incidents.confidence` e daí para a narrativa. �
 
 | Camada | Período | Granularidade | Ordem de grandeza |
 |---|---|---|---|
-| `transactions` | 48h | por transação | centenas de milhares |
-| `rollup_minute` | 48h | 1 min × célula | ~300k linhas |
+| `transactions` | 24h a 60 TPS | por transação | ~5 milhões |
+| `rollup_minute` | 24h | 1 min × 90 células | ~130k linhas |
+| `incidents` | acumulado, com o harness | por incidente | ~10k linhas (DD15) |
 
 Duas tabelas de dado quente, e nada de histórico. O boot do sistema deixa de precisar de warm-up: basta uma janela curta de operação normal antes da primeira injeção — o que na demo é conveniente, não um problema.
 
@@ -270,6 +315,7 @@ CREATE TABLE rollup_minute (
   country            CHAR(2) NOT NULL,
   payment_method     TEXT NOT NULL,
   issuer_id          TEXT NOT NULL,
+  -- DD12: card_brand e card_type NÃO entram no cubo
 
   attempts           INT NOT NULL,
   approved           INT NOT NULL,
@@ -310,7 +356,10 @@ CREATE TABLE incidents (
 
   status             TEXT NOT NULL
     CHECK (status IN ('open','monitoring','resolved','inconclusive')),
-  confidence         NUMERIC(4,3) NOT NULL,
+  -- DD11: intervalo de Wilson no lugar de uma probabilidade única
+  ci_low             NUMERIC(6,5) NOT NULL,
+  ci_high            NUMERIC(6,5) NOT NULL,
+  ci_level           NUMERIC(4,3) NOT NULL DEFAULT 0.95,
 
   started_at         TIMESTAMPTZ NOT NULL, -- DD8: varredura retroativa (§6.1)
   started_at_exact   BOOLEAN NOT NULL DEFAULT true, -- false = exibir "≈"
@@ -319,7 +368,7 @@ CREATE TABLE incidents (
 
   baseline_rate      NUMERIC(6,5) NOT NULL,
   current_rate       NUMERIC(6,5) NOT NULL,
-  lost_approvals     INT NOT NULL,
+  lost_approvals     INT NOT NULL,      -- calculado com ci_high (piso conservador)
   cost_local         JSONB,                -- {"BRL": 128400}
   cost_usd_minor     BIGINT NOT NULL,
   cost_usd_per_min   BIGINT NOT NULL,
@@ -362,13 +411,23 @@ CREATE TABLE playbooks (
 
 ## 8. Catálogos a popular
 
-**Emissores** (5 por país, nomes reais dão realismo à demo):
-- BR — Itaú, Bradesco, Nubank, Santander BR, Caixa
-- MX — BBVA México, Banorte, Citibanamex, Santander MX, HSBC MX
-- AR — Galicia, Santander Río, BBVA Argentina, Macro, Nación
+**Emissores** (DD13: **3 por país**, nomes reais dão realismo à demo):
+- BR — Itaú, Nubank, Bradesco
+- MX — BBVA México, Banorte, Citibanamex
+- AR — Galicia, Santander Río, Macro
 
-**Bandeiras:** Visa, Mastercard, Amex, Elo (só BR)
+**Bandeiras:** Visa, Mastercard, Elo (só BR). Não são dimensão do cubo (DD12), só carga da transação.
 
 **Decline codes** — mínimo 12, distribuídos entre as famílias. Os de família `issuer` e `provider` são os que carregam o diagnóstico; os de `funds` e `fraud` são o ruído de fundo que sempre existe e nunca deve gerar alerta sozinho.
+
+**Dimensionamento do cubo (DD13–DD14)**
+
+| | Cálculo | Total |
+|---|---|---|
+| Células de cartão | 3 merchants × 3 providers × 3 países × 3 emissores | 81 |
+| Células de PIX | 3 merchants × 3 providers × 1 país | 9 |
+| **Total** | | **90** |
+
+Com `min_volume = 30` por janela de 1 minuto, avaliar a célula mediana exige cerca de **45 TPS**. Gerar a **~60 TPS com distribuição desigual**: merchants grandes recebem tráfego suficiente para diagnóstico fino, e a cauda fica naturalmente abaixo do mínimo. Essa cauda é onde o caso de `INSUFFICIENT_EVIDENCE` aparece sozinho, sem ninguém forçar — e é por isso que a regra de janela móvel de 5 minutos do §6.3 existe.
 
 **Ticket médio** — varia por método e país. PIX tem ticket menor e frequência maior que cartão de crédito. Sem essa variação, o custo em dinheiro não discrimina nada e a priorização fica sem graça.
