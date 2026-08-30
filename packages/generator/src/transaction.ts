@@ -61,7 +61,6 @@ export function generateTransaction(input: GenerateTransactionInput): Transactio
     : declineCodeFor(
       cell.paymentMethod,
       input.random.next.bind(input.random),
-      cardBrand ?? undefined,
       effects.declineWeights,
       { country: cell.country, issuerId: cell.issuerId },
     );
@@ -82,7 +81,10 @@ export function generateTransaction(input: GenerateTransactionInput): Transactio
     amountUsdMinor: Math.round(input.amountMinor * fxRate),
     status: approved ? "SUCCESS" : "DECLINED",
     declineCode: decline?.code ?? null,
-    rawDeclineCode: decline?.rawCode ?? null,
+    // The seeded decline_codes catalog IS the raw network code (ISO 8583 for
+    // CARD, SPI return code for PIX) — there is no separate, more granular
+    // "raw" representation available, so both fields carry the same value.
+    rawDeclineCode: decline?.code ?? null,
     cardBrand,
     cardType: cell.paymentMethod === "CARD" ? (input.random.next() < 0.7 ? "credit" : "debit") : null,
     cardBin: cell.paymentMethod === "CARD" ? cardBinFor(cardBrand!, input.random.next()) : null,

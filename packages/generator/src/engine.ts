@@ -1,3 +1,5 @@
+import pino from "pino";
+
 import {
   buildTransactionCells,
   type GeneratorCatalog,
@@ -8,6 +10,8 @@ import type { GeneratorIncident } from "./incident.ts";
 import { createSeededRandom, type SeededRandom } from "./random.ts";
 import { generateTransaction } from "./transaction.ts";
 import { transactionsPerSecond } from "./volume.ts";
+
+const logger = pino({ name: "generator-engine", level: process.env.VITEST ? "silent" : "info" });
 
 export type TransactionGenerator = {
   next: (at?: Date) => ReturnType<typeof generateTransaction>;
@@ -68,27 +72,44 @@ export function startGenerator(
   let running = false;
 
   const tick = async (): Promise<void> => {
+    const at = now();
+    // Accumulate the period's expected volume before checking reentrancy, so
+    // an in-flight tick (e.g. still awaiting a slow XADD) never loses volume
+    // outright — it stays in `carry` and is emitted on the next free tick,
+    // keeping the generator at the configured ~60 TPS instead of silently
+    // under-delivering under any I/O latency.
+    carry += transactionsPerSecond(at, baseTps) * tickMilliseconds / 1_000;
     if (running) return;
+
     running = true;
     try {
-      const at = now();
-      carry += transactionsPerSecond(at, baseTps) * tickMilliseconds / 1_000;
       const eventsToEmit = Math.floor(carry);
       carry -= eventsToEmit;
       for (let index = 0; index < eventsToEmit; index += 1) {
-        await sink(generator.next(at));
+        try {
+          await sink(generator.next(at));
+        } catch (error) {
+          // One bad event (e.g. an invalid injected incident) must not take
+          // down the whole tick, and must never surface as an unhandled
+          // promise rejection that crashes the process mid-demo.
+          logger.error({ error }, "dropped one transaction while emitting a tick");
+        }
       }
     } finally {
       running = false;
     }
   };
 
-  const timer = setInterval(() => { void tick(); }, tickMilliseconds);
+  const timer = setInterval(() => {
+    tick().catch((error: unknown) => {
+      logger.error({ error }, "generator tick failed unexpectedly");
+    });
+  }, tickMilliseconds);
   return { stop: () => clearInterval(timer) };
 }
 
 function amountMinorFor(cell: WeightedTransactionCell, random: SeededRandom): number {
-  const range = cell.paymentMethod === "PIX" ? [100, 15_000]
+  const range: readonly [number, number] = cell.paymentMethod === "PIX" ? [100, 15_000]
     : cell.country === "AR" ? [50_000, 4_000_000]
       : cell.country === "MX" ? [10_000, 250_000]
         : [5_000, 300_000];

@@ -1,23 +1,28 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { describe, expect, it } from "vitest";
 
 import { createSeededRandom } from "./random.ts";
 
-test("seeded random produces a repeatable sequence", () => {
-  const first = createSeededRandom(42);
-  const second = createSeededRandom(42);
+describe("createSeededRandom", () => {
+  it("produces a repeatable sequence", () => {
+    const first = createSeededRandom(42);
+    const second = createSeededRandom(42);
 
-  assert.deepEqual(
-    [first.next(), first.next(), first.next()],
-    [second.next(), second.next(), second.next()],
-  );
-});
+    expect([first.next(), first.next(), first.next()]).toEqual([
+      second.next(),
+      second.next(),
+      second.next(),
+    ]);
+  });
 
-test("weighted selection rejects an invalid distribution", () => {
-  const random = createSeededRandom(1);
+  it("rejects a weighted selection with an invalid distribution", () => {
+    const random = createSeededRandom(1);
 
-  assert.throws(
-    () => random.weightedPick([{ value: "invalid", weight: 0 }]),
-    /positive total weight/,
-  );
+    expect(() => random.weightedPick([{ value: "invalid", weight: 0 }])).toThrow(/positive total weight/);
+  });
+
+  it("int() rejects a non-positive bound", () => {
+    const random = createSeededRandom(1);
+
+    expect(() => random.int(0)).toThrow(/positive integer/);
+  });
 });

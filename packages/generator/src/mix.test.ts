@@ -1,43 +1,43 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { describe, expect, it } from "vitest";
 
 import { declineCodeFor, declineMixFor } from "./mix.ts";
 
-test("card decline mix totals one", () => {
-  const total = declineMixFor("CARD").reduce((sum, entry) => sum + entry.weight, 0);
+describe("declineMixFor / declineCodeFor", () => {
+  it("card decline mix totals one", () => {
+    const total = declineMixFor("CARD").reduce((sum, entry) => sum + entry.weight, 0);
 
-  assert.ok(Math.abs(total - 1) < 1e-12);
-});
+    expect(Math.abs(total - 1)).toBeLessThan(1e-12);
+  });
 
-test("PIX only emits PIX decline codes", () => {
-  const code = declineCodeFor("PIX", () => 0.99);
+  it("PIX only emits PIX decline codes", () => {
+    const code = declineCodeFor("PIX", () => 0.99);
 
-  assert.equal(code.code, "PIX_RECEIVER_REJECTED");
-  assert.equal(code.rawCode, "BE17");
-});
+    expect(code.code).toBe("BE17");
+  });
 
-test("Visa and Mastercard normalize raw code 65 differently", () => {
-  const visa = declineCodeFor("CARD", () => 0.999, "Visa");
-  const mastercard = declineCodeFor("CARD", () => 0.999, "Mastercard");
+  it("exposes every real seeded decline code with its catalog family and diagnostic metadata", () => {
+    const cardCodes = declineMixFor("CARD");
+    const pixCodes = declineMixFor("PIX");
 
-  assert.equal(visa.code, "LIMIT_EXCEEDED");
-  assert.equal(mastercard.code, "AUTH_REQUIRED");
-});
+    // 17 real CARD codes + 6 real PIX codes in the seeded decline_codes table.
+    expect(cardCodes.length + pixCodes.length).toBe(23);
+    expect(cardCodes.find((code) => code.code === "51")?.diagnostic).toBe(false);
+    expect(cardCodes.find((code) => code.code === "51")?.family).toBe("funds");
+    expect(pixCodes.find((code) => code.code === "AB03")?.family).toBe("network");
+  });
 
-test("catalog exposes all 18 codes with diagnostic metadata", () => {
-  const cardCodes = declineMixFor("CARD");
-  const pixCodes = declineMixFor("PIX");
+  it("baseline decline mix varies slightly by country and issuer", () => {
+    const brItau = declineMixFor("CARD", { country: "BR", issuerId: "itau" });
+    const mxBbva = declineMixFor("CARD", { country: "MX", issuerId: "bbva_mx" });
 
-  assert.equal(cardCodes.length + pixCodes.length, 18);
-  assert.equal(cardCodes.find((code) => code.code === "INSUFFICIENT_FUNDS")!.diagnostic, false);
-  assert.equal(pixCodes.find((code) => code.code === "PIX_SPI_TIMEOUT")!.family, "network");
-});
+    expect(brItau).not.toEqual(mxBbva);
+    expect(Math.abs(brItau.reduce((sum, code) => sum + code.weight, 0) - 1)).toBeLessThan(1e-12);
+    expect(Math.abs(mxBbva.reduce((sum, code) => sum + code.weight, 0) - 1)).toBeLessThan(1e-12);
+  });
 
-test("baseline decline mix varies slightly by country and issuer", () => {
-  const brItau = declineMixFor("CARD", { country: "BR", issuerId: "itau" });
-  const mxBbva = declineMixFor("CARD", { country: "MX", issuerId: "bbva-mexico" });
+  it("respects an override weight, forcing a specific code", () => {
+    const code = declineCodeFor("CARD", () => 0.5, { "91": 1000 });
 
-  assert.notDeepEqual(brItau, mxBbva);
-  assert.ok(Math.abs(brItau.reduce((sum, code) => sum + code.weight, 0) - 1) < 1e-12);
-  assert.ok(Math.abs(mxBbva.reduce((sum, code) => sum + code.weight, 0) - 1) < 1e-12);
+    expect(code.code).toBe("91");
+  });
 });

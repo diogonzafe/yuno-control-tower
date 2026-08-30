@@ -6,6 +6,7 @@ export type Country = "AR" | "MX" | "BR";
 export type Merchant = {
   merchantId: string;
   name: string;
+  country: Country;
   expectedConversion: number;
 };
 
@@ -31,25 +32,37 @@ export type WeightedTransactionCell = TransactionCell & { trafficWeight: number 
 const providers = [
   { providerId: "stripe", name: "Stripe" },
   { providerId: "adyen", name: "Adyen" },
-  { providerId: "mercado-pago", name: "Mercado Pago" },
+  { providerId: "mercado_pago", name: "Mercado Pago" },
 ] as const;
 
+// Every value below mirrors the real, seeded rows in the shared Postgres
+// catalog (merchants, providers, issuer_banks, routing_coverage) — transactions
+// carries NOT NULL foreign keys into those tables, so an id that doesn't exist
+// there is silently dropped by the ingestion consumer's poison-batch handling.
+// Merchants are country-scoped (BR_STORE_01 never trades in AR or MX): 9
+// merchants x their own country's routes reproduces DD13's 90 cells exactly.
 export const defaultGeneratorCatalog: GeneratorCatalog = {
   merchants: [
-    { merchantId: "merchant-a", name: "Merchant A", expectedConversion: 0.92 },
-    { merchantId: "merchant-b", name: "Merchant B", expectedConversion: 0.92 },
-    { merchantId: "merchant-c", name: "Merchant C", expectedConversion: 0.92 },
+    { merchantId: "AR_STORE_01", name: "Pampa Digital", country: "AR", expectedConversion: 0.87 },
+    { merchantId: "AR_STORE_02", name: "Rivera Tienda", country: "AR", expectedConversion: 0.90 },
+    { merchantId: "AR_STORE_03", name: "Andes Mercado", country: "AR", expectedConversion: 0.88 },
+    { merchantId: "BR_STORE_01", name: "Aurora Marketplace", country: "BR", expectedConversion: 0.92 },
+    { merchantId: "BR_STORE_02", name: "Vitrine Prime", country: "BR", expectedConversion: 0.89 },
+    { merchantId: "BR_STORE_03", name: "Rota Sul Comercio", country: "BR", expectedConversion: 0.94 },
+    { merchantId: "MX_STORE_01", name: "Sol Azteca Retail", country: "MX", expectedConversion: 0.91 },
+    { merchantId: "MX_STORE_02", name: "Delta Norte Shop", country: "MX", expectedConversion: 0.93 },
+    { merchantId: "MX_STORE_03", name: "Casa Maya Online", country: "MX", expectedConversion: 0.89 },
   ],
   providers,
   issuers: [
-    { issuerId: "itau", name: "Itaú", country: "BR" },
+    { issuerId: "itau", name: "Itau", country: "BR" },
     { issuerId: "nubank", name: "Nubank", country: "BR" },
     { issuerId: "bradesco", name: "Bradesco", country: "BR" },
-    { issuerId: "bbva-mexico", name: "BBVA México", country: "MX" },
+    { issuerId: "bbva_mx", name: "BBVA Mexico", country: "MX" },
     { issuerId: "banorte", name: "Banorte", country: "MX" },
     { issuerId: "citibanamex", name: "Citibanamex", country: "MX" },
     { issuerId: "galicia", name: "Galicia", country: "AR" },
-    { issuerId: "santander-rio", name: "Santander Río", country: "AR" },
+    { issuerId: "santander_rio", name: "Santander Rio", country: "AR" },
     { issuerId: "macro", name: "Macro", country: "AR" },
   ],
   routingCoverage: providers.flatMap((provider) => [
@@ -66,10 +79,19 @@ export function buildTransactionCells(
 ): readonly WeightedTransactionCell[] {
   validateCatalog(catalog, merchantTrafficWeights);
   const cells: WeightedTransactionCell[] = [];
+  const weightUnitsByCountry = new Map<Country, number>();
 
   for (const merchant of catalog.merchants) {
-    const merchantWeightUnits = weightUnitsForMerchant(catalog);
-    for (const route of catalog.routingCoverage) {
+    // A merchant only ever trades in its own country — a BR merchant has no
+    // AR or MX routes, matching the seeded catalog's country-scoped ids.
+    const merchantRoutes = catalog.routingCoverage.filter((route) => route.country === merchant.country);
+    let merchantWeightUnits = weightUnitsByCountry.get(merchant.country);
+    if (merchantWeightUnits === undefined) {
+      merchantWeightUnits = weightUnitsFor(catalog, merchantRoutes);
+      weightUnitsByCountry.set(merchant.country, merchantWeightUnits);
+    }
+
+    for (const route of merchantRoutes) {
       const issuers = route.paymentMethod === "PIX"
         ? ["NA"]
         : catalog.issuers.filter((issuer) => issuer.country === route.country).map((issuer) => issuer.issuerId);
@@ -90,21 +112,26 @@ export function buildTransactionCells(
   return cells;
 }
 
-function weightUnitsForMerchant(catalog: GeneratorCatalog): number {
-  return catalog.routingCoverage.reduce((count, route) =>
+function weightUnitsFor(catalog: GeneratorCatalog, routes: readonly RoutingCoverage[]): number {
+  return routes.reduce((count, route) =>
     count + methodTrafficMultiplier(route.paymentMethod)
       * (route.paymentMethod === "PIX" ? 1 : catalog.issuers.filter((issuer) => issuer.country === route.country).length), 0);
 }
 
 function validateCatalog(catalog: GeneratorCatalog, merchantTrafficWeights: MerchantTrafficWeights): void {
-  if (catalog.merchants.length !== 3 || catalog.providers.length !== 3 || catalog.issuers.length !== 9) {
-    throw new Error("catalog must contain 3 merchants, 3 providers, and 3 issuers per country");
+  if (catalog.merchants.length !== 9 || catalog.providers.length !== 3 || catalog.issuers.length !== 9) {
+    throw new Error("catalog must contain 9 merchants (3 per country), 3 providers, and 3 issuers per country");
   }
   if (catalog.routingCoverage.length !== 12) {
     throw new Error("routingCoverage must contain the 12 DD13 routes");
   }
-  if (catalog.issuers.some((issuer) => catalog.issuers.filter((candidate) => candidate.country === issuer.country).length !== 3)) {
-    throw new Error("catalog must contain exactly 3 issuers for every country");
+  for (const country of ["AR", "MX", "BR"] as const) {
+    if (catalog.merchants.filter((merchant) => merchant.country === country).length !== 3) {
+      throw new Error(`catalog must contain exactly 3 merchants for ${country}`);
+    }
+    if (catalog.issuers.filter((issuer) => issuer.country === country).length !== 3) {
+      throw new Error(`catalog must contain exactly 3 issuers for ${country}`);
+    }
   }
   if (catalog.routingCoverage.some((route) => route.paymentMethod === "PIX" && route.country !== "BR")) {
     throw new Error("PIX routing coverage is only valid in BR");

@@ -3,36 +3,45 @@ export type CardBrand = "Visa" | "Mastercard" | "Elo";
 
 export type DeclineCode = {
   code: string;
-  rawCode: string;
-  weight: number;
   family: "issuer" | "funds" | "fraud" | "credential" | "network" | "auth" | "merchant";
   diagnostic: boolean;
+  weight: number;
 };
 
 export type DeclineMixContext = { country: "AR" | "MX" | "BR"; issuerId: string };
 
+// `code` is the real primary key of the seeded `decline_codes` table —
+// transactions.decline_code carries a NOT NULL foreign key into it, so an
+// invented code here is dropped by the ingestion consumer's poison-batch
+// handling exactly like an invalid merchant/provider/issuer id. Weights are
+// each row's real `baseline_share`.
 const CARD_DECLINE_MIX: readonly DeclineCode[] = [
-  { code: "DO_NOT_HONOR", rawCode: "05", weight: 0.32, family: "issuer", diagnostic: true },
-  { code: "INSUFFICIENT_FUNDS", rawCode: "51", weight: 0.26, family: "funds", diagnostic: false },
-  { code: "EXPIRED_CARD", rawCode: "54", weight: 0.11, family: "credential", diagnostic: false },
-  { code: "REFER_TO_ISSUER", rawCode: "01", weight: 0.08, family: "issuer", diagnostic: true },
-  { code: "SUSPECTED_FRAUD", rawCode: "59", weight: 0.05, family: "fraud", diagnostic: true },
-  { code: "AUTH_REQUIRED", rawCode: "1A", weight: 0.04, family: "auth", diagnostic: true },
-  { code: "NOT_PERMITTED", rawCode: "57", weight: 0.03, family: "issuer", diagnostic: true },
-  { code: "RESTRICTED_CARD", rawCode: "62", weight: 0.03, family: "issuer", diagnostic: true },
-  { code: "SECURITY_VIOLATION", rawCode: "63", weight: 0.02, family: "fraud", diagnostic: true },
-  { code: "PICKUP_CARD", rawCode: "04", weight: 0.02, family: "fraud", diagnostic: false },
-  { code: "ISSUER_UNAVAILABLE", rawCode: "91", weight: 0.02, family: "network", diagnostic: true },
-  { code: "INVALID_ACCOUNT", rawCode: "14", weight: 0.015, family: "credential", diagnostic: false },
-  { code: "LIMIT_EXCEEDED", rawCode: "65", weight: 0.005, family: "funds", diagnostic: false },
+  { code: "05", weight: 0.32, family: "issuer", diagnostic: true },
+  { code: "51", weight: 0.26, family: "funds", diagnostic: false },
+  { code: "54", weight: 0.11, family: "credential", diagnostic: false },
+  { code: "01", weight: 0.08, family: "issuer", diagnostic: true },
+  { code: "59", weight: 0.03, family: "fraud", diagnostic: true },
+  { code: "57", weight: 0.03, family: "issuer", diagnostic: true },
+  { code: "62", weight: 0.03, family: "issuer", diagnostic: true },
+  { code: "1A", weight: 0.02, family: "auth", diagnostic: true },
+  { code: "34", weight: 0.02, family: "fraud", diagnostic: true },
+  { code: "63", weight: 0.02, family: "fraud", diagnostic: true },
+  { code: "65", weight: 0.02, family: "auth", diagnostic: true },
+  { code: "91", weight: 0.02, family: "network", diagnostic: true },
+  { code: "14", weight: 0.015, family: "credential", diagnostic: false },
+  { code: "04", weight: 0.01, family: "fraud", diagnostic: false },
+  { code: "41", weight: 0.005, family: "fraud", diagnostic: false },
+  { code: "43", weight: 0.005, family: "fraud", diagnostic: false },
+  { code: "61", weight: 0.005, family: "funds", diagnostic: false },
 ];
 
 const PIX_DECLINE_MIX: readonly DeclineCode[] = [
-  { code: "PIX_INSUFFICIENT_FUNDS", rawCode: "AM05", weight: 0.55, family: "funds", diagnostic: false },
-  { code: "PIX_SPI_TIMEOUT", rawCode: "AB03", weight: 0.15, family: "network", diagnostic: true },
-  { code: "PIX_INVALID_TAXID", rawCode: "BE01", weight: 0.15, family: "credential", diagnostic: false },
-  { code: "PIX_NOT_AUTHORIZED", rawCode: "DS0G", weight: 0.1, family: "fraud", diagnostic: true },
-  { code: "PIX_RECEIVER_REJECTED", rawCode: "BE17", weight: 0.05, family: "merchant", diagnostic: true },
+  { code: "AM05", weight: 0.55, family: "funds", diagnostic: false },
+  { code: "AB03", weight: 0.15, family: "network", diagnostic: true },
+  { code: "DS0G", weight: 0.10, family: "fraud", diagnostic: true },
+  { code: "BE01", weight: 0.08, family: "credential", diagnostic: false },
+  { code: "CH11", weight: 0.07, family: "credential", diagnostic: false },
+  { code: "BE17", weight: 0.05, family: "merchant", diagnostic: true },
 ];
 
 export function declineMixFor(
@@ -53,7 +62,6 @@ export function declineMixFor(
 export function declineCodeFor(
   paymentMethod: PaymentMethod,
   random: () => number,
-  cardBrand?: CardBrand,
   overrideWeights: Readonly<Record<string, number>> = {},
   context?: DeclineMixContext,
 ): DeclineCode {
@@ -61,14 +69,7 @@ export function declineCodeFor(
     ...entry,
     weight: overrideWeights[entry.code] ?? entry.weight,
   }));
-  const selected = pickWeighted(mix, random());
-
-  // Network code 65 is brand-dependent; the internal code must remain unambiguous.
-  if (paymentMethod === "CARD" && selected.rawCode === "65" && cardBrand === "Mastercard") {
-    return { ...selected, code: "AUTH_REQUIRED" };
-  }
-
-  return selected;
+  return pickWeighted(mix, random());
 }
 
 function variationFor(value: string): number {
