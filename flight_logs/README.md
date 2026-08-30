@@ -15,3 +15,4 @@ Arquivos:
 3. `transacoes_sincronas.md` — Transações Síncronas
 4. `quantidade_de_valores_dimensoes.md` — Definição de Quantidade de Valores Das Dimensões
 5. `cotacao_em_dolar.md` — Dólar como moeda padrão mas com registro de moeda local
+6. `deteccao_wilson.md` — Detector usa intervalo de Wilson; saída é o contrato `ConfirmedDrop`

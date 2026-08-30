@@ -9,7 +9,7 @@ doc_related:
   - "flight_logs/README.md"
 domain: "engineering-governance"
 dimension_schema: []
-time: "2026-08-30T01:00:00Z"
+time: "2026-08-30T03:15:01Z"
 ---
 
 # AGENTS.md
@@ -42,11 +42,11 @@ caso de conflito. Não decida silenciosamente uma pendência P1-P4. Pergunte ao
 usuário e registre o resultado no decision log antes de implementar trabalho
 que dependa dela.
 
-Conflito conhecido na documentação: DD11 em `context/schema.md` especifica um
-teste beta-binomial, enquanto partes de `context/roadmap.md` e
-`context/rules.md` citam intervalo de Wilson. Não implemente nem altere a
-estatística do detector até o usuário confirmar a escolha autoritativa e os
-arquivos de contexto afetados ficarem consistentes.
+DD11 está resolvido: o teste do detector é o **intervalo de Wilson** (fórmula
+fechada, `z = 1.96`, persistência de 3 janelas). `context/schema.md` §6.3 é a
+referência normativa; o registro da decisão está em
+`flight_logs/deteccao_wilson.md`. O spec do detector é `context/detector.md`
+(`YCT-DETECT-001`).
 
 ## Fronteiras arquiteturais inegociáveis
 
