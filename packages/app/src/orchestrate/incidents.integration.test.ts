@@ -170,6 +170,39 @@ describe("incident writer", () => {
     expect(after?.detectedAt.toISOString()).toBe(BUCKET_2);
   });
 
+  // A restart re-investigates every live incident, so a second run can land
+  // after a first one already succeeded. If that second run falls back, its
+  // deterministic object must not undo the finished investigation.
+  it("does not let a later fallback downgrade an agent-enriched incident", async () => {
+    const writer = createIncidentWriter();
+    const fingerprint = `test-${randomUUID()}`;
+    const opened = await writer.openOrUpdate(evidenceFixture(fingerprint, BUCKET_1));
+    created.push(opened.incidentId);
+
+    await writer.attachNarrative({
+      incidentId: opened.incidentId,
+      evidence: { ...evidenceFixture(fingerprint, BUCKET_1), diagnosisSource: "agent" },
+      narrativeOps: "agent narrative",
+      narrativeExec: "agent exec",
+      playbookId: "method-country-default",
+    });
+
+    await writer.attachNarrative({
+      incidentId: opened.incidentId,
+      evidence: { ...evidenceFixture(fingerprint, BUCKET_2), diagnosisSource: "beam_search" },
+      narrativeOps: "fallback narrative",
+      narrativeExec: "fallback exec",
+      playbookId: "provider-default",
+    });
+
+    const [after] = await db.select().from(incidents).where(eq(incidents.incidentId, opened.incidentId));
+    expect((after?.evidence as EvidenceObject).diagnosisSource).toBe("agent");
+    // The triple stays together: dropping the evidence but keeping the text
+    // would leave a narrative describing a diagnosis the row no longer holds.
+    expect(after?.narrativeOps).toBe("agent narrative");
+    expect(after?.playbookId).toBe("method-country-default");
+  });
+
   // An agent that settles on a peeled sibling's cell produces an object keyed
   // by the sibling's fingerprint. It belongs to that row, not this one.
   it("keeps the deterministic evidence when the agent's object is for another cell", async () => {

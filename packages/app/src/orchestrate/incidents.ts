@@ -108,10 +108,26 @@ export function createIncidentWriter(database: Database = defaultDatabase): Inci
       // and never in the column the UI reads, so every incident rendered as a
       // deterministic one no matter how the investigation went.
       const [row] = await database
-        .select({ fingerprint: incidents.fingerprint })
+        .select({
+          fingerprint: incidents.fingerprint,
+          diagnosisSource: sql<string | null>`${incidents.evidence}->>'diagnosisSource'`,
+        })
         .from(incidents)
         .where(eq(incidents.incidentId, input.incidentId))
         .limit(1);
+
+      // A live incident can be investigated more than once — the coordinator's
+      // `investigated` set lives in process memory, so every restart re-opens
+      // every incident still down. When the first run succeeds and a later one
+      // times out, that later run's fallback arrives holding beam_search
+      // evidence for a row that already has the agent's. Taking it would undo
+      // a finished investigation, so the whole triple is dropped: evidence,
+      // narrative and playbook were written together from one object and stay
+      // together (rules.md §4 — the text may not cite a number absent from the
+      // evidence), and what is already on the row is the better matched pair.
+      if (row?.diagnosisSource === "agent" && input.evidence.diagnosisSource === "beam_search") {
+        return;
+      }
 
       // Peeling can put two evidence objects under one signal, each with its
       // own incident (spec.md §4 criterion 5). The agent picks its cell out of
