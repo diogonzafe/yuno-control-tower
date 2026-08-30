@@ -1,3 +1,3 @@
-import { PortfolioPage } from "../components/portfolio/portfolio-page";
+import { ControlTower } from "../components/control-tower/control-tower";
 
-export default function HomePage() { return <PortfolioPage />; }
+export default function HomePage() { return <ControlTower />; }
