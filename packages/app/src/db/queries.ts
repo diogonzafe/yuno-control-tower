@@ -25,6 +25,7 @@ function toRollupRow(row: RollupSelect): RollupRow {
     issuerId: row.issuerId,
     attempts: row.attempts,
     approved: row.approved,
+    amountMinorSum: row.amountMinorSum,
     amountUsdSum: row.amountUsdSum,
     approvedUsdSum: row.approvedUsdSum,
   };

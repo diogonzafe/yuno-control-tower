@@ -18,7 +18,7 @@ function historyRow(bucket: string, attempts: number, approved: number): RollupR
   return {
     bucket, merchantId: "BR_STORE_01", providerId: "adyen", country: "BR",
     paymentMethod: "CARD", issuerId: "itau", attempts, approved,
-    amountUsdSum: attempts * 10, approvedUsdSum: approved * 10,
+    amountMinorSum: attempts * 50, amountUsdSum: attempts * 10, approvedUsdSum: approved * 10,
   };
 }
 

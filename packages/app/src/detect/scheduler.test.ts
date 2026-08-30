@@ -55,7 +55,7 @@ function healthyRows(bucket: string): RollupRow[] {
   return [{
     bucket, merchantId: "BR_STORE_01", providerId: "adyen", country: "BR",
     paymentMethod: "CARD", issuerId: "itau", attempts: 100, approved: 95,
-    amountUsdSum: 1000, approvedUsdSum: 950,
+    amountMinorSum: 5000, amountUsdSum: 1000, approvedUsdSum: 950,
   }];
 }
 
@@ -200,7 +200,7 @@ describe("createScheduler persistence across ticks", () => {
     return [{
       bucket, merchantId: "BR_STORE_01", providerId: "adyen", country: "BR",
       paymentMethod: "CARD", issuerId: "itau", attempts: 100, approved: 20,
-      amountUsdSum: 1000, approvedUsdSum: 200,
+      amountMinorSum: 5000, amountUsdSum: 1000, approvedUsdSum: 200,
     }];
   }
 
