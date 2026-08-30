@@ -2,7 +2,7 @@
 
 import type { Catalog, IncidentRow } from "@control-tower/app";
 import { formatLocal, formatPercent, formatRelativeSince, formatUsd, formatUsdPerMin } from "../../lib/format";
-import { declineCodeLabel } from "../../lib/labels";
+import { decisionTagLabel, declineCodeLabel } from "../../lib/labels";
 import { dimensionLabel, executiveNarrative, operationsNarrative, playbookFor, type Audience } from "../../lib/narrative";
 import { statusBadge } from "../../lib/status";
 
@@ -129,37 +129,20 @@ export function EvidencePanel({ incident, catalog, audience }: { incident: Incid
   );
 }
 
-function TrailStep({ step }: { step: import("@control-tower/contracts").InvestigationStep }) {
-  const summary = summarizeTool(step);
+function TrailStep({ step }: { step: import("@control-tower/contracts").InvestigationAuditStep }) {
   return (
     <div className="ct-trail-step">
       <span className="ct-trail-step__no">{step.stepNo}</span>
       <div className="ct-trail-step__body">
-        <span className="ct-trail-step__q">{summary.question}</span>
-        <span className="ct-trail-step__a">{summary.answer}</span>
-        <span className="ct-trail-step__tool">{step.toolName} · {step.actor}</span>
+        <span className="ct-trail-step__q">{decisionTagLabel(step.decisionTag)}</span>
+        <span className="ct-trail-step__a">{step.decisionSummary}</span>
+        <span className="ct-trail-step__tool">
+          {step.toolName}
+          {step.status === "failed" ? ` · failed${step.errorCode ? ` (${step.errorCode})` : ""}` : ""}
+        </span>
       </div>
     </div>
   );
-}
-
-function summarizeTool(step: import("@control-tower/contracts").InvestigationStep): { question: string; answer: string } {
-  if (step.toolName === "query_slice") {
-    const args = step.toolArgs as { splitBy?: string };
-    const result = step.toolResult as { rates?: Record<string, number>; fixed?: string };
-    const rates = result.rates ?? {};
-    const answer = Object.entries(rates).map(([key, value]) => `${key} ${(value * 100).toFixed(0)}%`).join(" · ");
-    return { question: `Split by ${args.splitBy ?? "dimension"}`, answer: result.fixed ? `${answer} — fixed ${args.splitBy}=${result.fixed}` : answer };
-  }
-  if (step.toolName === "residual_test") {
-    const result = step.toolResult as { suppressed?: unknown[]; explainedDeficit?: number };
-    return { question: "Residual test", answer: `${result.suppressed?.length ?? 0} echo(es) suppressed · ${((result.explainedDeficit ?? 0) * 100).toFixed(1)}pp explained` };
-  }
-  if (step.toolName === "decline_mix") {
-    const result = step.toolResult as { dominantCode?: string | null; totalDeclines?: number };
-    return { question: "Decline mix shift", answer: result.dominantCode ? `dominant code ${result.dominantCode} (${declineCodeLabel(result.dominantCode)}) · ${result.totalDeclines ?? 0} declines` : "no dominant code" };
-  }
-  return { question: step.toolName, answer: JSON.stringify(step.toolResult) };
 }
 
 function MixRow({ entry, dominant }: { entry: import("@control-tower/contracts").DeclineMixEntry; dominant: boolean }) {

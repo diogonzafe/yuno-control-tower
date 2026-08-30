@@ -31,6 +31,13 @@ export function declineCodeLabel(code: string): string {
   return DECLINE_CODE_LABELS[code] ?? code;
 }
 
+// DecisionTag from @control-tower/contracts is a screaming-snake-case enum
+// (HYPOTHESIS, DRILL_DOWN, ...) meant for machine matching; this turns it
+// into the short label the drill-down trail actually shows a human.
+export function decisionTagLabel(tag: string): string {
+  return tag.charAt(0) + tag.slice(1).toLowerCase().replace(/_/g, " ");
+}
+
 export const DIMENSION_LABELS: Record<string, string> = {
   merchantId: "Merchant",
   providerId: "Provider",
