@@ -1234,7 +1234,10 @@ import { transactions, rollupMinute } from "../db/schema";
 import { processBatch } from "./rollup";
 
 const BUCKET = new Date("2026-08-30T14:07:00.000Z");
-const MERCHANT_ID = "merchant-process-batch-test";
+// `processBatch` inserts into `transactions`, which has a NOT NULL FK to
+// `merchants` — use a real seeded merchant id (BR_STORE_01), never a
+// fabricated one, so this test never has to touch the shared catalog table.
+const MERCHANT_ID = "BR_STORE_01";
 
 function testEvent(id: string, overrides: Partial<TransactionEvent> = {}): TransactionEvent {
   return {
