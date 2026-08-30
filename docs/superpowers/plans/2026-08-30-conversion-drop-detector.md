@@ -8,7 +8,7 @@
 
 **Tech Stack:** Node 22, TypeScript strict/ESM, pnpm workspaces, Zod, Vitest. No statistics library (Wilson is closed-form).
 
-**Spec:** [context/detector.md](../../../context/detector.md) (`YCT-DETECT-001`). Read it and [flight_logs/deteccao_wilson.md](../../../flight_logs/deteccao_wilson.md) before starting. Domain background: `context/spec.md` §1, `context/schema.md` §6, `context/roadmap.md` §2.
+**Spec:** [context/detector.md](../../../context/detector.md) (`YCT-DETECT-001`). Read it and [flight_logs/wilson_detection.md](../../../flight_logs/wilson_detection.md) before starting. Domain background: `context/spec.md` §1, `context/schema.md` §6, `context/roadmap.md` §2.
 
 ## Global Constraints
 
@@ -88,7 +88,7 @@ Verified against the live DB. Use these exact IDs in every fixture and test.
 **Files:**
 - Modify: `AGENTS.md` (lines 45-49 region + front-matter `time:`)
 - Modify: `context/schema.md` (§6, "Consequências a declarar no decision log" area)
-- Commit (already on disk from brainstorming): `context/detector.md`, `flight_logs/deteccao_wilson.md`, `flight_logs/README.md`
+- Commit (already on disk from brainstorming): `context/detector.md`, `flight_logs/wilson_detection.md`, `flight_logs/README.md`
 
 **Interfaces:**
 - Consumes: nothing.
@@ -112,7 +112,7 @@ Replace it with:
 DD11 está resolvido: o teste do detector é o **intervalo de Wilson** (fórmula
 fechada, `z = 1.96`, persistência de 3 janelas). `context/schema.md` §6.3 é a
 referência normativa; o registro da decisão está em
-`flight_logs/deteccao_wilson.md`. O spec do detector é `context/detector.md`
+`flight_logs/wilson_detection.md`. O spec do detector é `context/detector.md`
 (`YCT-DETECT-001`).
 ```
 
@@ -128,18 +128,18 @@ In `context/schema.md` §6, in the bullet list under "Consequências a declarar 
 - **Raiz da varredura transversal de profundidade 1 = `merchant × país`** (não
   "filhos da raiz" global), dividindo por provider, emissor e método. É o que
   cobre "emissor cai para um único merchant". Detalhe e justificativa em
-  `context/detector.md` §5.4 e `flight_logs/deteccao_wilson.md`.
+  `context/detector.md` §5.4 e `flight_logs/wilson_detection.md`.
 ```
 
 - [ ] **Step 4: Verify no other doc still contradicts Wilson**
 
 Run: `grep -rn "beta-binomial\|beta binomial" . --include=*.md`
-Expected: matches only in `flight_logs/deteccao_wilson.md` (where it is named as a rejected option) and `context/schema.md` line ~4 (the v3 changelog line "sai o beta-binomial em favor do intervalo de Wilson", which is correct history). No match in `AGENTS.md`.
+Expected: matches only in `flight_logs/wilson_detection.md` (where it is named as a rejected option) and `context/schema.md` line ~4 (the v3 changelog line "sai o beta-binomial em favor do intervalo de Wilson", which is correct history). No match in `AGENTS.md`.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add AGENTS.md context/schema.md context/detector.md flight_logs/deteccao_wilson.md flight_logs/README.md
+git add AGENTS.md context/schema.md context/detector.md flight_logs/wilson_detection.md flight_logs/README.md
 git commit -m "docs: detector spec (YCT-DETECT-001) + Wilson flight log; reconcile AGENTS/schema"
 ```
 

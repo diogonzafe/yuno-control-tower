@@ -6,7 +6,7 @@ doc_related:
   - "context/schema.md"
   - "context/roadmap.md"
   - "flight_logs/ai_agent_module.md"
-  - "flight_logs/resumos_auditaveis_do_agente.md"
+  - "flight_logs/auditable_agent_summaries.md"
 domain: "agent-engineering"
 dimension_schema:
   - "merchant"
