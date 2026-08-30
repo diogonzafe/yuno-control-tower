@@ -1,11 +1,11 @@
 import Redis from "ioredis";
-import pino from "pino";
 import { transactionEventSchema, type TransactionEvent } from "@control-tower/contracts";
 import { processBatch } from "./process-batch";
+import { createLogger } from "../logging.js";
 
 // Silenced under vitest so expected-error-path tests (malformed payloads,
 // schema failures) don't spam pristine test output with intentional log lines.
-const logger = pino({ name: "ingest-consumer", level: process.env.VITEST ? "silent" : "info" });
+const logger = createLogger("ingest-consumer");
 
 const STREAM_KEY = "stream:transactions";
 const GROUP_NAME = "ingest";

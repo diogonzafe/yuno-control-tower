@@ -1,6 +1,6 @@
-import pino from "pino";
+import { createLogger } from "../logging.js";
 
-const logger = pino({ name: "sse-hub", level: process.env.VITEST ? "silent" : "info" });
+const logger = createLogger("sse-hub");
 
 const DEFAULT_HEARTBEAT_MS = 20_000;
 

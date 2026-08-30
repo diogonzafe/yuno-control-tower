@@ -40,6 +40,8 @@ describe("agent module", () => {
       narratorFallbackModel: "openai/gpt-5.6-luna",
       maxToolCalls: 12,
       timeoutMs: 45_000,
+      // rules.md §3 boundary #3: the deterministic fallback ships on.
+      fallbackEnabled: true,
     });
   });
 

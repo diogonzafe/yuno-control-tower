@@ -60,24 +60,15 @@ const COVERAGE: RoutingCoverage = ["stripe", "adyen", "mercado_pago"].map((provi
 }));
 
 // The same nine-cell BR/CARD grid the diagnosis fixtures use, repeated in each
-// of the three minutes: adyen x itau at 300/30, every sibling at 100/95.
+// of the three minutes: adyen x itau at 300/30, every sibling at 100/95, at the
+// fixture's own 100 USD ticket.
 //
-// Only the ticket size is rescaled, from the fixture's 100 USD to 5 USD. Every
-// attempt and approval — everything detection and diagnosis actually read — is
-// untouched. The reason is incidents.priority_score, which is numeric(10,4):
-// 900 attempts of a 100 USD ticket over three minutes puts costUsdPerMin past
-// 10^6 and the INSERT fails with "numeric field overflow" before a single
-// assertion runs. That ceiling is real outside this test too.
-const USD_TICKET_MINOR = 500;
-const BRL_TICKET_MINOR = 2_500;
-const ALL_ROWS: RollupRow[] = BUCKETS.flatMap((bucket) =>
-  brCardGrid(bucket).map((row) => ({
-    ...row,
-    amountMinorSum: row.attempts * BRL_TICKET_MINOR,
-    amountUsdSum: row.attempts * USD_TICKET_MINOR,
-    approvedUsdSum: row.approved * USD_TICKET_MINOR,
-  })),
-);
+// This ticket used to be rescaled down to 5 USD, because 900 attempts of a
+// 100 USD ticket puts costUsdPerMin past 10^6 and incidents.priority_score was
+// numeric(10,4) — the INSERT died with "numeric field overflow" before a single
+// assertion ran. The column is numeric(20,4) now (migration 0004), so the
+// expensive case is the one this suite proves.
+const ALL_ROWS: RollupRow[] = BUCKETS.flatMap((bucket) => brCardGrid(bucket));
 
 const created: string[] = [];
 

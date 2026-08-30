@@ -248,7 +248,11 @@ export const incidents = pgTable(
     costLocal: jsonb("cost_local"), // {"BRL": 128400}
     costUsdMinor: bigint("cost_usd_minor", { mode: "number" }).notNull(),
     costUsdPerMin: bigint("cost_usd_per_min", { mode: "number" }).notNull(),
-    priorityScore: numeric("priority_score", { precision: 10, scale: 4 }).notNull(),
+    // Same unit as costUsdPerMin: USD *minor* units per minute (cost.ts sets
+    // priorityScore = costUsdPerMin). numeric(10,4) capped this at 999999.9999
+    // minor units — a hair under $10k/min — and the worst incidents there are
+    // are exactly the ones that blew the INSERT and never opened.
+    priorityScore: numeric("priority_score", { precision: 20, scale: 4 }).notNull(),
 
     evidence: jsonb("evidence").notNull(),
     narrativeOps: text("narrative_ops"),

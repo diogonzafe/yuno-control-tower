@@ -8,7 +8,7 @@ import { resolve } from "node:path";
 config({ path: resolve(import.meta.dirname, "../../../.env") });
 
 const [
-  { default: pino },
+  { createLogger },
   { startConsumer },
   queries,
   { startScheduler },
@@ -19,7 +19,7 @@ const [
   { buildServer },
   orchestrate,
 ] = await Promise.all([
-  import("pino"),
+  import("./logging.js"),
   import("./ingest/consumer.js"),
   import("./db/queries.js"),
   import("./detect/scheduler.js"),
@@ -50,7 +50,7 @@ function sharesRoot(
   return cell.merchantId === signal.merchantId && cell.country === signal.country;
 }
 
-const logger = pino({ name: "app" });
+const logger = createLogger("app");
 const port = Number(process.env.APP_PORT ?? process.env.PORT ?? 4000);
 
 // onResult is synchronous and the scheduler's catch-up loop calls it once per
@@ -99,6 +99,11 @@ const coordinator = agent.createAgentCoordinator({
   onNarrative: (payload: { incidentId: string; narrative: import("@control-tower/contracts").NarrativeOutput }) =>
     hub.broadcast("narrative", payload),
   onMemoryError: (error: unknown) => logger.warn({ error }, "incident memory recall failed"),
+  // AGENT_FALLBACK_ENABLED=false only: the incident keeps the deterministic
+  // evidence written at tick time but never gets a narrative, and a warning
+  // is the only thing standing between that and a silent gap.
+  onFallbackSkipped: (input: { incidentId: string; runId: string }) =>
+    logger.warn(input, "deterministic fallback disabled, incident left without a narrative"),
 });
 let ingestUp = true;
 

@@ -1,6 +1,6 @@
 import { config } from "dotenv";
 import Redis from "ioredis";
-import pino from "pino";
+import { createLogger } from "./logging.js";
 import { resolve } from "node:path";
 
 import { pickAutoIncidents } from "./auto-incidents.ts";
@@ -12,7 +12,7 @@ import { createSeededRandom } from "./random.ts";
 
 config({ path: resolve(import.meta.dirname, "../../../.env") });
 
-const logger = pino({ name: "generator" });
+const logger = createLogger("generator");
 
 const redisUrl = process.env.REDIS_URL;
 if (!redisUrl) {

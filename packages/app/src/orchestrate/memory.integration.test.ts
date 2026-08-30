@@ -5,6 +5,11 @@ import { db } from "../db/client";
 import { incidents } from "../db/schema";
 import { createIncidentMemory } from "./memory";
 
+// Far-future buckets, not the epoch: lifecycle.ts selects EVERY active incident
+// with no time bound, so an app running against the same shared database would
+// reconcile at a bucket of today and resolve the `monitoring` seed below — the
+// one this suite requires memory NOT to recall. A detected_at in 2999 makes the
+// quiet-window count negative, so no live reconcile can reach these rows.
 const created: string[] = [];
 
 async function seedIncident(input: {
@@ -23,7 +28,7 @@ async function seedIncident(input: {
     ciLow: "0.47000",
     ciHigh: "0.55000",
     ciLevel: "0.950",
-    startedAt: new Date("1970-01-01T00:07:00.000Z"),
+    startedAt: new Date("2999-01-01T00:07:00.000Z"),
     startedAtExact: true,
     detectedAt: new Date(input.detectedAt),
     resolvedAt: input.status === "resolved" ? new Date(input.detectedAt) : null,
@@ -56,21 +61,21 @@ describe("incident memory", () => {
     const older = await seedIncident({
       fingerprint,
       status: "resolved",
-      detectedAt: "1970-01-01T00:10:00.000Z",
+      detectedAt: "2999-01-01T00:10:00.000Z",
       playbookId: "provider-default",
     });
     // Still live: not history yet, must not be recalled.
     await seedIncident({
       fingerprint,
       status: "monitoring",
-      detectedAt: "1970-01-01T00:20:00.000Z",
+      detectedAt: "2999-01-01T00:20:00.000Z",
       playbookId: "provider-default",
     });
     // A different cell entirely.
     await seedIncident({
       fingerprint: `test-${randomUUID()}`,
       status: "resolved",
-      detectedAt: "1970-01-01T00:12:00.000Z",
+      detectedAt: "2999-01-01T00:12:00.000Z",
       playbookId: "issuer-default",
     });
 
@@ -88,19 +93,19 @@ describe("incident memory", () => {
     const current = await seedIncident({
       fingerprint,
       status: "resolved",
-      detectedAt: "1970-01-01T00:30:00.000Z",
+      detectedAt: "2999-01-01T00:30:00.000Z",
       playbookId: "provider-default",
     });
     await seedIncident({
       fingerprint,
       status: "resolved",
-      detectedAt: "1970-01-01T00:20:00.000Z",
+      detectedAt: "2999-01-01T00:20:00.000Z",
       playbookId: "provider-default",
     });
     await seedIncident({
       fingerprint,
       status: "resolved",
-      detectedAt: "1970-01-01T00:10:00.000Z",
+      detectedAt: "2999-01-01T00:10:00.000Z",
       playbookId: "provider-default",
     });
 
@@ -113,7 +118,7 @@ describe("incident memory", () => {
 
     expect(recalled).toHaveLength(1);
     // Most recent first.
-    expect(recalled[0]?.summary).toContain("1970-01-01T00:20");
+    expect(recalled[0]?.summary).toContain("2999-01-01T00:20");
   });
 
   it("returns a null root cause when no playbook matched", async () => {
@@ -121,7 +126,7 @@ describe("incident memory", () => {
     await seedIncident({
       fingerprint,
       status: "resolved",
-      detectedAt: "1970-01-01T00:10:00.000Z",
+      detectedAt: "2999-01-01T00:10:00.000Z",
       playbookId: null,
     });
 

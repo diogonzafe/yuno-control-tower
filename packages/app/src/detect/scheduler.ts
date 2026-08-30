@@ -1,5 +1,5 @@
 import type { ConfirmedDrop, EvidenceGap, EvidenceObject } from "@control-tower/contracts";
-import pino from "pino";
+import { createLogger } from "../logging.js";
 import type { DeclineSource, RollupSource } from "../db/queries.js";
 import { DECLINE_CURRENT_LOOKBACK_MIN, DECLINE_HISTORY_LOOKBACK_MIN } from "../diagnose/constants.js";
 import { buildEvidence } from "../diagnose/evidence.js";
@@ -10,7 +10,7 @@ import { runDetectionTick } from "./tick.js";
 import type { PersistenceState } from "./persistence.js";
 import type { MerchantConfig, RollupRow, RoutingCoverage } from "./types.js";
 
-const logger = pino({ name: "detector-scheduler", level: process.env.VITEST ? "silent" : "info" });
+const logger = createLogger("detector-scheduler");
 
 const MINUTE_MS = 60_000;
 // Gives the ingest consumer time to finish writing the minute that just

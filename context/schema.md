@@ -385,7 +385,7 @@ CREATE TABLE incidents (
   cost_local         JSONB,                -- {"BRL": 128400}
   cost_usd_minor     BIGINT NOT NULL,
   cost_usd_per_min   BIGINT NOT NULL,
-  priority_score     NUMERIC(10,4) NOT NULL,
+  priority_score     NUMERIC(20,4) NOT NULL, -- centavos USD/min, mesma unidade de cost_usd_per_min
 
   evidence           JSONB NOT NULL,
   narrative_ops      TEXT,

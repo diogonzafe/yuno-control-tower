@@ -35,3 +35,5 @@ Files:
 15. `auditable_agent_summaries.md` — Structured public decision summaries instead of chain-of-thought
 16. `deterministic_trail_and_fingerprint.md` — The fallback also produces an investigation trail; fingerprint carries the dominant decline
 17. `detector_state_in_memory.md` — Confirmed signals and `PersistenceState` live only in process memory (ring buffer + SSE), never in `incidents`; the tick is timer-driven, not ingest-driven
+18. `fallback_kill_switch.md` — `AGENT_FALLBACK_ENABLED` kill switch for the deterministic fallback, default on
+19. `priority_score_precision.md` — `priority_score` holds minor units per minute; the column widened to `NUMERIC(20,4)`

@@ -30,6 +30,7 @@ type CoordinatorDeps = DeterministicInvestigationDataSourceDeps & {
   onEvidence?: (evidence: EvidenceObject) => void;
   onNarrative?: (payload: { incidentId: string; narrative: NarrativeOutput }) => void;
   onMemoryError?: (error: unknown) => void;
+  onFallbackSkipped?: (input: { incidentId: string; runId: string }) => void;
 };
 
 function shift(iso: string, minutes: number): string {
@@ -158,11 +159,24 @@ export function createAgentCoordinator(deps: CoordinatorDeps) {
     return { incidentId, evidence, narrative };
   }
 
+  // rules.md §3 boundary #3: the deterministic path is what makes the agent
+  // optional, so config.fallbackEnabled defaults to true and turning it off is
+  // an operator's kill switch, never the shipped behaviour. Off, a failed
+  // investigation leaves the incident with the deterministic evidence that
+  // orchestrate/incidents.ts already wrote at tick time — the row is there,
+  // only the narrative is missing — and the failed run is still recorded.
   async function executeFallback(
     request: InvestigationRequestV1,
     incidentId: string,
     previousRunIds: string[],
   ) {
+    if (!deps.config.fallbackEnabled) {
+      // An incident that silently never gets a narrative is exactly the kind of
+      // gap that hides for a whole demo, so it leaves a trace of its own.
+      deps.onFallbackSkipped?.({ incidentId, runId: previousRunIds[previousRunIds.length - 1]! });
+      return;
+    }
+
     const runId = randomUUID();
     const now = new Date().toISOString();
     const fallbackRequest: InvestigationRequestV1 = { ...request, runId };

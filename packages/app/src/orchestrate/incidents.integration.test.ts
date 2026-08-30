@@ -6,12 +6,20 @@ import { db } from "../db/client";
 import { incidents } from "../db/schema";
 import { createIncidentWriter } from "./incidents";
 
-// The epoch, deliberately: this suite writes to the shared production-shape
-// database, which holds ~90k real retroactive rows. A 1970 bucket is a minute
-// no real or demo-generated transaction can ever fall into.
-const BUCKET_1 = "1970-01-01T00:10:00.000Z";
-const BUCKET_2 = "1970-01-01T00:11:00.000Z";
-const STARTED_AT = "1970-01-01T00:07:00.000Z";
+// A minute no real or demo-generated transaction can ever fall into: this suite
+// writes to the shared production-shape database, which holds ~90k real
+// retroactive rows.
+//
+// Far future rather than the epoch, unlike the suites that call reconcile. This
+// one only opens incidents and then asserts their status, and lifecycle.ts
+// selects EVERY active incident with no time bound: an app running against the
+// same database reconciles at a bucket of today, counts millions of quiet
+// windows against a 1970 detected_at and resolves these rows out from under the
+// assertions. With detected_at in 2999 the count is negative, so planTransitions
+// skips them and no live process can touch them.
+const BUCKET_1 = "2999-01-01T00:10:00.000Z";
+const BUCKET_2 = "2999-01-01T00:11:00.000Z";
+const STARTED_AT = "2999-01-01T00:07:00.000Z";
 
 const created: string[] = [];
 
@@ -123,5 +131,26 @@ describe("incident writer", () => {
     expect(after?.costUsdMinor).toBe(before?.costUsdMinor);
     expect(after?.status).toBe(before?.status);
     expect(after?.detectedAt.toISOString()).toBe(before?.detectedAt.toISOString());
+  });
+
+  // priority_score was numeric(10,4), so anything past 999999.9999 minor units
+  // per minute — a hair under $10k/min — failed the INSERT with "numeric field
+  // overflow". The incidents that hit it are by definition the most expensive
+  // ones, and they never opened.
+  it("opens an incident costing far more than $10k per minute", async () => {
+    const writer = createIncidentWriter();
+    const fingerprint = `test-${randomUUID()}`;
+    const evidence = evidenceFixture(fingerprint, BUCKET_1);
+
+    const opened = await writer.openOrUpdate({
+      ...evidence,
+      costUsdMinor: 15_000_000,
+      costUsdPerMin: 5_000_000, // $50k/min
+      priorityScore: 5_000_000,
+    });
+    created.push(opened.incidentId);
+
+    const [row] = await db.select().from(incidents).where(eq(incidents.incidentId, opened.incidentId));
+    expect(row?.priorityScore).toBe("5000000.0000");
   });
 });

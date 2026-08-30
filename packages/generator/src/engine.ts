@@ -1,4 +1,4 @@
-import pino from "pino";
+import { createLogger } from "./logging.js";
 
 import {
   buildTransactionCells,
@@ -11,7 +11,7 @@ import { createSeededRandom, type SeededRandom } from "./random.ts";
 import { generateTransaction } from "./transaction.ts";
 import { transactionsPerSecond } from "./volume.ts";
 
-const logger = pino({ name: "generator-engine", level: process.env.VITEST ? "silent" : "info" });
+const logger = createLogger("generator-engine");
 
 // Ten seconds of backlog at the default 60 TPS. Past this the generator is
 // losing to its sink and should shed load rather than queue it forever.

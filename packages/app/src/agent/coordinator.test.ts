@@ -59,6 +59,7 @@ function deps(overrides: Partial<Parameters<typeof createAgentCoordinator>[0]> =
         // on a network call. This drives the timeout -> fallback path, which is
         // the one boundary #3 exists to guarantee.
         timeoutMs: 50,
+        fallbackEnabled: true,
       },
       onEvidence: (item: EvidenceObject) => { evidence.push(item); },
       memory: { async recallByFingerprint() { return []; } },
@@ -253,5 +254,43 @@ describe("createAgentCoordinator evidence assembly (rules.md §3 consequence)", 
       ]),
     );
     expect(item.windowBucket).toBe(BUCKET);
+  });
+});
+
+// The kill switch, for an operator watching the fallback itself misbehave.
+// Default-on is the shipped behaviour, and every test above depends on it.
+describe("createAgentCoordinator with the fallback disabled", () => {
+  it("records the failed agent run and never starts a beam search", async () => {
+    const { built, evidence, attached, repository } = deps();
+    const createRun = vi.spyOn(repository, "createRun");
+    const onFallbackSkipped = vi.fn();
+    const coordinator = createAgentCoordinator({
+      ...built,
+      config: { ...built.config, fallbackEnabled: false },
+      onFallbackSkipped,
+    });
+
+    await coordinator.handleSignal({
+      signal: confirmedDrop(BR_ROOT),
+      incidentId: INCIDENT_ID,
+      fingerprint: FINGERPRINT,
+    });
+
+    // No deterministic diagnosis: no evidence, no narrative. The incident keeps
+    // only what orchestrate/incidents.ts already wrote at tick time.
+    expect(evidence).toHaveLength(0);
+    expect(attached).toHaveLength(0);
+
+    // Exactly one run, the agent's — a second one with actor "fallback" is the
+    // thing the flag turns off.
+    expect(createRun).toHaveBeenCalledTimes(1);
+    const { runId, actor } = createRun.mock.calls[0]![0];
+    expect(actor).toBe("agent");
+    const run = await repository.getRun(runId);
+    expect(run?.status).toBe("timed_out");
+    expect(run?.failureCode).toBe("TIMEOUT");
+
+    // A skipped fallback must not be silent: run.ts turns this into a warning.
+    expect(onFallbackSkipped).toHaveBeenCalledWith({ incidentId: INCIDENT_ID, runId });
   });
 });
