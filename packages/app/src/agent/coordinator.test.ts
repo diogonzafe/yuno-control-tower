@@ -210,12 +210,15 @@ describe("createAgentCoordinator memory recall (spec.md §5 bonus)", () => {
   it("investigates anyway when the memory lookup fails", async () => {
     // Memory is never on the critical path: a repeat incident is a bonus
     // (spec.md §5), not a precondition for diagnosing the live one.
+    const memoryError = new Error("memory unavailable");
+    const onMemoryError = vi.fn();
     const { built, evidence } = deps({
       memory: {
         async recallByFingerprint() {
-          throw new Error("memory unavailable");
+          throw memoryError;
         },
       },
+      onMemoryError,
     });
 
     await createAgentCoordinator(built).handleSignal({
@@ -225,6 +228,7 @@ describe("createAgentCoordinator memory recall (spec.md §5 bonus)", () => {
     });
 
     expect(evidence).toHaveLength(1);
+    expect(onMemoryError).toHaveBeenCalledWith(memoryError);
   });
 });
 

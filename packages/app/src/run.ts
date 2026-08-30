@@ -98,6 +98,7 @@ const coordinator = agent.createAgentCoordinator({
   },
   onNarrative: (payload: { incidentId: string; narrative: import("@control-tower/contracts").NarrativeOutput }) =>
     hub.broadcast("narrative", payload),
+  onMemoryError: (error: unknown) => logger.warn({ error }, "incident memory recall failed"),
 });
 let ingestUp = true;
 

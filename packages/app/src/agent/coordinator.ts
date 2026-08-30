@@ -29,6 +29,7 @@ type CoordinatorDeps = DeterministicInvestigationDataSourceDeps & {
   config: AgentConfig;
   onEvidence?: (evidence: EvidenceObject) => void;
   onNarrative?: (payload: { incidentId: string; narrative: NarrativeOutput }) => void;
+  onMemoryError?: (error: unknown) => void;
 };
 
 function shift(iso: string, minutes: number): string {
@@ -215,7 +216,14 @@ export function createAgentCoordinator(deps: CoordinatorDeps) {
       // live one.
       const similarIncidents = await deps.memory
         .recallByFingerprint({ fingerprint: input.fingerprint, excludeIncidentId: incidentId })
-        .catch(() => []);
+        .catch((error: unknown) => {
+          // Unlike the runInvestigation failure path below, this has no
+          // durable record (no failRun) — onMemoryError is the only trace a
+          // persistently failing recall leaves, so a real bug in the memory
+          // layer doesn't degrade silently and indefinitely to "no priors".
+          deps.onMemoryError?.(error);
+          return [];
+        });
       const request = buildRequest(signal, similarIncidents);
       await deps.repository.createRun({
         runId: request.runId,
