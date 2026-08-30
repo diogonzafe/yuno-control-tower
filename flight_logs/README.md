@@ -28,3 +28,4 @@ Files:
 8. `ingestao_em_micro_batch_com_dedup.md` — Micro-batch ingestion with deduplication via RETURNING
 9. `deteccao_wilson.md` — Wilson detector and `ConfirmedDrop` output contract
 10. `infra_gerenciada_na_nuvem.md` — Managed cloud Postgres/Redis instead of docker-compose
+11. `quem_monta_o_evidence_object.md` — `diagnose/` assembles the `EvidenceObject`, not the agent

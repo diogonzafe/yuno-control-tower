@@ -14,7 +14,7 @@ dimension_schema:
   - "country"
   - "payment_method"
   - "issuer"
-time: "2026-08-30T02:36:41Z"
+time: "2026-08-30T05:00:00Z"
 ---
 
 # The Control Tower — Motor de detecção de queda de conversão
@@ -604,8 +604,16 @@ log `flight_logs/deteccao_wilson.md`.
   | `windowBucket` | base de `detected_at` |
 
   `lost_approvals`, `cost_*`, `priority_score`, `evidence`, `narrative_*`,
-  `playbook_id`, `embedding` são preenchidos por `diagnose/`, `agent/` e
-  `orchestrate/`, não pelo detector.
+  `playbook_id`, `embedding` não são preenchidos pelo detector. A divisão,
+  fechada em `flight_logs/quem_monta_o_evidence_object.md`:
+
+  | Coluna | Quem preenche |
+  |---|---|
+  | `lost_approvals`, `cost_*`, `priority_score` | `diagnose/` (`cost.ts`) |
+  | `evidence` | **`diagnose/evidence.ts`**, determinístico — o `ConfirmedDrop` acima entra nele como a parte "o que caiu". O agente nunca monta o objeto; só contribui a trilha opcional |
+  | `narrative_*` | `agent/narrator.ts`, a partir do `EvidenceObject` fechado |
+  | `playbook_id` | motor de playbooks |
+  | `embedding`, `fingerprint`, ciclo de vida | `orchestrate/` |
 
 - **`evidenceGaps: EvidenceGap[]`** — a UI mostra como o bônus "o sistema admite
   que não sabe" (`context/spec.md` §5).

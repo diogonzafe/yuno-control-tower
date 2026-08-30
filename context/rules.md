@@ -9,7 +9,7 @@ doc_related:
   - "flight_logs/README.md"
 domain: "engineering-governance"
 dimension_schema: []
-time: "2026-08-30T04:45:00Z"
+time: "2026-08-30T05:00:00Z"
 ---
 
 # The Control Tower — Regras de engenharia
@@ -94,6 +94,8 @@ Isso vem direto do roadmap §1 e é a regra mais importante deste documento:
 1. **O agente nunca vê transação crua.** Toda ferramenta exposta a ele devolve métrica já agregada (`rollup_minute` / `rollup_declines_minute`), nunca uma linha de `transactions`. Se uma tool nova retorna algo que se parece com uma transação individual, ela está errada por definição.
 2. **O narrador nunca calcula.** Recebe um objeto de evidência fechado (já contém todos os números) e só produz texto. Nenhum `+`, `-`, `*`, `/` no código do narrador. Se um número aparece na narrativa que não veio literalmente de um campo do objeto de evidência, é alucinação por construção — e o teste que pega isso é obrigatório (§4).
 3. **Todo caminho agêntico tem fallback determinístico.** Nenhuma feature que passa pelo agente pode ser a única forma de chegar ao diagnóstico. Se o agente não existisse, o beam search da F2 ainda produz o mesmo resultado, só sem a trilha de investigação.
+
+Consequência direta da #3, fechada em `flight_logs/quem_monta_o_evidence_object.md`: **quem monta o `EvidenceObject` é `diagnose/evidence.ts`, deterministicamente — nunca o agente.** Se o agente montasse, o fallback precisaria de uma segunda implementação do mesmo objeto. O agente só contribui a trilha opcional; `orchestrate/` persiste o objeto pronto sem inspecioná-lo; o narrador o consome fechado (fronteira #2).
 
 Code review rejeita qualquer PR que viole uma destas três, independente de passar nos testes.
 
@@ -242,7 +244,8 @@ control-tower/
 │   │       │   ├── peeling.ts        # DD18: incidentes simultâneos
 │   │       │   ├── parsimony.ts      # desempate
 │   │       │   ├── decline-mix.ts    # deslocamento da mistura
-│   │       │   └── cost.ts           # ponta conservadora do intervalo
+│   │       │   ├── cost.ts           # ponta conservadora do intervalo
+│   │       │   └── evidence.ts       # ⭐ monta o EvidenceObject (determinístico)
 │   │       ├── orchestrate/
 │   │       │   ├── fingerprint.ts
 │   │       │   ├── lifecycle.ts      # open->monitoring->resolved->inconclusive
