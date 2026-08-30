@@ -1,7 +1,8 @@
 import { Agent } from "@mastra/core/agent";
 import {
-  AgentDiagnosis,
+  AgentDiagnosisWire,
   AgentRunResult,
+  narrowAgentDiagnosis,
   type AgentDiagnosis as AgentDiagnosisType,
   type AgentRunResult as AgentRunResultType,
   type InvestigationRequestV1,
@@ -109,7 +110,15 @@ function classifyFailure(
   if (error instanceof StepBudgetExceededError) {
     return { failureCode: "STEP_BUDGET_EXHAUSTED", message: error.message };
   }
-  if (error instanceof Error && error.name === "TimeoutError") {
+  // Our own deadline (TimeoutError / AbortError from the AbortController) and
+  // Mastra's native modelSettings.timeout (MastraTimeoutError) both land here.
+  if (
+    error instanceof Error &&
+    (error.name === "TimeoutError" ||
+      error.name === "AbortError" ||
+      error.name === "MastraTimeoutError" ||
+      /\b(timed out|timeout|aborted)\b/i.test(error.message))
+  ) {
     return { failureCode: "TIMEOUT", message: error.message };
   }
   if (error instanceof Error && error.message.includes("required evidence")) {
@@ -127,15 +136,27 @@ function classifyFailure(
   };
 }
 
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+// Race a deadline that also *aborts* the underlying work. Mastra honours
+// `modelSettings.timeout` natively, but a hung socket or a provider SDK
+// swallowing the signal used to leave `agent.generate` pending for tens of
+// minutes (one recorded run ran 44 min) while the outer promise had already
+// rejected — and that stuck promise kept run.ts's orchestrationTail queue
+// blocked behind it. Firing the AbortController on the same timer cancels the
+// request for real; `withDeadline` still rejects so classifyFailure sees TIMEOUT.
+function withDeadline<T>(
+  start: (signal: AbortSignal) => Promise<T>,
+  timeoutMs: number,
+): Promise<T> {
+  const controller = new AbortController();
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => {
+      controller.abort();
       const error = new Error(`Agent timed out after ${timeoutMs}ms`);
       error.name = "TimeoutError";
       reject(error);
     }, timeoutMs);
 
-    promise.then(
+    start(controller.signal).then(
       (value) => {
         clearTimeout(timer);
         resolve(value);
@@ -165,21 +186,34 @@ export async function runInvestigation(
   const agent = options.agent ?? createInvestigatorAgent(options.config, tools);
 
   try {
-    const response = await withTimeout(
-      agent.generate(buildInvestigationPrompt(options.request), {
-        structuredOutput: {
-          schema: AgentDiagnosis,
-          errorStrategy: "strict",
-          jsonPromptInjection: true,
-        },
-        modelSettings: {
-          maxRetries: 0,
-        },
-        toolCallConcurrency: 1,
-      }),
+    const response = await withDeadline(
+      (abortSignal) =>
+        agent.generate(buildInvestigationPrompt(options.request), {
+          structuredOutput: {
+            // Flat, strict-mode-compatible shape (see AgentDiagnosisWire):
+            // the discriminated AgentDiagnosis is a root-level anyOf, which
+            // OpenAI Structured Outputs rejects, so `strict` never engaged and
+            // the model free-formed the JSON (INVALID_OUTPUT). narrow() below
+            // restores the real union.
+            schema: AgentDiagnosisWire,
+            errorStrategy: "strict",
+            jsonPromptInjection: true,
+          },
+          modelSettings: {
+            // One transient schema/API miss shouldn't sink the whole run.
+            maxRetries: 2,
+            // Native ceiling so a stuck step can't outlive the deadline.
+            timeout: {
+              totalMs: options.config.timeoutMs,
+              stepMs: Math.min(options.config.timeoutMs, 30_000),
+            },
+          },
+          toolCallConcurrency: 1,
+          abortSignal,
+        }),
       options.config.timeoutMs,
     );
-    const diagnosis = AgentDiagnosis.parse(response.object);
+    const diagnosis = narrowAgentDiagnosis(AgentDiagnosisWire.parse(response.object));
     const audit = await auditStore.getTrail();
     validateConclusiveDiagnosis(diagnosis, audit);
     return AgentRunResult.parse({

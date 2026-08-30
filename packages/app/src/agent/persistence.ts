@@ -7,7 +7,7 @@ import {
   type InvestigationRequestV1,
   type InvestigationRunFailureCode,
 } from "@control-tower/contracts";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { desc, eq, isNull } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { incidents, investigationRuns, investigationSteps } from "../db/schema.js";
 import type { InvestigationActor, InvestigationAuditStore } from "./audit.js";
@@ -403,10 +403,15 @@ export class PostgresInvestigationRunRepository implements InvestigationRunRepos
   }
 
   async listOrphanRuns(): Promise<RunRecord[]> {
+    // Both actors can strand a row in `running`: an agent run killed
+    // mid-request, or a fallback run whose persistOutcome threw (e.g. a
+    // narrator failure) before completeRun. Scoping this to 'agent' left
+    // fallback orphans stuck as "running" forever in the UI. recoverOrphanRuns
+    // closes fallback orphans without spawning yet another attempt.
     const rows = await this.database
       .select()
       .from(investigationRuns)
-      .where(and(eq(investigationRuns.actor, "agent"), eq(investigationRuns.status, "running")));
+      .where(eq(investigationRuns.status, "running"));
     return rows.map(toRunRecord);
   }
 

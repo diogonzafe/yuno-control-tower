@@ -159,12 +159,12 @@ export function createAgentCoordinator(deps: CoordinatorDeps) {
     return { incidentId, evidence, narrative };
   }
 
-  // rules.md §3 boundary #3: the deterministic path is what makes the agent
-  // optional, so config.fallbackEnabled defaults to true and turning it off is
-  // an operator's kill switch, never the shipped behaviour. Off, a failed
-  // investigation leaves the incident with the deterministic evidence that
-  // orchestrate/incidents.ts already wrote at tick time — the row is there,
-  // only the narrative is missing — and the failed run is still recorded.
+  // config.fallbackEnabled is off by default (AGENT_FALLBACK_ENABLED=true opts
+  // in). Off, a failed investigation leaves the incident with the deterministic
+  // evidence that orchestrate/incidents.ts already wrote at tick time — the row
+  // is there, only the narrative is missing — and the failed run is still
+  // recorded. rules.md §3 boundary #3 still holds one layer down: the incident
+  // never depends on the agent to exist.
   async function executeFallback(
     request: InvestigationRequestV1,
     incidentId: string,
@@ -291,9 +291,11 @@ export function createAgentCoordinator(deps: CoordinatorDeps) {
           status: "failed",
           failureCode: "MODEL_ERROR",
         });
-        // A run that never linked to an incident has nothing to enrich: the
-        // tick that produced it will re-open the incident on its own.
-        if (!orphan.incidentId) continue;
+        // A fallback orphan has already spent its deterministic attempt;
+        // starting another one here could chain across restarts. And a run that
+        // never linked to an incident has nothing to enrich — the tick that
+        // produced it re-opens the incident on its own. Either way: just close it.
+        if (orphan.actor === "fallback" || !orphan.incidentId) continue;
         await executeFallback(orphan.requestSnapshot, orphan.incidentId, [orphan.runId]);
       }
     },

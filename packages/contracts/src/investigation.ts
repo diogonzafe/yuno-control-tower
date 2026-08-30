@@ -194,6 +194,69 @@ export type InconclusiveAgentDiagnosis = z.infer<typeof InconclusiveAgentDiagnos
 export const AgentDiagnosis = z.union([ConclusiveAgentDiagnosis, InconclusiveAgentDiagnosis]);
 export type AgentDiagnosis = z.infer<typeof AgentDiagnosis>;
 
+// The wire shape the model fills. OpenAI Structured Outputs rejects a
+// root-level `anyOf` ("Root objects must not be anyOf and must be an object"),
+// so the discriminated `AgentDiagnosis` above can never compile to a strict
+// json_schema — the model then free-forms the JSON and ~40% of runs miss the
+// discriminator combo (INVALID_OUTPUT). This is one flat object with every
+// optional/branch field nullable, which *does* compile to strict mode: strict
+// mode makes every property required and encodes "absent" as an explicit
+// `null`. `narrowAgentDiagnosis` drops the nulls and re-imposes the
+// discriminator + routing rules on our side.
+const WireDimensions = z.object({
+  merchantId: z.string().nullable(),
+  providerId: z.string().nullable(),
+  country: z.enum(COUNTRIES).nullable(),
+  paymentMethod: z.enum(PAYMENT_METHODS).nullable(),
+  issuerId: z.string().nullable(),
+});
+
+export const AgentDiagnosisWire = z.object({
+  status: z.enum(["CONCLUSIVE", "INCONCLUSIVE"]),
+  selectedCell: WireDimensions,
+  summary: z.string().min(1),
+  supportingStepNos: z.array(z.number().int().positive()),
+  causalDimension: z.enum(ROOT_CAUSE_DIMENSIONS).nullable(),
+  declineFamily: z.string().min(1).nullable(),
+  reason: z
+    .enum(["INSUFFICIENT_EVIDENCE", "NO_ROOT_CAUSE", "CONFLICTING_SIGNALS"])
+    .nullable(),
+});
+export type AgentDiagnosisWire = z.infer<typeof AgentDiagnosisWire>;
+
+// Narrow the flat wire object to the discriminated `AgentDiagnosis`. Throws a
+// ZodError when the branch is internally inconsistent (e.g. CONCLUSIVE without
+// a causalDimension, or a slice that breaks the routing rules) — the caller
+// maps that to INVALID_OUTPUT, exactly as before, so the deterministic
+// fallback still covers it.
+export function narrowAgentDiagnosis(wire: AgentDiagnosisWire): AgentDiagnosis {
+  const dims = Object.fromEntries(
+    Object.entries(wire.selectedCell).filter(([, value]) => value !== null),
+  );
+  const base = {
+    selectedCell: investigationDimensionsSchema.parse(dims),
+    summary: wire.summary,
+    supportingStepNos: wire.supportingStepNos,
+  };
+  if (wire.status === "CONCLUSIVE") {
+    return ConclusiveAgentDiagnosis.parse({
+      ...base,
+      status: "CONCLUSIVE",
+      conclusionTag: "STOP_CONCLUSIVE",
+      causalDimension: wire.causalDimension,
+      declineFamily: wire.declineFamily,
+    });
+  }
+  return InconclusiveAgentDiagnosis.parse({
+    ...base,
+    status: "INCONCLUSIVE",
+    conclusionTag: "STOP_INCONCLUSIVE",
+    causalDimension: null,
+    declineFamily: null,
+    reason: wire.reason ?? "NO_ROOT_CAUSE",
+  });
+}
+
 export const MatchedRecommendation = z.object({
   playbookId: z.string().min(1),
   owner: z.string().min(1),
