@@ -6,7 +6,7 @@ doc_related:
   - "YCT-RULES-001"
 domain: "decision-log"
 dimension_schema: []
-time: "2026-08-30T06:35:00Z"
+time: "2026-08-30T08:12:59Z"
 ---
 
 # Flight Logs
@@ -32,3 +32,4 @@ Files:
 12. `diagnostico_por_densidade_de_deficit.md` — Deficit density over absolute deficit; peeling around a beam search
 13. `mix_de_recusas_referencia_catalogo.md` — Catalogue baseline as decline-mix reference; deterministic 91 disambiguation
 14. `prioridade_pelo_custo_conservador.md` — Priority as conservative cost per minute, with no separate confidence weight
+15. `resumos_auditaveis_do_agente.md` — Structured public decision summaries instead of chain-of-thought

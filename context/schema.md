@@ -407,7 +407,12 @@ CREATE TABLE investigation_runs (
   prompt_version   TEXT,
   started_at       TIMESTAMPTZ NOT NULL,
   completed_at     TIMESTAMPTZ,
-  failure_code     TEXT
+  failure_code     TEXT,
+  conclusion_tag   TEXT CHECK (conclusion_tag IN (
+    'STOP_CONCLUSIVE','STOP_INCONCLUSIVE'
+  )),
+  conclusion_summary TEXT,
+  supporting_step_nos SMALLINT[] NOT NULL DEFAULT '{}'
 );
 
 CREATE INDEX ON investigation_runs (incident_id, started_at);
@@ -422,7 +427,13 @@ CREATE TABLE investigation_steps (
   tool_result       JSONB,
   status            TEXT NOT NULL CHECK (status IN ('completed','failed')),
   error_code        TEXT,
+  decision_tag      TEXT CHECK (decision_tag IN (
+    'HYPOTHESIS','DRILL_DOWN','COMPARE_HISTORY','CHECK_DECLINE_MIX',
+    'VALIDATE_RESIDUAL','CONFIRM_ONSET','ESTIMATE_IMPACT'
+  )),
   decision_summary  TEXT,
+  hypothesis        JSONB,
+  evidence_step_nos SMALLINT[] NOT NULL DEFAULT '{}',
   created_at        TIMESTAMPTZ NOT NULL,
   completed_at      TIMESTAMPTZ NOT NULL,
   PRIMARY KEY (run_id, step_no),
@@ -445,9 +456,14 @@ CREATE TABLE playbooks (
 pode falhar e ser seguido por um run do fallback sem colisão de `step_no` nem
 sobrescrita de evidência. `investigation_steps` transforma "o sistema
 diagnosticou" em "aqui está cada pergunta, argumento auditável e resultado".
-`decision_summary` guarda apenas uma justificativa curta baseada em evidência
-visível; raciocínio interno ou chain-of-thought não é solicitado nem persistido.
-Isso atende ao critério de aceitação #3 e sustenta a defesa técnica.
+`decision_tag`, `decision_summary`, `hypothesis` e `evidence_step_nos` formam o
+contexto público de decisão de cada chamada. O resumo é curto e baseado em
+evidência visível; as referências apontam somente para passos já concluídos do
+mesmo run. Raciocínio interno, conteúdo `<thinking>` ou chain-of-thought não é
+solicitado nem persistido. Isso atende ao critério de aceitação #3 e sustenta a
+defesa técnica. A conclusão fica em `investigation_runs`, por meio de
+`conclusion_tag`, `conclusion_summary` e `supporting_step_nos`, sem ser tratada
+como uma sétima tool. Ver `flight_logs/resumos_auditaveis_do_agente.md`.
 
 Mastra mantém somente o contexto transitório do run atual. Working memory,
 semantic recall e observational memory entre incidentes ficam desabilitadas.
