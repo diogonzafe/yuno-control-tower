@@ -2,7 +2,7 @@ import { createTool } from "@mastra/core/tools";
 import {
   DecisionContext,
   InvestigationToolName,
-  validRoutingCombination,
+  refineInvestigationDimensions,
   type DecisionContext as DecisionContextType,
   type RootCauseDimension,
 } from "@control-tower/contracts";
@@ -42,35 +42,16 @@ const rootCauseDimensionToSliceDimension: Record<
 
 export const investigationDimensionsSchema = z
   .object({
+    // An investigation is always scoped to one merchant; the rest of the cell
+    // is what the agent narrows down. The routing rule itself is imported, not
+    // restated (rules.md §1).
     merchantId: z.string().min(1),
     providerId: z.string().min(1).optional(),
     country: z.enum(["AR", "MX", "BR"]).optional(),
     paymentMethod: z.enum(["CARD", "PIX"]).optional(),
     issuerId: z.string().min(1).optional(),
   })
-  .superRefine((value, ctx) => {
-    if (value.country && value.paymentMethod) {
-      const route = validRoutingCombination.safeParse({
-        country: value.country,
-        paymentMethod: value.paymentMethod,
-      });
-      if (!route.success) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["paymentMethod"],
-          message: route.error.issues[0]?.message ?? "invalid routing combination",
-        });
-      }
-    }
-
-    if (value.paymentMethod === "PIX" && value.issuerId && value.issuerId !== "NA") {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["issuerId"],
-        message: "PIX slices must not carry an issuer other than NA",
-      });
-    }
-  });
+  .superRefine(refineInvestigationDimensions);
 
 const toolDecisionContextSchema = DecisionContext;
 
@@ -657,16 +638,23 @@ export function createMockInvestigationDataSource(
   };
 }
 
+// One counter per run, shared by every tool. Owning it per tool would make the
+// budget `maxToolCalls * tool count`, make cross-tool `basedOnStepNos` unresolvable
+// (every second tool would restart at 1 and its references read as "future"), and
+// collide on investigation_steps' (run_id, step_no) primary key.
+type StepCounter = { value: number };
+
 function createToolExecutor<TInput extends { decisionContext: DecisionContextType }, TResult extends Record<string, unknown>>(
   options: ToolsetOptions,
+  counter: StepCounter,
   toolName: z.infer<typeof InvestigationToolName>,
   execute: (input: Omit<TInput, "decisionContext">) => Promise<TResult>,
 ) {
-  let stepNo = 0;
   const now = options.now ?? (() => new Date());
 
   return async (input: TInput): Promise<TResult> => {
-    stepNo += 1;
+    counter.value += 1;
+    const stepNo = counter.value;
     if (stepNo > options.maxToolCalls) {
       throw new StepBudgetExceededError(options.maxToolCalls);
     }
@@ -709,33 +697,40 @@ function createToolExecutor<TInput extends { decisionContext: DecisionContextTyp
 }
 
 export function createInvestigationToolset(options: ToolsetOptions) {
+  const counter: StepCounter = { value: 0 };
   const executeSlice = createToolExecutor<QueryConversionSliceInput, QueryConversionSliceResult>(
     options,
+    counter,
     "query_conversion_slice",
     (input) => options.dataSource.queryConversionSlice(input),
   );
   const executeHistory = createToolExecutor<QueryConversionHistoryInput, QueryConversionHistoryResult>(
     options,
+    counter,
     "query_conversion_history",
     (input) => options.dataSource.queryConversionHistory(input),
   );
   const executeDeclineMix = createToolExecutor<QueryDeclineMixInput, QueryDeclineMixResult>(
     options,
+    counter,
     "query_decline_mix",
     (input) => options.dataSource.queryDeclineMix(input),
   );
   const executeResidual = createToolExecutor<RunResidualTestInput, RunResidualTestResult>(
     options,
+    counter,
     "run_residual_test",
     (input) => options.dataSource.runResidualTest(input),
   );
   const executeOnset = createToolExecutor<ScanIncidentOnsetInput, ScanIncidentOnsetResult>(
     options,
+    counter,
     "scan_incident_onset",
     (input) => options.dataSource.scanIncidentOnset(input),
   );
   const executeImpact = createToolExecutor<EstimateIncidentImpactInput, EstimateIncidentImpactResult>(
     options,
+    counter,
     "estimate_incident_impact",
     (input) => options.dataSource.estimateIncidentImpact(input),
   );

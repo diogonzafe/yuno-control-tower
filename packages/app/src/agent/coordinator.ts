@@ -30,6 +30,17 @@ function shift(iso: string, minutes: number): string {
   return new Date(new Date(iso).getTime() + minutes * 60_000).toISOString();
 }
 
+// Identity of the incident being investigated, independent of which window
+// re-confirmed it: the same cell plus the same onset is the same incident.
+function signalKey(signal: ConfirmedDrop): string {
+  const dimensions = Object.entries(signal.dimensions)
+    .filter(([, value]) => value !== undefined)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, value]) => `${key}=${value}`)
+    .join("|");
+  return `${dimensions}@${signal.startedAt}`;
+}
+
 function buildRequest(signal: ConfirmedDrop): InvestigationRequestV1 {
   if (!signal.dimensions.merchantId || !signal.dimensions.country) {
     throw new Error("ConfirmedDrop must include merchantId and country for orchestration");
@@ -170,8 +181,19 @@ export function createAgentCoordinator(deps: CoordinatorDeps) {
     });
   }
 
+  // A confirmed drop re-emits on every subsequent tick while the incident is
+  // still live (three-window persistence, by design). Without this guard each
+  // tick would start a fresh investigator + narrator run for the same cell —
+  // unbounded LLM spend and a rate-limit risk on exactly the key rules.md §6.8
+  // flags as a demo dependency.
+  const investigated = new Set<string>();
+
   return {
     async handleSignal(signal: ConfirmedDrop): Promise<void> {
+      const incidentKey = signalKey(signal);
+      if (investigated.has(incidentKey)) return;
+      investigated.add(incidentKey);
+
       const request = buildRequest(signal);
       await deps.repository.createRun({
         runId: request.runId,

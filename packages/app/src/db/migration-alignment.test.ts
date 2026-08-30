@@ -1,35 +1,47 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
-describe("agent audit migration", () => {
-  it("creates investigation_runs and rebuilds investigation_steps from legacy data", () => {
-    const sql = readFileSync(
-      resolve(import.meta.dirname, "../../../..", "drizzle/0002_agent_audit_alignment.sql"),
-      "utf8",
-    );
+const drizzleDir = resolve(import.meta.dirname, "../../../..", "drizzle");
 
-    expect(sql).toContain('CREATE TABLE IF NOT EXISTS "investigation_runs"');
-    expect(sql).toContain('ALTER TABLE "investigation_steps" RENAME TO "investigation_steps_legacy"');
-    expect(sql).toContain('INSERT INTO "investigation_runs"');
-    expect(sql).toContain('INSERT INTO "investigation_steps"');
-    expect(sql).toContain('DROP TABLE "investigation_steps_legacy"');
-    expect(sql).toContain('DROP INDEX IF EXISTS "ix_incident_embedding"');
-    expect(sql).toContain('ALTER TABLE "incidents" DROP COLUMN IF EXISTS "embedding"');
+type Journal = { entries: Array<{ idx: number; tag: string }> };
+
+function journal(): Journal {
+  return JSON.parse(readFileSync(resolve(drizzleDir, "meta/_journal.json"), "utf8")) as Journal;
+}
+
+// The failure this guards against actually happened: 0003 was written, committed
+// and never registered, so `drizzle-kit migrate` skipped it and the running app
+// selected columns the database did not have — it crashed on boot, before
+// serving anything. Asserting the SQL text (what this file used to do) cannot
+// catch that; only the journal can.
+describe("drizzle migration registration", () => {
+  it("registers every .sql migration in the journal", () => {
+    const files = readdirSync(drizzleDir)
+      .filter((name) => name.endsWith(".sql"))
+      .map((name) => name.replace(/\.sql$/, ""))
+      .sort();
+    const registered = journal().entries.map((entry) => entry.tag).sort();
+
+    expect(registered).toEqual(files);
   });
 
-  it("extends run and step audit columns for the complete agentic module", () => {
-    const sql = readFileSync(
-      resolve(import.meta.dirname, "../../../..", "drizzle/0003_agentic_module_completion.sql"),
-      "utf8",
-    );
+  it("numbers journal entries contiguously from zero, in file order", () => {
+    const entries = journal().entries;
 
-    expect(sql).toContain('ALTER TABLE "investigation_runs"');
-    expect(sql).toContain('"request_snapshot" jsonb');
-    expect(sql).toContain('"conclusion_tag" text');
-    expect(sql).toContain('"supporting_step_nos" smallint[]');
-    expect(sql).toContain('"decision_tag" text');
-    expect(sql).toContain('"hypothesis" jsonb');
-    expect(sql).toContain('"evidence_step_nos" smallint[]');
+    expect(entries.map((entry) => entry.idx)).toEqual(entries.map((_, index) => index));
+    expect([...entries].sort((a, b) => a.idx - b.idx).map((e) => e.tag)).toEqual(
+      entries.map((entry) => entry.tag),
+    );
+  });
+
+  it("keeps a snapshot alongside every registered migration", () => {
+    const snapshots = readdirSync(resolve(drizzleDir, "meta"))
+      .filter((name) => name.endsWith("_snapshot.json"));
+
+    for (const entry of journal().entries) {
+      const index = String(entry.idx).padStart(4, "0");
+      expect(snapshots).toContain(`${index}_snapshot.json`);
+    }
   });
 });

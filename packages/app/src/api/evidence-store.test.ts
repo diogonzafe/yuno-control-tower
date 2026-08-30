@@ -57,3 +57,34 @@ describe("createEvidenceStore", () => {
     expect(store.recent()).toEqual([]);
   });
 });
+
+describe("createEvidenceStore replace-by-incident", () => {
+  it("replaces the deterministic evidence when the agent's version arrives for the same incident", () => {
+    const store = createEvidenceStore();
+    const deterministic = evidence(6);
+    store.add([deterministic]);
+    store.add([{ ...deterministic, diagnosisSource: "agent", lostApprovals: 250 }]);
+
+    const held = store.recent();
+    expect(held).toHaveLength(1);
+    expect(held[0]?.diagnosisSource).toBe("agent");
+    expect(held[0]?.lostApprovals).toBe(250);
+  });
+
+  it("keeps the same incident in separate windows as separate entries", () => {
+    const store = createEvidenceStore();
+    store.add([evidence(6)]);
+    store.add([evidence(7)]);
+
+    expect(store.recent()).toHaveLength(2);
+  });
+
+  it("keeps different incidents in the same window as separate entries", () => {
+    const store = createEvidenceStore();
+    const first = evidence(6);
+    store.add([first]);
+    store.add([{ ...first, fingerprint: "country=MX|merchantId=MX_STORE_01#05" }]);
+
+    expect(store.recent()).toHaveLength(2);
+  });
+});

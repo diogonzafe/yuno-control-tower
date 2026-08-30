@@ -56,7 +56,14 @@ export const validRoutingCombination = z
   });
 export type ValidRoutingCombination = z.infer<typeof validRoutingCombination>;
 
-export const investigationDimensionsSchema = Dimensions.superRefine((value, ctx) => {
+// The single definition of what makes a slice addressable: PIX only exists in
+// BR, and a PIX slice never carries a real issuer. Exported so callers that need
+// a stricter base (agent/tools.ts requires merchantId) reuse the rule instead of
+// restating it — rules.md §1: two copies diverge on the first change.
+export function refineInvestigationDimensions(
+  value: { country?: string; paymentMethod?: string; issuerId?: string },
+  ctx: z.RefinementCtx,
+): void {
   if (value.country && value.paymentMethod) {
     const route = validRoutingCombination.safeParse({
       country: value.country,
@@ -78,7 +85,9 @@ export const investigationDimensionsSchema = Dimensions.superRefine((value, ctx)
       message: "PIX slices must not carry an issuer other than NA",
     });
   }
-});
+}
+
+export const investigationDimensionsSchema = Dimensions.superRefine(refineInvestigationDimensions);
 
 export const SimilarIncident = z.object({
   incidentId: z.string().uuid(),

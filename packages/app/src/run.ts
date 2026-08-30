@@ -71,10 +71,17 @@ const scheduler = startScheduler({
   loadMerchants: queries.loadMerchantConfigs,
   loadCoverage: queries.loadRoutingCoverage,
   loadDeclineCatalog: queries.loadDeclineCatalog,
-  emitDeterministicEvidence: false,
+  // Kept on so the beam-search path runs on every tick and reaches the API on
+  // its own. roadmap.md §7 puts the agentic layer first on the cut list, and
+  // turning this off would make agent/ load-bearing — deleting it would delete
+  // the evidence pipeline with it. The coordinator's richer evidence replaces
+  // this one by fingerprint in the store (api/evidence-store.ts).
+  emitDeterministicEvidence: true,
   onResult: ({ bucket, signals, evidenceGaps, evidence }) => {
     store.addSignals(signals);
     store.addGaps(evidenceGaps);
+    evidenceStore.add(evidence);
+    for (const item of evidence) hub.broadcast("evidence", item);
     for (const signal of signals) hub.broadcast("signal", signal);
     for (const gap of evidenceGaps) hub.broadcast("evidence-gap", gap);
     for (const signal of signals) {

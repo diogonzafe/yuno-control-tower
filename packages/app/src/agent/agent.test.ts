@@ -88,6 +88,69 @@ describe("agent module", () => {
     ).rejects.toBeInstanceOf(StepBudgetExceededError);
   });
 
+  it("numbers steps once per run, not once per tool", async () => {
+    const auditStore = new InMemoryInvestigationAuditStore(
+      "4dfbc6f5-70dd-47da-8cb1-b18b241647bf",
+      "agent",
+    );
+    const tools = createInvestigationToolset({
+      runId: "4dfbc6f5-70dd-47da-8cb1-b18b241647bf",
+      maxToolCalls: 12,
+      auditStore,
+      dataSource: createMockInvestigationDataSource(defaultMockScenario.toolResults),
+      now: () => new Date("2026-08-30T14:06:00.000Z"),
+    });
+
+    // Two DIFFERENT tools. A per-tool counter would number both as step 1,
+    // colliding on investigation_steps' (run_id, step_no) primary key and
+    // making cross-tool basedOnStepNos unresolvable.
+    await tools.query_conversion_slice.execute!(validSliceInput, {} as never);
+    await tools.query_decline_mix.execute!(
+      {
+        dimensions: selectedCell,
+        windowBucket: "2026-08-30T14:06:00.000Z",
+        decisionContext,
+      },
+      {} as never,
+    );
+
+    const trail = await auditStore.getTrail();
+    expect(trail.steps.map((step) => step.stepNo)).toEqual([1, 2]);
+    expect(trail.steps.map((step) => step.toolName)).toEqual([
+      "query_conversion_slice",
+      "query_decline_mix",
+    ]);
+  });
+
+  it("counts the budget across tools, not per tool", async () => {
+    const auditStore = new InMemoryInvestigationAuditStore(
+      "4dfbc6f5-70dd-47da-8cb1-b18b241647bf",
+      "agent",
+    );
+    const tools = createInvestigationToolset({
+      runId: "4dfbc6f5-70dd-47da-8cb1-b18b241647bf",
+      maxToolCalls: 1,
+      auditStore,
+      dataSource: createMockInvestigationDataSource(defaultMockScenario.toolResults),
+      now: () => new Date("2026-08-30T14:06:00.000Z"),
+    });
+
+    await tools.query_conversion_slice.execute!(validSliceInput, {} as never);
+
+    // The budget is per run (rules.md §6.8, roadmap H+13: 12 calls per run), so a
+    // second call to a DIFFERENT tool must exhaust it too.
+    await expect(
+      tools.query_decline_mix.execute!(
+        {
+          dimensions: selectedCell,
+          windowBucket: "2026-08-30T14:06:00.000Z",
+          decisionContext,
+        },
+        {} as never,
+      ),
+    ).rejects.toBeInstanceOf(StepBudgetExceededError);
+  });
+
   it("rejects references to future steps", async () => {
     const auditStore = new InMemoryInvestigationAuditStore(
       "4dfbc6f5-70dd-47da-8cb1-b18b241647bf",

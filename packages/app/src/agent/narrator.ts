@@ -36,6 +36,17 @@ export function buildNarratorPrompt(input: NarrationInputType): string {
 function collectAllowedNumbers(value: unknown, collector: Set<string>): void {
   if (typeof value === "number" && Number.isFinite(value)) {
     collector.add(value.toString());
+    // A rate is stored as 0.12 but read aloud as "12%". Admitting the
+    // percentage form is not a loophole — the number still has to come from a
+    // field of the evidence object; it just may be spoken the way an operator
+    // speaks it. Without this every readable narrative would be rejected and
+    // fall back to the template, defeating spec.md §4 criterion 4.
+    if (value >= 0 && value <= 1) {
+      const asPercent = value * 100;
+      collector.add(asPercent.toString());
+      collector.add(Math.round(asPercent).toString());
+      collector.add(asPercent.toFixed(1));
+    }
     return;
   }
 
