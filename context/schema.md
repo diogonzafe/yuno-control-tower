@@ -1,5 +1,6 @@
-# The Control Tower — Schema de dados (v4)
+# The Control Tower — Schema de dados (v5)
 
+> **v5:** memória do investigador isolada por run (DD22), auditoria separada em `investigation_runs` e `investigation_steps`, e entrega histórica limitada ao fingerprint exato (DD15).
 > **v4:** cubo fechado nas 6 dimensões do enunciado (DD12), dimensionamento do mundo simulado (DD13–DD14), pgvector mantido (DD15), só UI (DD16). Prazo do desafio: **24 horas**.
 > **v3:** sai o CUSUM (DD8), sai o beta-binomial em favor do intervalo de Wilson (DD11), entram as colunas de câmbio no padrão de mercado (DD9).
 > **v2:** incorpora a decisão de usar taxa de conversão esperada pré-definida por merchant, em vez de baseline sazonal aprendido. Isso remove duas tabelas e uma etapa inteira do pipeline. Ver §1 (DD7) e §6.
@@ -22,13 +23,14 @@
 | DD12 | **Cubo = as 6 dimensões do enunciado**: merchant × provider × método × país × emissor × decline code | `card_brand` e `card_type` continuam em `transactions`, mas **não** são dimensões do cubo. Rollup de conversão chaveado por 5 dimensões; rollup de recusas por 5 + código. |
 | DD13 | **3 emissores por país** · **malha completa** de provider × país (PIX só BR) | 90 células no total. `routing_coverage` fica com 12 linhas. |
 | DD14 | **Bucket de 1 minuto** · `min_volume = 30` · `δ = 3pp` | Gerador calibrado a ~60 TPS com distribuição desigual. |
-| DD15 | **pgvector mantido** para incidentes similares | Fingerprint exato continua sendo o caminho primário; o vetor cobre o caso aproximado. |
+| DD15 | **Fingerprint exato na entrega; pgvector adiado** | O fingerprint canônico é o único caminho de reconhecimento no escopo de 24h. Similaridade vetorial continua como extensão posterior, sem coluna ou índice HNSW nesta entrega. |
 | DD16 | **Só UI web.** Sem bot Slack ou WhatsApp | Transporte por SSE. |
 | DD17 | **Gatilho em merchant × país** | Sem isso, emissor caindo para um único merchant pode não mover o agregado e o critério #5 falha. |
 | DD18 | **Peeling** para incidentes simultâneos, **parcimônia** como desempate | Peeling termina quando o déficit residual deixa de ser material. Parcimônia é obrigatória por causa de `PIX ⇒ BR`. |
 | DD19 | **Profundidade máxima 3** · sem Benjamini-Hochberg | A poda hierárquica já reduz os testes em ordens de grandeza. |
 | DD21 | **18 decline codes internos em 7 famílias** · código de rede fora do cubo | Fecha P2. Ver `declineCodes.md`. A flag `diagnostic` por código é o gate de alerta; `funds` e `credential` são integralmente não diagnósticas. |
 | DD20 | **Máquina de estados enxuta** · 4 playbooks · harness de 30 incidentes | Estado "em recuperação" cortado por escopo de 24h. |
+| DD22 | **Memória agêntica isolada por execução; auditoria separa runs e steps** | Mastra não compartilha memória entre incidentes. Falha, timeout ou budget esgotado encerram o run e iniciam fallback determinístico em outro `run_id`. |
 
 **Sobre a normalização em USD:** a taxa e a data usadas ficam gravadas **na própria transação**, não só na tabela de câmbio. É o padrão contábil e resolve o problema de auditoria: o custo de um incidente de ontem é sempre medido com o dólar de ontem, independentemente do que a tabela de câmbio contenha hoje. Nunca recalcular USD histórico. Isso importa mais com ARS do que com BRL ou MXN.
 
@@ -384,23 +386,46 @@ CREATE TABLE incidents (
   evidence           JSONB NOT NULL,
   narrative_ops      TEXT,
   narrative_exec     TEXT,
-  playbook_id        TEXT,
-  embedding          VECTOR(1536)
+  playbook_id        TEXT
+  -- DD15: similaridade histórica da entrega usa somente fingerprint exato
 );
 
 CREATE INDEX ON incidents (fingerprint);
 
--- trilha de investigação: alimenta a UI e a defesa técnica
+-- uma tentativa completa de diagnóstico, agêntica ou fallback
+CREATE TABLE investigation_runs (
+  run_id           UUID PRIMARY KEY,
+  incident_id      UUID NOT NULL REFERENCES incidents,
+  actor            TEXT NOT NULL CHECK (actor IN ('agent','fallback')),
+  status           TEXT NOT NULL
+    CHECK (status IN ('running','completed','failed','timed_out','exhausted')),
+  model_id         TEXT,
+  prompt_version   TEXT,
+  started_at       TIMESTAMPTZ NOT NULL,
+  completed_at     TIMESTAMPTZ,
+  failure_code     TEXT
+);
+
+CREATE INDEX ON investigation_runs (incident_id, started_at);
+
+-- passos auditáveis de um run: alimentam a UI e a defesa técnica
 CREATE TABLE investigation_steps (
-  incident_id     UUID REFERENCES incidents,
-  step_no         SMALLINT NOT NULL,
-  actor           TEXT NOT NULL CHECK (actor IN ('agent','fallback')),
-  tool_name       TEXT NOT NULL,
-  tool_args       JSONB NOT NULL,
-  tool_result     JSONB NOT NULL,
-  reasoning       TEXT,
-  created_at      TIMESTAMPTZ NOT NULL,
-  PRIMARY KEY (incident_id, step_no)
+  run_id            UUID NOT NULL REFERENCES investigation_runs,
+  step_no           SMALLINT NOT NULL,
+  tool_call_id      TEXT NOT NULL UNIQUE,
+  tool_name         TEXT NOT NULL,
+  tool_args         JSONB NOT NULL,
+  tool_result       JSONB,
+  status            TEXT NOT NULL CHECK (status IN ('completed','failed')),
+  error_code        TEXT,
+  decision_summary  TEXT,
+  created_at        TIMESTAMPTZ NOT NULL,
+  completed_at      TIMESTAMPTZ NOT NULL,
+  PRIMARY KEY (run_id, step_no),
+  CHECK (
+    (status = 'completed' AND tool_result IS NOT NULL AND error_code IS NULL)
+    OR (status = 'failed' AND error_code IS NOT NULL)
+  )
 );
 
 CREATE TABLE playbooks (
@@ -412,7 +437,34 @@ CREATE TABLE playbooks (
 );
 ```
 
-`investigation_steps` merece atenção: é a tabela que transforma "o agente diagnosticou" em "aqui está cada pergunta que o agente fez e cada número que recebeu de volta". Isso é o critério de aceitação #3 (evidência visível) e é o que ganha a sabatina.
+`investigation_runs` separa tentativas sobre o mesmo incidente: um run do agente
+pode falhar e ser seguido por um run do fallback sem colisão de `step_no` nem
+sobrescrita de evidência. `investigation_steps` transforma "o sistema
+diagnosticou" em "aqui está cada pergunta, argumento auditável e resultado".
+`decision_summary` guarda apenas uma justificativa curta baseada em evidência
+visível; raciocínio interno ou chain-of-thought não é solicitado nem persistido.
+Isso atende ao critério de aceitação #3 e sustenta a defesa técnica.
+
+Mastra mantém somente o contexto transitório do run atual. Working memory,
+semantic recall e observational memory entre incidentes ficam desabilitadas.
+Erro, timeout ou esgotamento do budget encerram o run atual; a entrega de 24h
+não retoma snapshot e inicia um novo run de fallback determinístico.
+
+O fingerprint canônico e versionado usa dimensões em ordem fixa, ausência
+explícita e decline dominante. Ele não contém custo, taxa observada, prioridade,
+narrativa ou timestamp absoluto.
+
+DD7 continua autoritativa para esta entrega: a conversão saudável é estacionária
+e somente o volume é sazonal. Portanto, faixa de horário, tipo de dia e calendário
+operacional não alteram o fingerprint exato nem o detector. Sem tráfego não há
+célula observada; baixo volume continua produzindo `INSUFFICIENT_EVIDENCE`.
+
+Se a similaridade vetorial for implementada depois, o embedding versionado deve
+representar os campos causais canônicos. Horário local, tipo de dia e eventual
+estado explícito de calendário operacional ficam como metadados estruturados para
+filtro ou reordenação determinística, não como inferência do LLM nem como correção
+do detector. Suportar conversão saudável variável por horário exige uma decisão
+separada que revise DD7.
 
 ---
 
