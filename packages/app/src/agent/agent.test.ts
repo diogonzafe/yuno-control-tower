@@ -33,11 +33,11 @@ describe("agent module", () => {
     decisionContext,
   } as const;
 
-  it("loads gpt-5.4 defaults for investigator and narrator", () => {
+  it("defaults to one model per role, with a distinct reserve (rules.md §6.4.1)", () => {
     expect(loadAgentConfig({} as NodeJS.ProcessEnv)).toEqual({
-      investigatorModel: "openai/gpt-5.4",
-      narratorModel: "openai/gpt-5.4",
-      narratorFallbackModel: "openai/gpt-5.4",
+      investigatorModel: "openai/gpt-5.6-sol",
+      narratorModel: "openai/gpt-5.6-terra",
+      narratorFallbackModel: "openai/gpt-5.6-luna",
       maxToolCalls: 12,
       timeoutMs: 45_000,
     });
