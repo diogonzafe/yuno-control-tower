@@ -9,6 +9,7 @@ config({ path: resolve(import.meta.dirname, "../../../.env") });
 
 const [
   { createLogger },
+  { waitForDatabase },
   { startConsumer },
   { startRetention },
   queries,
@@ -21,6 +22,7 @@ const [
   orchestrate,
 ] = await Promise.all([
   import("./logging.js"),
+  import("./db/wait-for-db.js"),
   import("./ingest/consumer.js"),
   import("./ingest/retention.js"),
   import("./db/queries.js"),
@@ -54,6 +56,13 @@ function sharesRoot(
 
 const logger = createLogger("app");
 const port = Number(process.env.APP_PORT ?? process.env.PORT ?? 4000);
+
+// Everything below reaches for Postgres — the ingest consumer's XAUTOCLAIM
+// replay, the scheduler's first tick, recoverOrphanRuns(). On a joint
+// redeploy the database is often still finishing recovery (57P03), so block
+// here on a bounded backoff rather than letting the first query crash-loop
+// the process.
+await waitForDatabase();
 
 // onResult is synchronous and the scheduler's catch-up loop calls it once per
 // bucket without awaiting what the callback starts, so unserialized ticks would

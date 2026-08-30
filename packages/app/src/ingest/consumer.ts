@@ -177,7 +177,25 @@ export async function startConsumer(): Promise<never> {
     throw new Error("REDIS_URL is not set — check .env");
   }
 
-  const redis = new Redis(redisUrl);
+  // maxRetriesPerRequest: null — never fail a queued command because a
+  // reconnect is in flight; the XREADGROUP loop below has one command
+  // outstanding at a time, so it simply waits for the socket to come back.
+  // retryStrategy caps the reconnect backoff at 5s and never returns null, so
+  // ioredis reconnects forever instead of giving up.
+  const redis = new Redis(redisUrl, {
+    maxRetriesPerRequest: null,
+    retryStrategy: (times) => Math.min(times * 200, 5000),
+  });
+
+  // Without an 'error' listener ioredis re-emits connection errors as an
+  // unhandled EventEmitter 'error', which Node promotes to an uncaughtException
+  // and the process exits — the managed Redis dropping an idle socket after a
+  // few minutes was enough to crash-loop the whole app. With the listener the
+  // reset is logged and the client reconnects on its own.
+  redis.on("error", (err: unknown) => logger.error({ error: err }, "redis connection error"));
+  // ioredis types the status events as `() => void`; the reconnect delay is
+  // passed at runtime, so an optional param reads it without breaking the type.
+  redis.on("reconnecting", (delayMs?: number) => logger.warn({ delayMs }, "redis reconnecting"));
 
   await ensureConsumerGroup(redis);
   await reclaimPending(redis);
