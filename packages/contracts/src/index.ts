@@ -1,2 +1,3 @@
 export * from "./incident.js";
-export * from "./transaction";
+export * from "./investigation.js";
+export * from "./transaction.js";
