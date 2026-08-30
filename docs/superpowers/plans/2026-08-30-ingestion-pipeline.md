@@ -15,7 +15,7 @@
 - Code, identifiers, file names, and error messages: English only (`AGENTS.md`).
 - The agent never sees raw transactions; the narrator never calculates — not touched by this plan, but don't create anything that violates those boundaries later (`AGENTS.md`).
 - No retry / no `PENDING` state on the transaction model itself — 1 request = 1 attempt (DD1/DD2). Retries in this plan are only about *redelivery of the same event*, never about re-attempting a payment.
-- `rollup_minute.latency_p50_ms` stays `NULL` in this work — explicitly out of scope (see spec, "Simplificação assumida").
+- `rollup_minute.latency_p50_ms` stays `NULL` in this work — explicitly out of scope (see spec, "Assumed simplification").
 - Consumer group name `ingest`, consumer name `app-1`, stream key `stream:transactions` — fixed, do not parameterize.
 - All monetary/count columns that use `bigint({ mode: "number" })` in the Drizzle schema accept plain JS `number`. All `numeric(...)` columns without an explicit mode (e.g. `fxRate`) are Drizzle's default **string** mode — convert with `.toString()` before inserting, never pass a `number` there.
 - `DATABASE_URL` and `REDIS_URL` come from the repo-root `.env`. Never print their values in logs or commit them anywhere.

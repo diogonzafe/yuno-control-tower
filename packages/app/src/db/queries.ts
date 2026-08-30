@@ -1,6 +1,7 @@
-import { and, gte, lt, eq } from "drizzle-orm";
+import { EvidenceObject } from "@control-tower/contracts";
+import { and, desc, eq, gte, lt, sql } from "drizzle-orm";
 import { db } from "./client.js";
-import { declineCodes, merchants, rollupDeclinesMinute, rollupMinute, routingCoverage } from "./schema.js";
+import { declineCodes, incidents, issuerBanks, merchants, providers, rollupDeclinesMinute, rollupMinute, routingCoverage } from "./schema.js";
 import type { MerchantConfig, RollupRow, RoutingCoverage } from "../detect/types.js";
 import type { DeclineCode, DeclineRollupRow } from "../diagnose/types.js";
 
@@ -143,4 +144,109 @@ export async function loadDeclineCatalog(): Promise<DeclineCode[]> {
     baselineShare: Number(row.baselineShare),
     diagnostic: row.diagnostic,
   }));
+}
+
+// ══════════════ WEB READ PATH ══════════════
+// packages/web's Next.js API routes call these through @control-tower/app.
+// They read the same tables as the sources above but shaped for direct
+// display, not for the detector/agent pipeline.
+
+export type IncidentRow = {
+  incidentId: string;
+  fingerprint: string;
+  status: string;
+  startedAt: string;
+  detectedAt: string;
+  resolvedAt: string | null;
+  costUsdPerMin: number;
+  evidence: EvidenceObject;
+};
+
+// The API layer's read path for the incident feed: `evidence` already holds
+// everything the panel shows (drill-down trail, decline mix, echoes, cost),
+// so this is the only incident query the web app needs.
+export async function getIncidents(limit = 100): Promise<IncidentRow[]> {
+  const rows = await db
+    .select({
+      incidentId: incidents.incidentId,
+      fingerprint: incidents.fingerprint,
+      status: incidents.status,
+      startedAt: incidents.startedAt,
+      detectedAt: incidents.detectedAt,
+      resolvedAt: incidents.resolvedAt,
+      costUsdPerMin: incidents.costUsdPerMin,
+      evidence: incidents.evidence,
+    })
+    .from(incidents)
+    .orderBy(desc(incidents.detectedAt))
+    .limit(limit);
+  return rows.map((row) => ({
+    incidentId: row.incidentId,
+    fingerprint: row.fingerprint,
+    status: row.status,
+    startedAt: row.startedAt.toISOString(),
+    detectedAt: row.detectedAt.toISOString(),
+    resolvedAt: row.resolvedAt ? row.resolvedAt.toISOString() : null,
+    costUsdPerMin: row.costUsdPerMin,
+    evidence: EvidenceObject.parse(row.evidence),
+  }));
+}
+
+export type ProviderMinutePoint = { bucket: string; providerId: string; attempts: number; approved: number };
+
+// Live conversion-by-provider series for the chart: one row per
+// (bucket, provider) pair, summed across every merchant/country/method/issuer.
+export async function getProviderSeries(sinceBucket: string): Promise<ProviderMinutePoint[]> {
+  const rows = await db
+    .select({
+      bucket: rollupMinute.bucket,
+      providerId: rollupMinute.providerId,
+      attempts: sql<string>`sum(${rollupMinute.attempts})`,
+      approved: sql<string>`sum(${rollupMinute.approved})`,
+    })
+    .from(rollupMinute)
+    .where(gte(rollupMinute.bucket, new Date(sinceBucket)))
+    .groupBy(rollupMinute.bucket, rollupMinute.providerId)
+    .orderBy(rollupMinute.bucket);
+  return rows.map((row) => ({
+    bucket: row.bucket.toISOString(),
+    providerId: row.providerId,
+    attempts: Number(row.attempts),
+    approved: Number(row.approved),
+  }));
+}
+
+export type Catalog = {
+  merchants: { id: string; name: string }[];
+  providers: { id: string; name: string }[];
+  issuers: { id: string; name: string; country: string | null }[];
+};
+
+export async function getCatalog(): Promise<Catalog> {
+  const [merchantRows, providerRows, issuerRows] = await Promise.all([
+    db.select().from(merchants),
+    db.select().from(providers),
+    db.select().from(issuerBanks),
+  ]);
+  return {
+    merchants: merchantRows.map((row) => ({ id: row.merchantId, name: row.name })),
+    providers: providerRows.map((row) => ({ id: row.providerId, name: row.name })),
+    issuers: issuerRows.map((row) => ({ id: row.issuerId, name: row.name, country: row.country })),
+  };
+}
+
+export type PortfolioPoint = { bucket: string; attempts: number; approved: number };
+
+export async function getPortfolioSeries(sinceBucket: string): Promise<PortfolioPoint[]> {
+  const rows = await db
+    .select({
+      bucket: rollupMinute.bucket,
+      attempts: sql<string>`sum(${rollupMinute.attempts})`,
+      approved: sql<string>`sum(${rollupMinute.approved})`,
+    })
+    .from(rollupMinute)
+    .where(gte(rollupMinute.bucket, new Date(sinceBucket)))
+    .groupBy(rollupMinute.bucket)
+    .orderBy(rollupMinute.bucket);
+  return rows.map((row) => ({ bucket: row.bucket.toISOString(), attempts: Number(row.attempts), approved: Number(row.approved) }));
 }

@@ -1,0 +1,972 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400;0,500;0,600;0,700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+<style>
+  html, body { margin: 0; padding: 0; background: #08080A; color: #E8EAF5; }
+  body { font-family: "Instrument Sans", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  a { color: #8B95F5; text-decoration: none; }
+  a:hover { color: #E8EAF5; }
+  * { box-sizing: border-box; }
+  input, select, button, textarea { font-family: inherit; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background: rgba(232,234,245,0.14); border-radius: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  @keyframes ctPulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.35; transform: scale(0.8); } }
+  @keyframes ctIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+</style>
+</helmet>
+<div style="display:grid;grid-template-columns:336px minmax(0,1fr) 452px;height:100vh;width:100%;background:#08080A;overflow:hidden">
+
+  <aside style="border-right:1px solid rgba(232,234,245,0.09);display:flex;flex-direction:column;min-height:0;background:#0B0B0E">
+    <div style="padding:20px 20px 14px;border-bottom:1px solid rgba(232,234,245,0.09)">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <span style="width:7px;height:7px;border-radius:50%;background:#3E4FE0;box-shadow:0 0 12px #3E4FE0"></span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:0.14em;color:#8B95F5;text-transform:uppercase">Console de injeção</span>
+      </div>
+      <h2 style="margin:0 0 6px;font-size:19px;font-weight:600;letter-spacing:-0.02em;line-height:1.2">Injete um incidente</h2>
+      <p style="margin:0;font-size:12.5px;line-height:1.5;color:rgba(232,234,245,0.52);text-wrap:pretty">Escolha as dimensões que devem falhar e o quanto a conversão cai. Deixe <em style="font-style:normal;color:rgba(232,234,245,0.8)">qualquer</em> como “não fixar esta dimensão”.</p>
+    </div>
+
+    <div style="flex:1;min-height:0;overflow-y:auto;padding:18px 20px 24px;display:flex;flex-direction:column;gap:16px">
+
+      <div style="display:flex;flex-direction:column;gap:5px">
+        <label style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:0.12em;text-transform:uppercase;color:rgba(232,234,245,0.42)">1 · País</label>
+        <select value="{{ fCountry }}" onChange="{{ onCountry }}" style="background:#131318;border:1px solid rgba(232,234,245,0.14);border-radius:8px;color:#E8EAF5;padding:9px 10px;font-size:13px;outline:none" style-focus="border-color:#3E4FE0">
+          <option value="">qualquer país</option>
+          <sc-for list="{{ countryOpts }}" as="o" hint-placeholder-count="3">
+            <option value="{{ o.id }}">{{ o.label }}</option>
+          </sc-for>
+        </select>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:5px">
+        <label style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:0.12em;text-transform:uppercase;color:rgba(232,234,245,0.42)">2 · Método</label>
+        <select value="{{ fMethod }}" onChange="{{ onMethod }}" style="background:#131318;border:1px solid rgba(232,234,245,0.14);border-radius:8px;color:#E8EAF5;padding:9px 10px;font-size:13px;outline:none" style-focus="border-color:#3E4FE0">
+          <option value="">qualquer método</option>
+          <sc-for list="{{ methodOpts }}" as="o" hint-placeholder-count="2">
+            <option value="{{ o.id }}">{{ o.label }}</option>
+          </sc-for>
+        </select>
+        <sc-if value="{{ pixNote }}" hint-placeholder-val="{{ false }}">
+          <span style="font-size:11px;color:rgba(232,234,245,0.42);line-height:1.4">PIX só existe no Brasil — a lista muda com o país.</span>
+        </sc-if>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:5px">
+        <label style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:0.12em;text-transform:uppercase;color:rgba(232,234,245,0.42)">3 · Provider</label>
+        <select value="{{ fProvider }}" onChange="{{ onProvider }}" style="background:#131318;border:1px solid rgba(232,234,245,0.14);border-radius:8px;color:#E8EAF5;padding:9px 10px;font-size:13px;outline:none" style-focus="border-color:#3E4FE0">
+          <option value="">qualquer provider</option>
+          <sc-for list="{{ providerOpts }}" as="o" hint-placeholder-count="3">
+            <option value="{{ o.id }}">{{ o.label }}</option>
+          </sc-for>
+        </select>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:5px">
+        <label style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:0.12em;text-transform:uppercase;color:rgba(232,234,245,0.42)">4 · Banco emissor</label>
+        <select value="{{ fIssuer }}" onChange="{{ onIssuer }}" disabled="{{ issuerDisabled }}" style="background:#131318;border:1px solid rgba(232,234,245,0.14);border-radius:8px;color:#E8EAF5;padding:9px 10px;font-size:13px;outline:none" style-focus="border-color:#3E4FE0">
+          <option value="">qualquer emissor</option>
+          <sc-for list="{{ issuerOpts }}" as="o" hint-placeholder-count="3">
+            <option value="{{ o.id }}">{{ o.label }}</option>
+          </sc-for>
+        </select>
+        <sc-if value="{{ issuerDisabled }}" hint-placeholder-val="{{ false }}">
+          <span style="font-size:11px;color:rgba(232,234,245,0.42);line-height:1.4">PIX não tem emissor — o cubo usa <code style="font-family:'JetBrains Mono',monospace">NA</code>.</span>
+        </sc-if>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:5px">
+        <label style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:0.12em;text-transform:uppercase;color:rgba(232,234,245,0.42)">5 · Merchant</label>
+        <select value="{{ fMerchant }}" onChange="{{ onMerchant }}" style="background:#131318;border:1px solid rgba(232,234,245,0.14);border-radius:8px;color:#E8EAF5;padding:9px 10px;font-size:13px;outline:none" style-focus="border-color:#3E4FE0">
+          <option value="">qualquer merchant</option>
+          <sc-for list="{{ merchantOpts }}" as="o" hint-placeholder-count="9">
+            <option value="{{ o.id }}">{{ o.label }}</option>
+          </sc-for>
+        </select>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:5px">
+        <label style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:0.12em;text-transform:uppercase;color:rgba(232,234,245,0.42)">6 · Assinatura da recusa</label>
+        <select value="{{ fSignature }}" onChange="{{ onSignature }}" style="background:#131318;border:1px solid rgba(232,234,245,0.14);border-radius:8px;color:#E8EAF5;padding:9px 10px;font-size:13px;outline:none" style-focus="border-color:#3E4FE0">
+          <sc-for list="{{ signatureOpts }}" as="o" hint-placeholder-count="5">
+            <option value="{{ o.id }}">{{ o.label }}</option>
+          </sc-for>
+        </select>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <button onClick="{{ onInject }}" style="width:100%;padding:13px;border-radius:10px;border:none;background:#3E4FE0;color:#fff;font-size:14px;font-weight:600;letter-spacing:-0.01em;cursor:pointer" style-hover="background:#4C5CE8">Injetar incidente agora</button>
+        <div style="display:flex;gap:8px">
+          <button onClick="{{ onScript }}" style="flex:1;padding:10px;border-radius:9px;border:1px solid rgba(232,234,245,0.16);background:transparent;color:rgba(232,234,245,0.78);font-size:12.5px;font-weight:500;cursor:pointer" style-hover="border-color:rgba(232,234,245,0.4);color:#E8EAF5">Roteiro da demo</button>
+          <button onClick="{{ onReset }}" style="flex:1;padding:10px;border-radius:9px;border:1px solid rgba(232,234,245,0.16);background:transparent;color:rgba(232,234,245,0.78);font-size:12.5px;font-weight:500;cursor:pointer" style-hover="border-color:rgba(232,234,245,0.4);color:#E8EAF5">Limpar tudo</button>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:16px;padding-top:16px;border-top:1px solid rgba(232,234,245,0.09)">
+        <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:0.12em;text-transform:uppercase;color:rgba(232,234,245,0.42)">Gerador de stream</span>
+
+        <div style="display:flex;flex-direction:column;gap:5px">
+          <label style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:0.12em;text-transform:uppercase;color:rgba(232,234,245,0.42)">Conversão saudável padrão</label>
+          <select value="{{ envConv }}" onChange="{{ onEnvConv }}" style="background:#131318;border:1px solid rgba(232,234,245,0.14);border-radius:8px;color:#E8EAF5;padding:9px 10px;font-size:13px;outline:none" style-focus="border-color:#3E4FE0">
+            <sc-for list="{{ convOpts }}" as="o" hint-placeholder-count="6">
+              <option value="{{ o.id }}">{{ o.label }}</option>
+            </sc-for>
+          </select>
+          <span style="font-size:11px;color:rgba(232,234,245,0.42);line-height:1.4">É o esperado configurado por merchant. O limiar material fica em {{ limitLabel }}.</span>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:5px">
+          <label style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:0.12em;text-transform:uppercase;color:rgba(232,234,245,0.42)">Variar a conversão no tempo</label>
+          <select value="{{ envRandConvLabel }}" onChange="{{ onEnvRandConv }}" style="background:#131318;border:1px solid rgba(232,234,245,0.14);border-radius:8px;color:#E8EAF5;padding:9px 10px;font-size:13px;outline:none" style-focus="border-color:#3E4FE0">
+            <option value="false">não — stream reprodutível</option>
+            <option value="true">sim — taxa oscila</option>
+          </select>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:5px">
+          <label style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:0.12em;text-transform:uppercase;color:rgba(232,234,245,0.42)">Incidentes espontâneos</label>
+          <select value="{{ envAuto }}" onChange="{{ onEnvAuto }}" style="background:#131318;border:1px solid rgba(232,234,245,0.14);border-radius:8px;color:#E8EAF5;padding:9px 10px;font-size:13px;outline:none" style-focus="border-color:#3E4FE0">
+            <option value="0">0 — nenhum, só o que for injetado</option>
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+          </select>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:5px">
+          <label style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:0.12em;text-transform:uppercase;color:rgba(232,234,245,0.42)">Sortear as células dos espontâneos</label>
+          <select value="{{ envRandIncLabel }}" onChange="{{ onEnvRandInc }}" style="background:#131318;border:1px solid rgba(232,234,245,0.14);border-radius:8px;color:#E8EAF5;padding:9px 10px;font-size:13px;outline:none" style-focus="border-color:#3E4FE0">
+            <option value="false">não — células fixas</option>
+            <option value="true">sim — dimensões aleatórias</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <main style="display:flex;flex-direction:column;min-height:0;min-width:0;overflow:hidden">
+    <header style="display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 24px;border-bottom:1px solid rgba(232,234,245,0.09);background:#0B0B0E">
+      <div style="display:flex;align-items:center;gap:14px;min-width:0">
+        <div style="display:flex;align-items:baseline;gap:9px">
+          <span style="font-size:17px;font-weight:700;letter-spacing:-0.03em;color:#E8EAF5">Control Tower</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:rgba(232,234,245,0.38)">PagoTotal</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 11px;border-radius:999px;border:1px solid rgba(232,234,245,0.13);background:#111116">
+          <span style="width:6px;height:6px;border-radius:50%;background:oklch(0.72 0.13 165);animation:ctPulse 1.8s ease-in-out infinite"></span>
+          <span style="font-size:12.5px;font-weight:500;color:#E8EAF5">{{ healthLabel }}</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:rgba(232,234,245,0.45)">{{ healthWindow }}</span>
+        </div>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:rgba(232,234,245,0.32)">{{ healthMeta }}</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;padding:3px;border-radius:9px;border:1px solid rgba(232,234,245,0.13);background:#111116">
+        <button onClick="{{ onAudienceOps }}" style="padding:6px 13px;border-radius:7px;border:none;font-size:12.5px;font-weight:600;cursor:pointer;background:{{ opsBg }};color:{{ opsFg }}">Operações</button>
+        <button onClick="{{ onAudienceExec }}" style="padding:6px 13px;border-radius:7px;border:none;font-size:12.5px;font-weight:600;cursor:pointer;background:{{ execBg }};color:{{ execFg }}">Executivo</button>
+      </div>
+    </header>
+
+    <div style="flex:1;min-height:0;overflow-y:auto;padding:22px 24px 32px;display:flex;flex-direction:column;gap:22px">
+
+      <section style="display:flex;flex-direction:column;gap:14px;padding:20px;border:1px solid rgba(232,234,245,0.09);border-radius:14px;background:#0B0B0E">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap">
+          <div>
+            <h3 style="margin:0 0 3px;font-size:14.5px;font-weight:600;letter-spacing:-0.01em">Conversão ao vivo · janelas de 1 min</h3>
+            <p style="margin:0;font-size:12px;color:rgba(232,234,245,0.45)">{{ chartScopeLabel }}</p>
+          </div>
+          <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+            <sc-for list="{{ providerLegend }}" as="p" hint-placeholder-count="3">
+              <div style="display:flex;align-items:center;gap:7px">
+                <span style="width:14px;height:2.5px;border-radius:2px;background:{{ p.color }}"></span>
+                <span style="font-size:12px;font-weight:500;color:rgba(232,234,245,0.72)">{{ p.name }}</span>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:12.5px;font-weight:700;color:{{ p.color }}">{{ p.rate }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="position:relative;height:228px;padding-left:38px">
+          <div style="position:absolute;left:0;top:0;bottom:0;width:34px;display:flex;flex-direction:column;justify-content:space-between;align-items:flex-end;font-family:'JetBrains Mono',monospace;font-size:10px;color:rgba(232,234,245,0.3)">
+            <span>100%</span><span>90%</span><span>80%</span><span>70%</span><span>60%</span><span>50%</span>
+          </div>
+          <svg viewBox="0 0 800 220" preserveAspectRatio="none" style="width:100%;height:228px;display:block;overflow:visible">
+            <line x1="0" y1="0" x2="800" y2="0" stroke="rgba(232,234,245,0.08)" stroke-width="1" vector-effect="non-scaling-stroke"></line>
+            <line x1="0" y1="44" x2="800" y2="44" stroke="rgba(232,234,245,0.08)" stroke-width="1" vector-effect="non-scaling-stroke"></line>
+            <line x1="0" y1="88" x2="800" y2="88" stroke="rgba(232,234,245,0.08)" stroke-width="1" vector-effect="non-scaling-stroke"></line>
+            <line x1="0" y1="132" x2="800" y2="132" stroke="rgba(232,234,245,0.08)" stroke-width="1" vector-effect="non-scaling-stroke"></line>
+            <line x1="0" y1="176" x2="800" y2="176" stroke="rgba(232,234,245,0.08)" stroke-width="1" vector-effect="non-scaling-stroke"></line>
+            <line x1="0" y1="220" x2="800" y2="220" stroke="rgba(232,234,245,0.14)" stroke-width="1" vector-effect="non-scaling-stroke"></line>
+            <line x1="0" y1="{{ expectedY }}" x2="800" y2="{{ expectedY }}" stroke="#3E4FE0" stroke-width="1.5" stroke-dasharray="5 5" vector-effect="non-scaling-stroke" opacity="0.8"></line>
+            <path d="{{ pathMp }}" fill="none" stroke="oklch(0.72 0.10 305)" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"></path>
+            <path d="{{ pathStripe }}" fill="none" stroke="#E8EAF5" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"></path>
+            <path d="{{ pathAdyen }}" fill="none" stroke="#6B78F0" stroke-width="2.4" vector-effect="non-scaling-stroke" stroke-linejoin="round"></path>
+          </svg>
+          <div style="display:flex;justify-content:space-between;padding-top:7px;font-family:'JetBrains Mono',monospace;font-size:10px;color:rgba(232,234,245,0.3)">
+            <span>{{ xFirst }}</span><span>{{ xMid }}</span><span>{{ xLast }}</span>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;font-size:11.5px;color:rgba(232,234,245,0.4)">
+          <span style="width:14px;height:0;border-top:1.5px dashed #3E4FE0"></span>
+          <span>esperado configurado por merchant ({{ baselineLabel }}) — o limiar material é {{ limitLabel }}</span>
+        </div>
+      </section>
+
+      <section style="display:flex;flex-direction:column;gap:12px">
+        <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px">
+          <h3 style="margin:0;font-size:14.5px;font-weight:600;letter-spacing:-0.01em">Incidentes <span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:400;color:rgba(232,234,245,0.4);margin-left:6px">ordenados por dinheiro/minuto</span></h3>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:rgba(232,234,245,0.4)">{{ feedCount }}</span>
+        </div>
+
+        <sc-if value="{{ feedEmpty }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex;flex-direction:column;gap:9px;align-items:flex-start;padding:34px 24px;border:1px dashed rgba(232,234,245,0.14);border-radius:14px;background:#0A0A0D">
+            <div style="display:flex;align-items:center;gap:9px">
+              <span style="width:6px;height:6px;border-radius:50%;background:oklch(0.72 0.13 165);animation:ctPulse 1.8s ease-in-out infinite"></span>
+              <span style="font-size:14px;font-weight:600;color:#E8EAF5">Silêncio — e isso é o resultado esperado</span>
+            </div>
+            <p style="margin:0;max-width:620px;font-size:12.5px;line-height:1.6;color:rgba(232,234,245,0.5);text-wrap:pretty">{{ silenceCells }} células avaliadas na última janela, nenhuma com queda material em 3 janelas consecutivas. O intervalo de Wilson cobre o esperado em toda a cauda de volume baixo, então não há o que afirmar.</p>
+          </div>
+        </sc-if>
+
+        <sc-for list="{{ feed }}" as="it" hint-placeholder-count="0">
+          <div onClick="{{ it.onSelect }}" style="cursor:pointer;padding:18px;border:1px solid {{ it.border }};border-left:3px solid {{ it.accent }};border-radius:13px;background:{{ it.bg }};display:flex;flex-direction:column;gap:14px;animation:ctIn 0.4s ease both" style-hover="border-color:rgba(232,234,245,0.3)">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap">
+              <div style="display:flex;flex-direction:column;gap:6px;min-width:0">
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:0.1em;text-transform:uppercase;padding:3px 7px;border-radius:5px;background:{{ it.badgeBg }};color:{{ it.accent }}">{{ it.badge }}</span>
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:rgba(232,234,245,0.35)">{{ it.fingerprint }}</span>
+                </div>
+                <h4 style="margin:0;font-size:17px;font-weight:600;letter-spacing:-0.02em;line-height:1.3;text-wrap:pretty">{{ it.headline }}</h4>
+                <span style="font-size:12.5px;color:rgba(232,234,245,0.5)">{{ it.subline }}</span>
+              </div>
+              <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;flex:none">
+                <span style="font-family:'JetBrains Mono',monospace;font-size:22px;font-weight:700;letter-spacing:-0.02em;color:{{ it.accent }}">{{ it.costPerMin }}</span>
+                <span style="font-size:11px;color:rgba(232,234,245,0.42)">{{ it.costNote }}</span>
+              </div>
+            </div>
+
+            <div style="display:flex;flex-direction:column;gap:6px">
+              <div style="position:relative;height:26px;border-radius:6px;background:#0A0A0D;border:1px solid rgba(232,234,245,0.08)">
+                <div style="position:absolute;top:0;bottom:0;left:{{ it.ciLeft }};width:{{ it.ciWidth }};background:{{ it.ciFill }};border-radius:4px;border:1px solid {{ it.accent }}"></div>
+                <div style="position:absolute;top:-3px;bottom:-3px;left:{{ it.expLeft }};width:2px;background:#3E4FE0"></div>
+                <div style="position:absolute;top:0;bottom:0;left:{{ it.obsLeft }};width:1px;background:#fff;opacity:0.85"></div>
+              </div>
+              <div style="display:flex;justify-content:space-between;font-family:'JetBrains Mono',monospace;font-size:10.5px;color:rgba(232,234,245,0.45)">
+                <span>observado {{ it.observed }} · IC{{ it.ciLevel }} {{ it.ciText }}</span>
+                <span>esperado {{ it.expected }} · {{ it.expectedSource }}</span>
+              </div>
+            </div>
+
+            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+              <sc-for list="{{ it.chips }}" as="c" hint-placeholder-count="3">
+                <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;padding:4px 8px;border-radius:6px;border:1px solid rgba(232,234,245,0.12);color:rgba(232,234,245,0.7)">{{ c.text }}</span>
+              </sc-for>
+              <span style="margin-left:auto;font-size:12px;font-weight:600;color:#8B95F5">Ver evidência →</span>
+            </div>
+          </div>
+        </sc-for>
+      </section>
+    </div>
+  </main>
+
+  <aside style="border-left:1px solid rgba(232,234,245,0.09);display:flex;flex-direction:column;min-height:0;background:#0B0B0E">
+    <div style="padding:16px 20px;border-bottom:1px solid rgba(232,234,245,0.09);display:flex;align-items:center;justify-content:space-between;gap:10px">
+      <div style="display:flex;flex-direction:column;gap:2px">
+        <span style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:#8B95F5">Painel de evidência</span>
+        <span style="font-size:12px;color:rgba(232,234,245,0.45)">{{ panelSubtitle }}</span>
+      </div>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:10px;padding:4px 8px;border-radius:6px;border:1px solid rgba(232,234,245,0.13);color:rgba(232,234,245,0.55)">{{ panelSource }}</span>
+    </div>
+
+    <div style="flex:1;min-height:0;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:20px">
+      <sc-if value="{{ panelEmpty }}" hint-placeholder-val="{{ true }}">
+        <div style="display:flex;flex-direction:column;gap:12px">
+          <p style="margin:0;font-size:13px;line-height:1.65;color:rgba(232,234,245,0.5);text-wrap:pretty">Quando um incidente é confirmado, aqui aparece o caminho do drill-down: quais dimensões o motor testou, qual concentrou o déficit, e o que foi descartado como eco.</p>
+          <div style="display:flex;flex-direction:column;gap:8px;padding:14px;border:1px dashed rgba(232,234,245,0.14);border-radius:11px">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:rgba(232,234,245,0.35)">O que este painel prova</span>
+            <span style="font-size:12.5px;line-height:1.6;color:rgba(232,234,245,0.55)">Um sistema ingênuo emitiria 4 alertas para o mesmo incidente. Mostrar os 3 que foram descartados é o que separa diagnóstico de lista de correlações.</span>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ panelHas }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;flex-direction:column;gap:20px">
+
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <h3 style="margin:0;font-size:19px;font-weight:600;letter-spacing:-0.025em;line-height:1.3;text-wrap:pretty">{{ evHeadline }}</h3>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <sc-for list="{{ evDims }}" as="d" hint-placeholder-count="4">
+                <span style="display:flex;flex-direction:column;gap:1px;padding:5px 9px;border-radius:7px;background:#131318;border:1px solid rgba(232,234,245,0.1)">
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;letter-spacing:0.1em;text-transform:uppercase;color:rgba(232,234,245,0.35)">{{ d.key }}</span>
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#E8EAF5">{{ d.value }}</span>
+                </span>
+              </sc-for>
+            </div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:9px;padding:16px;border:1px solid rgba(232,234,245,0.1);border-radius:12px;background:#0E0E12">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:0.12em;text-transform:uppercase;color:rgba(232,234,245,0.4)">Intervalo de Wilson · {{ evWindowUsed }}</span>
+            <div style="position:relative;height:34px;border-radius:7px;background:#08080A;border:1px solid rgba(232,234,245,0.08)">
+              <div style="position:absolute;top:0;bottom:0;left:{{ evCiLeft }};width:{{ evCiWidth }};background:{{ evCiFill }};border:1px solid {{ evAccent }};border-radius:5px"></div>
+              <div style="position:absolute;top:-4px;bottom:-4px;left:{{ evExpLeft }};width:2px;background:#3E4FE0"></div>
+              <div style="position:absolute;top:0;bottom:0;left:{{ evObsLeft }};width:1px;background:#fff;opacity:0.9"></div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:3px;font-family:'JetBrains Mono',monospace;font-size:11px">
+              <div style="display:flex;justify-content:space-between"><span style="color:rgba(232,234,245,0.5)">observado</span><span style="color:#E8EAF5">{{ evObserved }} &nbsp;{{ evCiText }}</span></div>
+              <div style="display:flex;justify-content:space-between"><span style="color:rgba(232,234,245,0.5)">esperado</span><span style="color:#8B95F5">{{ evExpected }} · {{ evExpectedSource }}</span></div>
+              <div style="display:flex;justify-content:space-between"><span style="color:rgba(232,234,245,0.5)">amostra</span><span style="color:#E8EAF5">{{ evSample }}</span></div>
+            </div>
+            <span style="font-size:11.5px;line-height:1.5;color:rgba(232,234,245,0.45);text-wrap:pretty">{{ evWilsonNote }}</span>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:9px;padding:16px;border:1px solid rgba(62,79,224,0.3);border-radius:12px;background:rgba(62,79,224,0.06)">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+              <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:0.12em;text-transform:uppercase;color:#8B95F5">{{ narrativeLabel }}</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:rgba(232,234,245,0.4)">{{ evSince }}</span>
+            </div>
+            <p style="margin:0;font-size:{{ narrativeSize }};line-height:1.6;color:#E8EAF5;text-wrap:pretty">{{ narrativeText }}</p>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:11px">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:0.12em;text-transform:uppercase;color:rgba(232,234,245,0.4)">Custo — piso, não estimativa</span>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px">
+              <div style="padding:13px;border:1px solid rgba(232,234,245,0.1);border-radius:11px;background:#0E0E12;display:flex;flex-direction:column;gap:3px">
+                <span style="font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:700;letter-spacing:-0.02em;color:{{ evAccent }}">{{ evCostPerMin }}</span>
+                <span style="font-size:11px;color:rgba(232,234,245,0.45)">no mínimo, por minuto</span>
+              </div>
+              <div style="padding:13px;border:1px solid rgba(232,234,245,0.1);border-radius:11px;background:#0E0E12;display:flex;flex-direction:column;gap:3px">
+                <span style="font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:700;letter-spacing:-0.02em;color:#E8EAF5">{{ evCostTotal }}</span>
+                <span style="font-size:11px;color:rgba(232,234,245,0.45)">acumulado · {{ evCostLocal }}</span>
+              </div>
+            </div>
+            <span style="font-size:11.5px;line-height:1.5;color:rgba(232,234,245,0.42);text-wrap:pretty">{{ evLostApprovals }} aprovações perdidas, calculadas com a ponta otimista do intervalo ({{ evCiHigh }}). O número é um piso.</span>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:9px">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:0.12em;text-transform:uppercase;color:rgba(232,234,245,0.4)">Caminho do drill-down</span>
+            <sc-for list="{{ evTrail }}" as="s" hint-placeholder-count="4">
+              <div style="display:flex;gap:11px;padding:12px;border:1px solid rgba(232,234,245,0.09);border-radius:11px;background:#0E0E12">
+                <span style="flex:none;width:20px;height:20px;border-radius:6px;background:rgba(62,79,224,0.2);color:#8B95F5;font-family:'JetBrains Mono',monospace;font-size:10.5px;display:flex;align-items:center;justify-content:center">{{ s.no }}</span>
+                <div style="display:flex;flex-direction:column;gap:5px;min-width:0">
+                  <span style="font-size:12.5px;font-weight:600;color:#E8EAF5;text-wrap:pretty">{{ s.question }}</span>
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:rgba(232,234,245,0.62);line-height:1.5;word-break:break-word">{{ s.answer }}</span>
+                  <span style="font-size:11.5px;color:{{ s.decisionColor }};line-height:1.45">{{ s.decision }}</span>
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:rgba(232,234,245,0.28)">{{ s.tool }}</span>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:9px">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:0.12em;text-transform:uppercase;color:rgba(232,234,245,0.4)">Perfil de recusa · {{ evMixWindow }}</span>
+            <sc-for list="{{ evMix }}" as="m" hint-placeholder-count="4">
+              <div style="display:flex;flex-direction:column;gap:4px">
+                <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
+                  <span style="font-size:12px;color:#E8EAF5"><code style="font-family:'JetBrains Mono',monospace;color:{{ m.color }}">{{ m.code }}</code> <span style="color:rgba(232,234,245,0.55)">{{ m.label }}</span></span>
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:{{ m.color }}">{{ m.shift }}</span>
+                </div>
+                <div style="position:relative;height:7px;border-radius:4px;background:#101014">
+                  <div style="position:absolute;top:0;bottom:0;left:0;width:{{ m.baseline }};background:rgba(232,234,245,0.18);border-radius:4px"></div>
+                  <div style="position:absolute;top:0;bottom:0;left:0;width:{{ m.observed }};background:{{ m.color }};border-radius:4px;opacity:0.9"></div>
+                </div>
+              </div>
+            </sc-for>
+            <span style="font-size:11.5px;line-height:1.5;color:rgba(232,234,245,0.42);text-wrap:pretty">A barra clara é o mix normal da célula. O sinal nunca é a presença do código — é o deslocamento do share.</span>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:9px">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:0.12em;text-transform:uppercase;color:rgba(232,234,245,0.4)">Ecos suprimidos · {{ evEchoCount }}</span>
+            <sc-for list="{{ evEchoes }}" as="e" hint-placeholder-count="3">
+              <div style="display:flex;flex-direction:column;gap:4px;padding:11px 13px;border:1px solid rgba(232,234,245,0.08);border-radius:10px;background:#0A0A0D">
+                <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:rgba(232,234,245,0.78)">{{ e.label }}</span>
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:rgba(232,234,245,0.4)">não alertado</span>
+                </div>
+                <span style="font-size:11.5px;line-height:1.5;color:rgba(232,234,245,0.55);text-wrap:pretty">Caiu para <strong style="font-weight:600;color:oklch(0.72 0.14 55)">{{ e.observed }}</strong> — mas volta a <strong style="font-weight:600;color:oklch(0.74 0.13 165)">{{ e.residual }}</strong> quando removemos a célula causal. É sombra, não incidente.</span>
+              </div>
+            </sc-for>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:10px;padding:16px;border:1px solid rgba(232,234,245,0.12);border-radius:12px;background:#0E0E12">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:0.12em;text-transform:uppercase;color:rgba(232,234,245,0.4)">Ação recomendada · {{ evPlaybookId }}</span>
+            <span style="font-size:14px;font-weight:600;line-height:1.4;color:#E8EAF5;text-wrap:pretty">{{ evPlaybookTitle }}</span>
+            <span style="font-size:12.5px;line-height:1.6;color:rgba(232,234,245,0.55);text-wrap:pretty">{{ evPlaybookBody }}</span>
+            <div style="display:flex;align-items:center;gap:9px;padding:11px 13px;border-radius:9px;background:rgba(232,234,245,0.05);border:1px solid rgba(232,234,245,0.1)">
+              <span style="width:6px;height:6px;border-radius:50%;background:oklch(0.78 0.14 75)"></span>
+              <span style="font-size:12px;color:rgba(232,234,245,0.72)">Pendente de aprovação humana. O sistema não executa remediação.</span>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+    </div>
+  </aside>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1512,&quot;height&quot;:950},&quot;defaultAudience&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Operações&quot;,&quot;Executivo&quot;],&quot;default&quot;:&quot;Operações&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Comportamento&quot;},&quot;tickMs&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;min&quot;:400,&quot;max&quot;:3000,&quot;step&quot;:100,&quot;default&quot;:1300,&quot;unit&quot;:&quot;ms&quot;,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Comportamento&quot;}}">
+const MERCHANTS = [
+  { id: 'BR_STORE_01', country: 'BR', w: 0.18 }, { id: 'BR_STORE_02', country: 'BR', w: 0.09 }, { id: 'BR_STORE_03', country: 'BR', w: 0.04 },
+  { id: 'MX_STORE_01', country: 'MX', w: 0.16 }, { id: 'MX_STORE_02', country: 'MX', w: 0.07 }, { id: 'MX_STORE_03', country: 'MX', w: 0.03 },
+  { id: 'AR_STORE_01', country: 'AR', w: 0.14 }, { id: 'AR_STORE_02', country: 'AR', w: 0.06 }, { id: 'AR_STORE_03', country: 'AR', w: 0.02 }
+];
+const PROVIDERS = [
+  { id: 'stripe', name: 'Stripe', w: 0.40, color: '#E8EAF5' },
+  { id: 'adyen', name: 'Adyen', w: 0.34, color: '#6B78F0' },
+  { id: 'mercado_pago', name: 'Mercado Pago', w: 0.26, color: 'oklch(0.72 0.10 305)' }
+];
+const COUNTRIES = [
+  { id: 'BR', name: 'Brasil', w: 0.45, off: -180, tz: 'BRT', cur: 'BRL', fx: 540 },
+  { id: 'MX', name: 'México', w: 0.33, off: -360, tz: 'CST', cur: 'MXN', fx: 1820 },
+  { id: 'AR', name: 'Argentina', w: 0.22, off: -180, tz: 'ART', cur: 'ARS', fx: 135000 }
+];
+const ISSUERS = {
+  BR: [{ id: 'itau', name: 'Itaú', w: 0.40 }, { id: 'nubank', name: 'Nubank', w: 0.34 }, { id: 'bradesco', name: 'Bradesco', w: 0.26 }],
+  MX: [{ id: 'bbva_mx', name: 'BBVA México', w: 0.40 }, { id: 'banorte', name: 'Banorte', w: 0.34 }, { id: 'citibanamex', name: 'Citibanamex', w: 0.26 }],
+  AR: [{ id: 'galicia', name: 'Galicia', w: 0.40 }, { id: 'santander_rio', name: 'Santander Río', w: 0.34 }, { id: 'macro', name: 'Macro', w: 0.26 }]
+};
+const METHOD_W = { CARD: 0.88, PIX: 0.12 };
+const TICKET = { 'BR|CARD': 8200, 'BR|PIX': 1900, 'MX|CARD': 6400, 'AR|CARD': 4100 };
+const MIX_CARD = [
+  { code: '05', internal: 'DO_NOT_HONOR', label: 'do not honor', family: 'issuer', share: 0.32, diag: true },
+  { code: '51', internal: 'INSUFFICIENT_FUNDS', label: 'saldo insuficiente', family: 'funds', share: 0.26, diag: false },
+  { code: '54', internal: 'EXPIRED_CARD', label: 'cartão expirado', family: 'credential', share: 0.11, diag: false },
+  { code: '01', internal: 'REFER_TO_ISSUER', label: 'refer to issuer', family: 'issuer', share: 0.08, diag: true },
+  { code: '59', internal: 'SUSPECTED_FRAUD', label: 'suspeita de fraude', family: 'fraud', share: 0.05, diag: true },
+  { code: '1A', internal: 'AUTH_REQUIRED', label: 'autenticação exigida', family: 'auth', share: 0.04, diag: true },
+  { code: '91', internal: 'ISSUER_UNAVAILABLE', label: 'emissor indisponível', family: 'network', share: 0.02, diag: true }
+];
+const MIX_PIX = [
+  { code: 'AM05', internal: 'PIX_INSUFFICIENT_FUNDS', label: 'pagador sem fundos', family: 'funds', share: 0.55, diag: false },
+  { code: 'AB03', internal: 'PIX_SPI_TIMEOUT', label: 'timeout do SPI', family: 'network', share: 0.15, diag: true },
+  { code: 'BE01', internal: 'PIX_INVALID_TAXID', label: 'CPF/CNPJ divergente', family: 'credential', share: 0.15, diag: false },
+  { code: 'DS0G', internal: 'PIX_NOT_AUTHORIZED', label: 'antifraude bloqueou', family: 'fraud', share: 0.10, diag: true },
+  { code: 'BE17', internal: 'PIX_RECEIVER_REJECTED', label: 'recebedor rejeitou', family: 'merchant', share: 0.05, diag: true }
+];
+const SIGNATURES = [
+  { id: 'auto', label: 'automática (o motor decide)' },
+  { id: '05', label: '05 · emissor over-declining' },
+  { id: '91', label: '91 · emissor ou provider inacessível' },
+  { id: '1A', label: '1A · 3DS não anunciado' },
+  { id: 'AB03', label: 'AB03 · SPI instável (só PIX)' },
+  { id: 'BE17', label: 'BE17 · recebedor do merchant quebrado' }
+];
+const BASE_UTC = 16 * 60 + 55;
+const MIN_VOLUME = 30;
+const DELTA = 0.03;
+const ACCENT_CRIT = 'oklch(0.68 0.19 25)';
+const ACCENT_WARN = 'oklch(0.78 0.14 75)';
+const ACCENT_MUTED = 'rgba(232,234,245,0.45)';
+
+function wilson(k, n, z) {
+  if (!n) return [0, 1];
+  const p = k / n, d = 1 + z * z / n;
+  const center = (p + z * z / (2 * n)) / d;
+  const half = (z / d) * Math.sqrt(p * (1 - p) / n + z * z / (4 * n * n));
+  return [Math.max(0, center - half), Math.min(1, center + half)];
+}
+function pct(x, dp) { return (x * 100).toFixed(dp === undefined ? 0 : dp).replace('.', ',') + '%'; }
+function usd(minor) {
+  const d = minor / 100;
+  if (d >= 1000) return 'US$ ' + (d / 1000).toFixed(1).replace('.', ',') + 'k';
+  return 'US$ ' + Math.round(d).toLocaleString('pt-BR');
+}
+function local(minor, cur) {
+  const u = minor / 100;
+  if (u >= 1000) return cur + ' ' + (u / 1000).toFixed(1).replace('.', ',') + 'k';
+  return cur + ' ' + Math.round(u).toLocaleString('pt-BR');
+}
+function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+function findC(id) { return COUNTRIES.find(c => c.id === id); }
+function fmtTime(utcMin, countryId) {
+  const c = findC(countryId) || COUNTRIES[0];
+  let m = ((utcMin + c.off) % 1440 + 1440) % 1440;
+  const h = String(Math.floor(m / 60)).padStart(2, '0');
+  return h + ':' + String(m % 60).padStart(2, '0');
+}
+function dimCountry(d) { return d.country || (d.merchantId ? (MERCHANTS.find(m => m.id === d.merchantId) || {}).country : null) || 'BR'; }
+function dimMethod(d) { return d.paymentMethod || 'CARD'; }
+function volume(d) {
+  let w = 3600;
+  if (d.merchantId) { const m = MERCHANTS.find(x => x.id === d.merchantId); w *= m ? m.w : 0.1; }
+  else if (d.country) { const c = findC(d.country); w *= c ? c.w : 0.3; }
+  if (d.providerId) { const p = PROVIDERS.find(x => x.id === d.providerId); w *= p ? p.w : 0.3; }
+  if (d.paymentMethod) w *= METHOD_W[d.paymentMethod] || 0.5;
+  if (d.issuerId && d.issuerId !== 'NA') {
+    const list = ISSUERS[dimCountry(d)] || [];
+    const i = list.find(x => x.id === d.issuerId);
+    w *= i ? i.w : 0.33;
+  }
+  return Math.max(1, Math.round(w));
+}
+function label(d) {
+  const parts = [];
+  if (d.providerId) parts.push((PROVIDERS.find(p => p.id === d.providerId) || {}).name || d.providerId);
+  if (d.country) parts.push(d.country);
+  if (d.paymentMethod) parts.push(d.paymentMethod);
+  if (d.issuerId) { const l = ISSUERS[dimCountry(d)] || []; parts.push((l.find(i => i.id === d.issuerId) || {}).name || d.issuerId); }
+  if (d.merchantId) parts.push(d.merchantId);
+  return parts.length ? parts.join(' · ') : 'agregado global';
+}
+function fingerprint(d, code) {
+  const keys = ['merchantId', 'providerId', 'country', 'paymentMethod', 'issuerId'];
+  const s = keys.filter(k => d[k]).map(k => k.replace('Id', '').replace('payment', '') + '=' + d[k]).join(',');
+  return (s || 'root') + '#' + code;
+}
+function dominantCode(d, sig) {
+  const isPix = dimMethod(d) === 'PIX';
+  if (sig && sig !== 'auto') {
+    const pool = isPix ? MIX_PIX : MIX_CARD;
+    const hit = pool.find(x => x.code === sig);
+    if (hit) return hit;
+  }
+  if (isPix) return d.merchantId ? MIX_PIX[4] : MIX_PIX[1];
+  if (d.issuerId) return MIX_CARD[0];
+  if (d.providerId) return MIX_CARD[6];
+  if (d.merchantId) return MIX_CARD[5];
+  return MIX_CARD[0];
+}
+function causalDimension(d) {
+  if (d.issuerId) return 'issuer';
+  if (d.paymentMethod === 'PIX') return 'method';
+  if (d.providerId) return 'provider';
+  if (d.merchantId) return 'merchant';
+  return 'country';
+}
+const PLAYBOOKS = {
+  issuer: { id: 'PB-ISSUER-01', title: 'Rotear o tráfego deste emissor para um provider alternativo', body: 'A recusa nasce no emissor. Rotear as tentativas deste BIN range para o provider com melhor aprovação na mesma célula, e abrir contato com o banco. Reversível em um clique quando o share do código dominante voltar ao mix normal.' },
+  provider: { id: 'PB-PROVIDER-01', title: 'Failover do tráfego afetado para os providers irmãos', body: 'A concentração atravessa emissores, o que aponta perda de conectividade do provider. Deslocar o tráfego da célula para Stripe e Mercado Pago e monitorar a latência antes de devolver.' },
+  method: { id: 'PB-METHOD-01', title: 'Comunicar degradação do método e reduzir a exposição', body: 'A falha está no rail, não na plataforma: aparece igual em todos os providers. Não há responsável dentro do escopo do sistema — priorizar comunicação ao merchant e oferecer método alternativo no checkout.' },
+  merchant: { id: 'PB-MERCHANT-01', title: 'Revisar a conta recebedora e as regras de risco do merchant', body: 'A queda está contida num único merchant, o que exclui provider e emissor. Verificar dados de recebimento e mudanças recentes de regra antifraude antes de qualquer roteamento.' },
+  country: { id: 'PB-COUNTRY-01', title: 'Escalar para o time de operações do país', body: 'A queda é ampla e não isola uma célula única. Escalar com a evidência anexada em vez de rotear no escuro.' }
+};
+
+class Component extends DCLogic {
+  state = {
+    bucket: 0,
+    series: [],
+    incidents: [],
+    injections: [],
+    selected: null,
+    audience: null,
+    form: { country: 'BR', paymentMethod: 'CARD', providerId: 'adyen', issuerId: 'itau', merchantId: '', signature: 'auto', multiplier: 0.15 },
+    env: { conv: 0.90, randConv: false, auto: 0, randInc: false },
+    seq: 1
+  };
+
+  componentDidMount() {
+    const step = Math.max(300, Number(this.props.tickMs) || 1300);
+    for (let i = 0; i < 26; i++) this.advance(true);
+    this.timer = setInterval(() => this.advance(false), step);
+  }
+  componentWillUnmount() { clearInterval(this.timer); }
+
+  noise(seed) {
+    if (!this.state.env.randConv) return 0;
+    const x = Math.sin(seed * 12.9898) * 43758.5453;
+    return ((x - Math.floor(x)) - 0.5) * 0.03;
+  }
+
+  advance(silent) {
+    this.setState(s => {
+      const bucket = s.bucket + 1;
+      const base = s.env.conv;
+      const injections = s.injections.map(i => Object.assign({}, i));
+      const point = { bucket: bucket };
+      PROVIDERS.forEach(p => {
+        let rate = base + this.noise(bucket * 7 + p.w * 100);
+        injections.forEach(inj => {
+          const d = inj.dimensions;
+          if (d.providerId && d.providerId !== p.id) return;
+          const cellVol = volume(Object.assign({}, d, { providerId: p.id }));
+          const provVol = volume({ providerId: p.id });
+          const share = clamp(cellVol / provVol, 0, 1);
+          rate -= share * (1 - inj.multiplier) * base;
+        });
+        point[p.id] = clamp(rate, 0.02, 0.999);
+      });
+      const series = s.series.concat([point]).slice(-46);
+
+      const incidents = s.incidents.slice();
+      injections.forEach(inj => {
+        if (inj.confirmed) { inj.elapsed = bucket - inj.startBucket; return; }
+        const d = inj.dimensions;
+        let n = volume(d);
+        let windowUsed = '1m';
+        let k = Math.round(n * base * inj.multiplier);
+        if (n < MIN_VOLUME) { n = n * 5; k = k * 5; windowUsed = '5m'; }
+        const [lo, hi] = wilson(k, n, 1.96);
+        const pLim = base - DELTA;
+        if (n < MIN_VOLUME) {
+          inj.state = 'INSUFFICIENT_EVIDENCE';
+          inj.consecutive = 0;
+          inj.gap = { n: n, lo: lo, hi: hi, windowUsed: windowUsed };
+        } else if (hi < pLim) {
+          inj.consecutive = (inj.consecutive || 0) + 1;
+          inj.state = inj.consecutive >= 3 ? 'CONFIRMED' : 'MONITORING';
+        } else {
+          inj.consecutive = 0;
+          inj.state = 'MONITORING';
+        }
+        if (inj.state === 'CONFIRMED') {
+          inj.confirmed = true;
+          incidents.push(this.buildEvidence(inj, bucket, n, k, lo, hi, windowUsed, base));
+        }
+      });
+      const selected = s.selected || (incidents.length ? incidents[0].fingerprint : null);
+      return { bucket: bucket, series: series, injections: injections, incidents: incidents, selected: selected };
+    });
+  }
+
+  buildEvidence(inj, bucket, n, k, lo, hi, windowUsed, base) {
+    const d = inj.dimensions;
+    const country = dimCountry(d);
+    const method = dimMethod(d);
+    const dom = dominantCode(d, inj.signature);
+    const pool = method === 'PIX' ? MIX_PIX : MIX_CARD;
+    const domShare = 0.78;
+    const rest = 1 - domShare;
+    const others = pool.filter(x => x.code !== dom.code);
+    const restBase = others.reduce((a, b) => a + b.share, 0) || 1;
+    const declineMix = [{ code: dom.code, internal: dom.internal, label: dom.label, family: dom.family, observedShare: domShare, baselineShare: dom.share, count: Math.round((n - k) * domShare) }]
+      .concat(others.map(o => ({ code: o.code, internal: o.internal, label: o.label, family: o.family, observedShare: (o.share / restBase) * rest, baselineShare: o.share, count: Math.round((n - k) * (o.share / restBase) * rest) })));
+
+    const observedRate = k / n;
+    const lostPerMin = Math.max(1, Math.round(n * (base - hi)));
+    const ticket = TICKET[country + '|' + method] || 6000;
+    const costPerMin = lostPerMin * ticket;
+    const elapsed = Math.max(1, bucket - inj.startBucket);
+    const c = findC(country);
+    const startedAtExact = volume(d) >= MIN_VOLUME;
+
+    const trail = [];
+    let step = 1;
+    const sib = (list, fixedId, keyName) => list.map(x => (x.name || x.id) + ' ' + pct(x.id === fixedId ? observedRate : base - 0.01 + (x.w || 0.3) * 0.02, 0)).join(' · ');
+    if (d.providerId) {
+      trail.push({ no: step++, question: 'A queda está em todos os providers?', answer: PROVIDERS.map(p => p.name + ' ' + pct(p.id === d.providerId ? observedRate : base - 0.02, 0)).join(' · '), decision: 'Fixa providerId=' + d.providerId, tool: 'query_slice(dimension="provider_id")', ok: true });
+    }
+    if (d.country) {
+      trail.push({ no: step++, question: 'Dentro desta fatia, qual país concentra?', answer: COUNTRIES.map(x => x.id + ' ' + pct(x.id === country ? observedRate + 0.06 : base - 0.02, 0)).join(' · '), decision: 'Fixa country=' + country, tool: 'query_slice(dimension="country")', ok: true });
+    }
+    if (d.paymentMethod) {
+      trail.push({ no: step++, question: 'Qual método?', answer: (country === 'BR' ? ['CARD', 'PIX'] : ['CARD']).map(m => m + ' ' + pct(m === method ? observedRate + 0.04 : base + 0.05, 0)).join(' · ') + (country !== 'BR' ? ' — PIX não existe em ' + country : ''), decision: 'Fixa paymentMethod=' + method, tool: 'query_slice(dimension="payment_method")', ok: true });
+    }
+    if (d.issuerId) {
+      trail.push({ no: step++, question: 'Qual emissor?', answer: (ISSUERS[country] || []).map(i => i.name + ' ' + pct(i.id === d.issuerId ? observedRate : base - 0.015, 0)).join(' · '), decision: 'Fixa issuerId=' + d.issuerId, tool: 'query_slice(dimension="issuer_id")', ok: true });
+    }
+    if (d.merchantId) {
+      trail.push({ no: step++, question: 'A queda vive num merchant só?', answer: MERCHANTS.filter(m => m.country === country).map(m => m.id + ' ' + pct(m.id === d.merchantId ? observedRate : base - 0.01, 0)).join(' · '), decision: 'Fixa merchantId=' + d.merchantId, tool: 'query_slice(dimension="merchant_id")', ok: true });
+    }
+    trail.push({ no: step++, question: 'Mudou o perfil de recusa?', answer: dom.code + ' (' + dom.internal + ') em ' + pct(domShare, 0) + ' das recusas, contra ' + pct(dom.share, 0) + ' de baseline · família ' + dom.family, decision: 'Evidência de causa: ' + (dom.diag ? 'código diagnóstico, share deslocado' : 'código não diagnóstico — ruído estrutural'), tool: 'decline_mix(window="' + (method === 'PIX' ? '15m' : '5m') + '")', ok: dom.diag });
+    trail.push({ no: step++, question: 'Os agregados vizinhos continuam anômalos sem esta célula?', answer: 'resíduo limpo em ' + (trail.length) + ' agregados · déficit residual < δ=3pp', decision: 'Um incidente, não ' + (trail.length + 1) + '. Os demais são sombra.', tool: 'residual_test(exclude=cell)', ok: true });
+
+    const echoKeys = [];
+    if (d.country) echoKeys.push({ country: country });
+    if (d.paymentMethod) echoKeys.push({ paymentMethod: method, country: country });
+    if (d.providerId && d.issuerId) echoKeys.push({ providerId: d.providerId });
+    if (d.merchantId) echoKeys.push({ merchantId: d.merchantId });
+    const cellVol = volume(d);
+    const echoes = echoKeys.map(ek => {
+      const pv = volume(ek);
+      const share = clamp(cellVol / Math.max(pv, cellVol), 0, 1);
+      return { label: label(ek), observedRate: base - share * (base - observedRate), residualRate: base - 0.005 };
+    }).filter(e => base - e.observedRate > 0.005);
+
+    return {
+      fingerprint: fingerprint(d, dom.code),
+      dimensions: d,
+      country: country, method: method,
+      observedRate: observedRate, expectedRate: base, expectedSource: d.providerId || d.country ? 'cross_sectional' : 'absolute',
+      deltaPp: (base - observedRate) * 100,
+      ci: { low: lo, high: hi, level: 0.95 },
+      attempts: n, approved: k, windowBucket: bucket, windowUsed: windowUsed, consecutiveWindows: 3,
+      startedAt: BASE_UTC + inj.startBucket, startedAtExact: startedAtExact,
+      declineMix: declineMix, dominantDecline: dom,
+      suppressedEchoes: echoes,
+      lostApprovals: lostPerMin * elapsed, lostPerMin: lostPerMin,
+      costUsdMinor: costPerMin * elapsed, costUsdPerMin: costPerMin,
+      costLocal: Math.round(costPerMin * elapsed * (c ? c.fx : 100) / 100), currency: c ? c.cur : 'USD',
+      priorityScore: costPerMin / 100,
+      diagnosisSource: 'agent',
+      investigationTrail: trail,
+      playbook: PLAYBOOKS[causalDimension(d)],
+      confirmedAt: bucket
+    };
+  }
+
+  formDims() {
+    const f = this.state.form;
+    const d = {};
+    if (f.merchantId) d.merchantId = f.merchantId;
+    if (f.providerId) d.providerId = f.providerId;
+    if (f.country) d.country = f.country;
+    if (f.paymentMethod) d.paymentMethod = f.paymentMethod;
+    if (f.paymentMethod === 'PIX') { d.country = 'BR'; }
+    else if (f.issuerId) d.issuerId = f.issuerId;
+    return d;
+  }
+
+  inject(dims, multiplier, signature) {
+    this.setState(s => ({
+      seq: s.seq + 1,
+      injections: s.injections.concat([{
+        id: 'inj-' + s.seq, dimensions: dims, multiplier: multiplier, signature: signature || 'auto',
+        startBucket: s.bucket, consecutive: 0, state: 'MONITORING', confirmed: false
+      }])
+    }));
+  }
+
+  runScript() {
+    this.setState({ injections: [], incidents: [], selected: null });
+    setTimeout(() => {
+      this.inject({ providerId: 'adyen', country: 'BR', paymentMethod: 'CARD', issuerId: 'itau' }, 0.15, '05');
+      this.inject({ merchantId: 'MX_STORE_02', country: 'MX', paymentMethod: 'CARD', issuerId: 'banorte' }, 0.3, '91');
+      this.inject({ merchantId: 'AR_STORE_03', country: 'AR', paymentMethod: 'CARD', issuerId: 'macro' }, 0.4, 'auto');
+    }, 30);
+  }
+
+  renderVals() {
+    const s = this.state, f = s.form, env = s.env;
+    const base = env.conv;
+    const audience = s.audience || (this.props.defaultAudience === 'Executivo' ? 'exec' : 'ops');
+    const nowUtc = BASE_UTC + s.bucket;
+    const series = s.series;
+    const W = 800, H = 220;
+    const span = Math.max(2, series.length - 1);
+    const y = r => clamp(H * (1 - (r - 0.5) / 0.5), -20, H + 20);
+    const path = id => series.map((p, i) => (i ? 'L' : 'M') + (i / span * W).toFixed(1) + ' ' + y(p[id]).toFixed(1)).join(' ');
+    const last = series[series.length - 1] || {};
+
+    const feed = s.incidents.slice().sort((a, b) => b.costUsdPerMin - a.costUsdPerMin).map(ev => {
+      const acc = ev.costUsdPerMin > 200000 ? ACCENT_CRIT : ACCENT_WARN;
+      const sel = s.selected === ev.fingerprint;
+      return {
+        fingerprint: ev.fingerprint,
+        badge: 'confirmado · ' + ev.diagnosisSource,
+        badgeBg: 'rgba(232,234,245,0.06)',
+        accent: acc, border: sel ? 'rgba(232,234,245,0.28)' : 'rgba(232,234,245,0.1)', bg: sel ? '#101016' : '#0B0B0E',
+        headline: this.headline(ev),
+        subline: 'desde ' + this.sinceLabel(ev) + ' · ' + ev.attempts + ' tentativas na janela · ' + ev.dominantDecline.code + ' dominante',
+        costPerMin: usd(ev.costUsdPerMin) + '/min',
+        costNote: 'no mínimo · piso conservador',
+        observed: pct(ev.observedRate), expected: pct(ev.expectedRate),
+        ciText: '[' + pct(ev.ci.low) + ' – ' + pct(ev.ci.high) + ']', ciLevel: '95',
+        expectedSource: ev.expectedSource,
+        ciLeft: pct(ev.ci.low, 1), ciWidth: pct(Math.max(0.01, ev.ci.high - ev.ci.low), 1),
+        expLeft: pct(ev.expectedRate, 1), obsLeft: pct(ev.observedRate, 1),
+        ciFill: 'rgba(232,234,245,0.10)',
+        chips: [
+          { text: 'δ ' + ev.deltaPp.toFixed(1).replace('.', ',') + 'pp' },
+          { text: ev.windowUsed + ' · 3 janelas' },
+          { text: ev.suppressedEchoes.length + ' ecos suprimidos' },
+          { text: ev.lostPerMin + ' aprovações/min' }
+        ],
+        onSelect: () => this.setState({ selected: ev.fingerprint })
+      };
+    });
+
+    const gaps = s.injections.filter(i => i.state === 'INSUFFICIENT_EVIDENCE');
+    gaps.forEach(g => {
+      feed.push({
+        fingerprint: 'gap-' + g.id,
+        badge: 'evidência insuficiente',
+        badgeBg: 'rgba(232,234,245,0.05)',
+        accent: ACCENT_MUTED, border: 'rgba(232,234,245,0.1)', bg: '#0A0A0D',
+        headline: 'Não sabemos: ' + label(g.dimensions),
+        subline: 'volume abaixo do mínimo mesmo na janela de 5 min · o intervalo cobre o esperado',
+        costPerMin: '—', costNote: 'sem custo afirmável',
+        observed: pct(base * g.multiplier), expected: pct(base),
+        ciText: '[' + pct(g.gap ? g.gap.lo : 0.2) + ' – ' + pct(g.gap ? g.gap.hi : 0.8) + ']', ciLevel: '95',
+        expectedSource: 'cross_sectional',
+        ciLeft: pct(g.gap ? g.gap.lo : 0.2, 1), ciWidth: pct(Math.max(0.01, (g.gap ? g.gap.hi - g.gap.lo : 0.6)), 1),
+        expLeft: pct(base, 1), obsLeft: pct(base * g.multiplier, 1),
+        ciFill: 'rgba(232,234,245,0.06)',
+        chips: [{ text: 'n=' + (g.gap ? g.gap.n : 0) + ' < min_volume 30' }, { text: 'INSUFFICIENT_EVIDENCE' }, { text: 'nenhum alerta emitido' }],
+        onSelect: () => this.setState({ selected: null })
+      });
+    });
+
+    const ev = s.incidents.find(i => i.fingerprint === s.selected) || null;
+    const countryOpts = COUNTRIES.map(c => ({ id: c.id, label: c.name + ' (' + c.id + ')' }));
+    const methodOpts = (f.country === 'BR' || !f.country) ? [{ id: 'CARD', label: 'CARD' }, { id: 'PIX', label: 'PIX (só BR)' }] : [{ id: 'CARD', label: 'CARD' }];
+    const issuerList = ISSUERS[f.country] || ISSUERS.BR;
+    const issuerDisabled = f.paymentMethod === 'PIX';
+
+    const out = {
+      countryOpts: countryOpts,
+      methodOpts: methodOpts,
+      providerOpts: PROVIDERS.map(p => ({ id: p.id, label: p.name })),
+      issuerOpts: issuerDisabled ? [] : issuerList.map(i => ({ id: i.id, label: i.name })),
+      merchantOpts: MERCHANTS.filter(m => !f.country || m.country === f.country).map(m => ({ id: m.id, label: m.id })),
+      signatureOpts: SIGNATURES.filter(x => x.id !== 'AB03' || f.paymentMethod === 'PIX'),
+      fCountry: f.country, fMethod: f.paymentMethod, fProvider: f.providerId,
+      fIssuer: issuerDisabled ? '' : f.issuerId, fMerchant: f.merchantId, fSignature: f.signature,
+      issuerDisabled: issuerDisabled,
+      pixNote: f.country === 'BR' || !f.country,
+      fMultiplier: f.multiplier,
+      fMultiplierLabel: '×' + f.multiplier.toFixed(2).replace('.', ','),
+      fEffectiveRate: pct(base * f.multiplier),
+      baselineLabel: pct(base),
+      limitLabel: pct(base - DELTA),
+      onCountry: e => { const v = e.target.value; this.setState(st => ({ form: Object.assign({}, st.form, { country: v, issuerId: (ISSUERS[v] || ISSUERS.BR)[0].id, paymentMethod: v === 'BR' ? st.form.paymentMethod : 'CARD', merchantId: '' }) })); },
+      onMethod: e => { const v = e.target.value; this.setState(st => ({ form: Object.assign({}, st.form, { paymentMethod: v, country: v === 'PIX' ? 'BR' : st.form.country, signature: v === 'PIX' ? 'auto' : st.form.signature }) })); },
+      onProvider: e => { const v = e.target.value; this.setState(st => ({ form: Object.assign({}, st.form, { providerId: v }) })); },
+      onIssuer: e => { const v = e.target.value; this.setState(st => ({ form: Object.assign({}, st.form, { issuerId: v }) })); },
+      onMerchant: e => { const v = e.target.value; this.setState(st => ({ form: Object.assign({}, st.form, { merchantId: v }) })); },
+      onSignature: e => { const v = e.target.value; this.setState(st => ({ form: Object.assign({}, st.form, { signature: v }) })); },
+      onInject: () => this.inject(this.formDims(), f.multiplier, f.signature),
+      onScript: () => this.runScript(),
+      onReset: () => this.setState({ injections: [], incidents: [], selected: null }),
+
+      injections: s.injections.map(i => ({
+        label: label(i.dimensions),
+        mult: i.multiplier.toFixed(2).replace('.', ','),
+        since: fmtTime(BASE_UTC + i.startBucket, dimCountry(i.dimensions)) + ' ' + (findC(dimCountry(i.dimensions)) || {}).tz,
+        status: i.state === 'CONFIRMED' ? 'confirmado' : i.state === 'INSUFFICIENT_EVIDENCE' ? 'evidência insuficiente' : 'monitorando ' + (i.consecutive || 0) + '/3',
+        onDelete: () => this.setState(st => ({ injections: st.injections.filter(x => x.id !== i.id), incidents: st.incidents.filter(x => x.startedAt !== BASE_UTC + i.startBucket) }))
+      })),
+      injectionCount: s.injections.length + ' ativa(s)',
+      noInjections: s.injections.length === 0,
+
+      convOpts: [0.99, 0.96, 0.94, 0.92, 0.90, 0.88, 0.85, 0.80, 0.70].map(v => ({ id: v.toFixed(2), label: pct(v) + (v === 0.90 ? ' (padrão)' : '') })),
+      envConv: env.conv.toFixed(2),
+      envRandConvLabel: env.randConv ? 'true' : 'false',
+      envAuto: String(env.auto),
+      envRandIncLabel: env.randInc ? 'true' : 'false',
+      onEnvConv: e => { const v = Number(e.target.value); this.setState(st => ({ env: Object.assign({}, st.env, { conv: v }) })); },
+      onEnvRandConv: e => { const v = e.target.value === 'true'; this.setState(st => ({ env: Object.assign({}, st.env, { randConv: v }) })); },
+      onEnvRandInc: e => { const v = e.target.value === 'true'; this.setState(st => ({ env: Object.assign({}, st.env, { randInc: v }) })); },
+      onEnvAuto: e => { const v = Number(e.target.value); this.setState(st => ({ env: Object.assign({}, st.env, { auto: v }) }), () => { for (let i = 0; i < v; i++) this.spawnAuto(); }); },
+
+      healthLabel: 'Vigiando',
+      healthWindow: '· última janela ' + fmtTime(nowUtc, 'BR') + ' BRT',
+      healthMeta: 'ingest up · lag 0 min · sse 1 · ' + fmtTime(nowUtc, 'MX') + ' CST · ' + fmtTime(nowUtc, 'AR') + ' ART',
+      chartScopeLabel: 'agregado dos 3 providers · 90 células · min_volume 30 · δ 3pp',
+      providerLegend: PROVIDERS.map(p => ({ name: p.name, color: p.color, rate: last[p.id] === undefined ? '—' : pct(last[p.id]) })),
+      pathStripe: path('stripe'), pathAdyen: path('adyen'), pathMp: path('mercado_pago'),
+      expectedY: y(base).toFixed(1),
+      xFirst: series.length ? fmtTime(BASE_UTC + series[0].bucket, 'BR') : '',
+      xMid: series.length ? fmtTime(BASE_UTC + series[Math.floor(series.length / 2)].bucket, 'BR') : '',
+      xLast: series.length ? fmtTime(BASE_UTC + series[series.length - 1].bucket, 'BR') : '',
+
+      feed: feed,
+      feedEmpty: feed.length === 0,
+      feedCount: feed.length ? feed.length + ' no feed' : 'feed vazio',
+      silenceCells: '90',
+
+      opsBg: audience === 'ops' ? '#3E4FE0' : 'transparent',
+      opsFg: audience === 'ops' ? '#fff' : 'rgba(232,234,245,0.6)',
+      execBg: audience === 'exec' ? '#3E4FE0' : 'transparent',
+      execFg: audience === 'exec' ? '#fff' : 'rgba(232,234,245,0.6)',
+      onAudienceOps: () => this.setState({ audience: 'ops' }),
+      onAudienceExec: () => this.setState({ audience: 'exec' }),
+
+      panelEmpty: !ev,
+      panelHas: !!ev,
+      panelSubtitle: ev ? ev.fingerprint : 'nenhum incidente selecionado',
+      panelSource: ev ? ev.diagnosisSource : 'aguardando'
+    };
+
+    if (ev) {
+      const c = findC(ev.country) || COUNTRIES[0];
+      const dimEntries = [];
+      const dm = ev.dimensions;
+      if (dm.providerId) dimEntries.push({ key: 'provider', value: dm.providerId });
+      if (dm.country || ev.country) dimEntries.push({ key: 'país', value: ev.country });
+      if (dm.paymentMethod) dimEntries.push({ key: 'método', value: dm.paymentMethod });
+      dimEntries.push({ key: 'emissor', value: dm.issuerId || 'NA' });
+      if (dm.merchantId) dimEntries.push({ key: 'merchant', value: dm.merchantId });
+      dimEntries.push({ key: 'decline', value: ev.dominantDecline.code });
+
+      const since = this.sinceLabel(ev);
+      const opsText = 'A célula ' + label(ev.dimensions) + ' está em ' + pct(ev.observedRate) + ' de conversão contra ' + pct(ev.expectedRate) + ' esperado — queda de ' + ev.deltaPp.toFixed(1).replace('.', ',') + 'pp, confirmada em 3 janelas consecutivas de ' + ev.windowUsed + '. ' + ev.attempts + ' tentativas na janela, ' + ev.approved + ' aprovadas. O código ' + ev.dominantDecline.code + ' (' + ev.dominantDecline.internal + ', família ' + ev.dominantDecline.family + ') saltou de ' + pct(ev.dominantDecline.share) + ' para ' + pct(0.78) + ' das recusas — é o deslocamento do share, não a presença do código. Intervalo de Wilson a 95%: ' + pct(ev.ci.low) + ' a ' + pct(ev.ci.high) + ', inteiramente abaixo do limiar material. Começou ' + since + '.';
+      const execText = 'Estamos perdendo pelo menos ' + usd(ev.costUsdPerMin) + ' por minuto em ' + label(ev.dimensions) + ' desde ' + since + '. Ação recomendada: ' + ev.playbook.title.toLowerCase() + '. Pendente da sua aprovação.';
+
+      Object.assign(out, {
+        evHeadline: this.headline(ev),
+        evDims: dimEntries,
+        evAccent: ev.costUsdPerMin > 200000 ? ACCENT_CRIT : ACCENT_WARN,
+        evWindowUsed: 'janela ' + ev.windowUsed + ' · 3 janelas consecutivas',
+        evCiLeft: pct(ev.ci.low, 1), evCiWidth: pct(Math.max(0.01, ev.ci.high - ev.ci.low), 1),
+        evExpLeft: pct(ev.expectedRate, 1), evObsLeft: pct(ev.observedRate, 1),
+        evCiFill: 'rgba(232,234,245,0.10)',
+        evObserved: pct(ev.observedRate), evCiText: '[' + pct(ev.ci.low) + ' – ' + pct(ev.ci.high) + ']',
+        evExpected: pct(ev.expectedRate), evExpectedSource: ev.expectedSource,
+        evSample: ev.approved + '/' + ev.attempts + ' aprovadas',
+        evWilsonNote: 'Mesmo o cenário mais otimista compatível com os dados (' + pct(ev.ci.high) + ') está abaixo do limiar material de ' + pct(base - DELTA) + '. É por isso que o sistema afirma, e é por isso que ele cala quando o intervalo cobre o esperado.',
+        narrativeLabel: audience === 'exec' ? 'Narrativa · executivo' : 'Narrativa · operações',
+        narrativeText: audience === 'exec' ? execText : opsText,
+        narrativeSize: audience === 'exec' ? '15px' : '13px',
+        evSince: 'desde ' + since,
+        evCostPerMin: usd(ev.costUsdPerMin),
+        evCostTotal: usd(ev.costUsdMinor),
+        evCostLocal: local(ev.costLocal, ev.currency),
+        evLostApprovals: String(ev.lostApprovals),
+        evCiHigh: pct(ev.ci.high),
+        evTrail: ev.investigationTrail.map(t => ({
+          no: String(t.no), question: t.question, answer: t.answer, decision: t.decision,
+          decisionColor: t.ok ? 'oklch(0.74 0.13 165)' : ACCENT_WARN, tool: t.tool
+        })),
+        evMixWindow: ev.method === 'PIX' ? 'janela móvel de 15 min' : 'janela móvel de 5 min',
+        evMix: ev.declineMix.slice(0, 6).map(m => ({
+          code: m.code, label: m.label,
+          shift: pct(m.baselineShare) + ' → ' + pct(m.observedShare),
+          baseline: pct(m.baselineShare, 1), observed: pct(m.observedShare, 1),
+          color: m.observedShare > m.baselineShare * 1.4 ? ACCENT_CRIT : 'rgba(232,234,245,0.55)'
+        })),
+        evEchoCount: ev.suppressedEchoes.length + ' descartados, 1 alertado',
+        evEchoes: ev.suppressedEchoes.map(e => ({ label: e.label, observed: pct(e.observedRate), residual: pct(e.residualRate) })),
+        evPlaybookId: ev.playbook.id,
+        evPlaybookTitle: ev.playbook.title,
+        evPlaybookBody: ev.playbook.body
+      });
+    }
+    return out;
+  }
+
+  sinceLabel(ev) {
+    const c = findC(ev.country) || COUNTRIES[0];
+    return (ev.startedAtExact ? '' : '≈ ') + fmtTime(ev.startedAt, ev.country) + ' ' + c.tz;
+  }
+
+  headline(ev) {
+    const d = ev.dimensions;
+    const prov = d.providerId ? (PROVIDERS.find(p => p.id === d.providerId) || {}).name : null;
+    const iss = d.issuerId ? ((ISSUERS[ev.country] || []).find(i => i.id === d.issuerId) || {}).name : null;
+    const cName = (findC(ev.country) || {}).name;
+    const verb = ev.dominantDecline.family === 'network' ? 'não alcança' : 'recusa';
+    if (prov && iss) return prov + ' ' + verb + ' cartões do ' + iss + ' no ' + cName + ' desde ' + this.sinceLabel(ev);
+    if (iss) return iss + ' está recusando ' + (d.merchantId ? 'para ' + d.merchantId : 'no ' + cName) + ' desde ' + this.sinceLabel(ev);
+    if (ev.method === 'PIX') return 'PIX degradado' + (d.merchantId ? ' em ' + d.merchantId : ' no Brasil') + ' desde ' + this.sinceLabel(ev);
+    if (prov) return prov + ' degradado' + (cName ? ' no ' + cName : '') + ' desde ' + this.sinceLabel(ev);
+    return 'Queda em ' + label(d) + ' desde ' + this.sinceLabel(ev);
+  }
+
+  spawnAuto() {
+    const fixed = [
+      { providerId: 'stripe', country: 'MX', paymentMethod: 'CARD', issuerId: 'bbva_mx' },
+      { providerId: 'mercado_pago', country: 'BR', paymentMethod: 'PIX' },
+      { merchantId: 'AR_STORE_01', country: 'AR', paymentMethod: 'CARD', issuerId: 'galicia' }
+    ];
+    if (!this.state.env.randInc) {
+      const used = this.state.injections.length;
+      this.inject(fixed[used % fixed.length], 0.25, 'auto');
+      return;
+    }
+    const pick = a => a[Math.floor(Math.random() * a.length)];
+    const c = pick(COUNTRIES);
+    const dims = { providerId: pick(PROVIDERS).id, country: c.id, paymentMethod: 'CARD', issuerId: pick(ISSUERS[c.id]).id };
+    this.inject(dims, 0.2 + Math.random() * 0.3, 'auto');
+  }
+}
+
+</script>
+</body>
+</html>

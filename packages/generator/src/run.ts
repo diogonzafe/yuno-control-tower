@@ -20,11 +20,6 @@ if (!redisUrl) {
 }
 
 const injectPort = Number(process.env.GENERATOR_INJECT_PORT ?? 4100);
-// The ingest consumer drains ~41 events/s against cloud Redis + cloud Postgres.
-// transactionsPerSecond multiplies this by a seasonal factor that peaks at
-// ~1.74x, so a baseTps above ~23 outruns the consumer at peak hour and builds an
-// unbounded stream backlog — which starves the detector of current buckets.
-const baseTps = parsePositiveNumber(process.env.GENERATOR_BASE_TPS);
 const trafficWeights = parseTrafficWeights(process.env.GENERATOR_TRAFFIC_WEIGHTS);
 const defaultConversion = parseOptionalNumber(process.env.GENERATOR_DEFAULT_CONVERSION);
 const randomizeConversion = parseBooleanFlag(process.env.GENERATOR_RANDOMIZE_CONVERSION);
@@ -37,6 +32,13 @@ const randomizeIncidents = parseBooleanFlag(process.env.GENERATOR_RANDOMIZE_INCI
 const random = createSeededRandom(randomizeConversion || randomizeIncidents ? Date.now() : 42);
 
 const catalog = buildGeneratorCatalog({ defaultConversion, randomizeConversion, random });
+
+// DD14 locks the spec's target at ~60 TPS against a low-latency Redis; this
+// stays the default. Override only when the deployment's Redis round-trip
+// can't sustain it (e.g. a remote instance over the public internet), where
+// unbounded backlog would otherwise grow because emitTransaction awaits each
+// XADD sequentially — see flight_logs for the measured symptom.
+const baseTps = parseOptionalNumber(process.env.GENERATOR_BASE_TPS) ?? 60;
 
 const redis = new Redis(redisUrl);
 const generator = createGenerator({ catalog, trafficWeights, random });
@@ -52,7 +54,7 @@ await injectApi.listen({ port: injectPort, host: "127.0.0.1" });
 logger.info(
   {
     stream: "stream:transactions",
-    baseTps: baseTps ?? "default (60)",
+    baseTps,
     injectPort,
     defaultConversion: defaultConversion ?? "default (0.90)",
     randomizeConversion,
@@ -101,17 +103,6 @@ function parseOptionalInteger(value: string | undefined): number | undefined {
   if (parsed === undefined) return undefined;
   if (!Number.isInteger(parsed) || parsed < 0) {
     throw new Error(`expected a non-negative integer, got: ${value}`);
-  }
-  return parsed;
-}
-
-// startGenerator only reads baseTps inside the tick, so an invalid value would
-// otherwise surface as a throw from a timer callback rather than at boot.
-function parsePositiveNumber(value: string | undefined): number | undefined {
-  const parsed = parseOptionalNumber(value);
-  if (parsed === undefined) return undefined;
-  if (parsed <= 0) {
-    throw new Error(`expected a positive number, got: ${value}`);
   }
   return parsed;
 }

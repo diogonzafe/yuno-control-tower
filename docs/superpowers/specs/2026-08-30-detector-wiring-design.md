@@ -1,5 +1,5 @@
 ---
-title: "The Control Tower — Design da fiação do detector (RollupSource + scheduler + API)"
+title: "The Control Tower — Detector wiring design (RollupSource + scheduler + API)"
 doc_id: "YCT-WIRE-001"
 doc_related:
   - "YCT-DETECT-001"
@@ -12,172 +12,179 @@ dimension_schema: ["merchant", "provider", "country", "payment_method", "issuer"
 time: "2026-08-30T05:30:00Z"
 ---
 
-# Design da fiação do detector
+# Detector wiring design
 
-Liga o motor de detecção — hoje completo, testado, e **mudo** — ao banco real e
-a uma API HTTP/SSE. É a dívida da fase H+3→H+7 do `context/roadmap.md`:
-`context/detector.md` §1.2 delega explicitamente "Scheduler / tick por minuto /
-fiação no Fastify / SSE" e "Implementação de `RollupSource`" para esta branch.
+Connects the detection engine — today complete, tested, and **mute** — to
+the real database and to an HTTP/SSE API. This is the debt from the
+H+3→H+7 phase of `context/roadmap.md`: `context/detector.md` §1.2 explicitly
+delegates "Scheduler / per-minute tick / Fastify wiring / SSE" and
+"`RollupSource` implementation" to this branch.
 
-Sem isso, os critérios de aceite 1 e 2 do `context/spec.md` §4 não são
-demonstráveis, mesmo com a lógica correta.
+Without it, acceptance criteria 1 and 2 of `context/spec.md` §4 are not
+demonstrable, even with correct logic.
 
-## Contexto
+## Context
 
-Pronto e fora de escopo desta branch:
+Done and out of scope for this branch:
 
-- `packages/app/src/detect/*` — `runDetectionTick(input): TickOutput`, função
-  pura, 100% testada com fixtures em memória. Não toca banco.
-- `packages/app/src/db/client.ts` — `db` (Drizzle) e `sql` (postgres.js).
-- `packages/app/src/ingest/*` — ingestão completa, populando `rollup_minute`.
+- `packages/app/src/detect/*` — `runDetectionTick(input): TickOutput`, a pure
+  function, 100% tested with in-memory fixtures. Doesn't touch the database.
+- `packages/app/src/db/client.ts` — `db` (Drizzle) and `sql` (postgres.js).
+- `packages/app/src/ingest/*` — full ingestion, populating `rollup_minute`.
 - `packages/contracts` — `ConfirmedDrop`, `EvidenceGap`, `EvidenceObject`.
 
-Fora de escopo, e continua fora: `diagnose/`, `orchestrate/`, `agent/`, UI.
+Out of scope, and staying out: `diagnose/`, `orchestrate/`, `agent/`, UI.
 
-## Decisões tomadas no brainstorm
+## Decisions made during the brainstorm
 
-| Decisão | Escolha | Por quê |
+| Decision | Choice | Why |
 |---|---|---|
-| Destino dos sinais | Buffer em memória + SSE + REST | `orchestrate/` é quem escreve em `incidents` (`detector.md` §1.2). Gravar aqui invadiria o escopo dele e criaria conflito. |
-| Processos | Ingest + scheduler + API num processo só | `rules.md` §6.2 é explícito: o `app` "consome o stream, roda rollup + detector, e serve REST/SSE". Hoje o ingest tem entrypoint separado — esta branch corrige isso. |
-| Superfície da API | SSE + sinais + lacunas + série de conversão | Cobre as 3 primeiras telas do mínimo viável de UI (`roadmap.md` §281). |
-| Disparo do tick | Timer de 60s com query por tick | Independente do ingest: se a ingestão morrer, o detector continua rodando e o silêncio fica **visível**, em vez de parecer saúde. |
+| Destination of signals | In-memory buffer + SSE + REST | `orchestrate/` is the one that writes to `incidents` (`detector.md` §1.2). Writing here would encroach on its scope and create a conflict. |
+| Processes | Ingest + scheduler + API in a single process | `rules.md` §6.2 is explicit: `app` "consumes the stream, runs rollup + detector, and serves REST/SSE." Today ingest has a separate entrypoint — this branch fixes that. |
+| API surface | SSE + signals + gaps + conversion series | Covers the first 3 screens of the minimum viable UI (`roadmap.md` §281). |
+| Tick trigger | 60s timer with a query per tick | Independent of ingest: if ingestion dies, the detector keeps running and the silence becomes **visible**, instead of looking like health. |
 
-Alternativas descartadas para o disparo: **tick disparado pelo ingest** (dado
-garantidamente completo, mas ingest travado = detector mudo, indistinguível de
-"está tudo bem" — o pior modo de falha numa demo); **cache de histórico em
-memória** (90 células × 120 min ≈ 10 mil linhas por tick é trivial para
-Postgres; cachear seria otimização prematura, `rules.md` §1).
+Alternatives discarded for the trigger: **tick triggered by ingest** (data
+guaranteed complete, but a stuck ingest = a mute detector, indistinguishable
+from "everything is fine" — the worst failure mode in a demo); **in-memory
+history cache** (90 cells × 120 min ≈ 10 thousand rows per tick is trivial
+for Postgres; caching would be premature optimization, `rules.md` §1).
 
-## Arquitetura
+## Architecture
 
 ```
 packages/app/src/
-├── db/queries.ts          # implementa RollupSource + carrega merchants/coverage
-├── detect/scheduler.ts    # laço de 60s: carrega → runDetectionTick → entrega
+├── db/queries.ts          # implements RollupSource + loads merchants/coverage
+├── detect/scheduler.ts    # 60s loop: load → runDetectionTick → deliver
 ├── api/
-│   ├── signal-store.ts    # ring buffer de sinais e lacunas
-│   ├── sse.ts             # broadcast, sem biblioteca
+│   ├── signal-store.ts    # ring buffer of signals and gaps
+│   ├── sse.ts             # broadcast, no library
 │   ├── routes.ts          # REST
-│   └── server.ts          # monta o Fastify
-└── run.ts                 # entrypoint único: ingest + scheduler + server
+│   └── server.ts          # assembles Fastify
+└── run.ts                 # single entrypoint: ingest + scheduler + server
 ```
 
-`detect/scheduler.ts` fica no `detect/` porque é runtime de detecção; `api/`
-permanece exclusivamente sobre HTTP.
+`detect/scheduler.ts` lives in `detect/` because it is detection runtime;
+`api/` stays exclusively about HTTP.
 
-## Camada de dados (`db/queries.ts`)
+## Data layer (`db/queries.ts`)
 
-Três funções, todas com Drizzle **tipado** — não `db.execute` cru. São selects
-simples, não as queries de `GROUP BY` dinâmico do cubo; o SQL cru continua
-reservado ao `diagnose/`, como `rules.md` §6.3.1 determina. Isso também elimina
-de graça o risco do §6.8: `amountUsdSum`/`approvedUsdSum` são
-`bigint({ mode: "number" })` e voltam como `number`.
+Three functions, all with **typed** Drizzle — not raw `db.execute`. These are
+simple selects, not the cube's dynamic `GROUP BY` queries; raw SQL stays
+reserved for `diagnose/`, as `rules.md` §6.3.1 dictates. This also eliminates
+the §6.8 risk for free: `amountUsdSum`/`approvedUsdSum` are
+`bigint({ mode: "number" })` and come back as `number`.
 
-- `getWindowRollups(bucket)` / `getHistory(from, to)` — implementam a interface
-  `RollupSource` que já existe declarada no arquivo.
-- `loadMerchantConfigs()` — **armadilha:** `expectedConversion` e
-  `minMaterialDropPp` são `numeric` sem mode explícito, logo Drizzle devolve
-  **string**. Exigem `Number()` explícito; sem isso o Wilson compara número com
-  string e o detector silenciosamente nunca dispara.
-- `loadRoutingCoverage()` — as 12 linhas do DD13.
+- `getWindowRollups(bucket)` / `getHistory(from, to)` — implement the
+  `RollupSource` interface already declared in the file.
+- `loadMerchantConfigs()` — **trap:** `expectedConversion` and
+  `minMaterialDropPp` are `numeric` with no explicit mode, so Drizzle returns
+  a **string**. They require an explicit `Number()`; without it Wilson
+  compares a number to a string and the detector silently never fires.
+- `loadRoutingCoverage()` — the 12 rows from DD13.
 
-`rollup_minute.bucket` é `timestamp` (vem como `Date`), mas `RollupRow.bucket` é
-`string` ISO. A conversão acontece na borda do SQL, uma vez, para que o motor
-puro receba exatamente o formato que seus testes já usam.
+`rollup_minute.bucket` is `timestamp` (comes back as a `Date`), but
+`RollupRow.bucket` is an ISO `string`. The conversion happens once, at the
+SQL boundary, so the pure engine receives exactly the shape its tests already
+use.
 
 ## Scheduler (`detect/scheduler.ts`)
 
-A cada 60 segundos:
+Every 60 seconds:
 
-1. **Alvo** = `floorToMinute(agora − 10s) − 1min`. A folga de 10s absorve o lag
-   do ingest; o `floor` mais a comparação com o último bucket processado torna o
-   cálculo imune ao drift do `setInterval` e a disparos duplicados. Os 10s custam
-   10 segundos de latência, irrelevantes contra os 3 minutos que a regra de
-   persistência já impõe.
-2. **Catch-up limitado a 10 buckets.** Se buckets foram pulados, processa do
-   último+1 até o alvo, em ordem. Isso importa: pular um bucket quebraria a
-   contagem de 3 janelas consecutivas e o incidente nunca confirmaria. No boot
-   (sem último bucket), processa **só o mais recente** — sem backfill de 2h, que
-   dispararia sinais velhos na largada.
-3. Carrega `windowRows`, `history` (120 min, `ONSET_LOOKBACK_MIN`), `merchants` e
-   `coverage`. Quatro queries por tick; os catálogos são recarregados a cada tick
-   de propósito — 21 linhas no total, e cachear traria a pergunta de invalidação
-   sem economia mensurável.
-4. Chama `runDetectionTick`.
-5. Entrega `signals` e `evidenceGaps` ao store e ao SSE; guarda `nextState`.
+1. **Target** = `floorToMinute(now − 10s) − 1min`. The 10s slack absorbs
+   ingest lag; the `floor` plus the comparison against the last processed
+   bucket makes the calculation immune to `setInterval` drift and to
+   duplicate firings. The 10s cost 10 seconds of latency, irrelevant against
+   the 3 minutes the persistence rule already imposes.
+2. **Catch-up capped at 10 buckets.** If buckets were skipped, it processes
+   from last+1 up to the target, in order. This matters: skipping a bucket
+   would break the count of 3 consecutive windows and the incident would
+   never confirm. On boot (no last bucket), it processes **only the most
+   recent one** — no 2h backfill, which would fire stale signals at
+   startup.
+3. Loads `windowRows`, `history` (120 min, `ONSET_LOOKBACK_MIN`), `merchants`,
+   and `coverage`. Four queries per tick; the catalogs are reloaded every
+   tick on purpose — 21 rows total, and caching would raise the invalidation
+   question with no measurable savings.
+4. Calls `runDetectionTick`.
+5. Delivers `signals` and `evidenceGaps` to the store and to SSE; keeps
+   `nextState`.
 
-**`PersistenceState` fica em memória.** `detector.md` §9 permite explicitamente
-("memória do processo ou tabela"). Custo declarado: reiniciar o processo zera as
-sequências, então um incidente em curso leva mais 3 minutos para reconfirmar.
-Aceitável, e evita uma tabela + migration que o `orchestrate/` provavelmente vai
-querer desenhar do seu próprio jeito.
+**`PersistenceState` stays in memory.** `detector.md` §9 explicitly allows
+this ("process memory or a table"). Declared cost: restarting the process
+resets the sequences, so an in-progress incident takes another 3 minutes to
+reconfirm. Acceptable, and it avoids a table + migration that
+`orchestrate/` will likely want to design its own way.
 
 ## API
 
-**SSE** (`api/sse.ts`), sem biblioteca (`rules.md` §6.1): escreve direto no
-`reply.raw` com headers de `text/event-stream`, mantém um `Set` de conexões,
-remove no `close`, e envia um comentário `: keepalive` a cada 20s para não
-morrer em proxy. Eventos: `signal` e `evidence-gap`.
+**SSE** (`api/sse.ts`), no library (`rules.md` §6.1): writes directly to
+`reply.raw` with `text/event-stream` headers, keeps a `Set` of connections,
+removes on `close`, and sends a `: keepalive` comment every 20s so it doesn't
+die behind a proxy. Events: `signal` and `evidence-gap`.
 
-| Rota | O quê |
+| Route | What |
 |---|---|
-| `GET /health` | estado do ingest, último tick, último bucket, `bucketLagMinutes`, conexões abertas |
-| `GET /api/signals?limit=` | `ConfirmedDrop[]` do buffer, mais novo primeiro |
-| `GET /api/evidence-gaps?limit=` | `EvidenceGap[]` — o bônus "admite que não sabe" (`spec.md` §5) |
-| `GET /api/conversion?from=&to=&<dims>` | série temporal para o gráfico ao vivo |
+| `GET /health` | ingest state, last tick, last bucket, `bucketLagMinutes`, open connections |
+| `GET /api/signals?limit=` | `ConfirmedDrop[]` from the buffer, newest first |
+| `GET /api/evidence-gaps?limit=` | `EvidenceGap[]` — the "admits it doesn't know" bonus (`spec.md` §5) |
+| `GET /api/conversion?from=&to=&<dims>` | time series for the live chart |
 | `GET /api/stream` | SSE |
 
-`/api/conversion` **reusa `aggregateByBucket` de `detect/aggregate.ts`** em vez
-de escrever agregação nova — é literalmente o que `rules.md` §1 exige ("as três
-leituras do rollup usam a mesma função de agregação com parâmetros diferentes,
-não três implementações").
+`/api/conversion` **reuses `aggregateByBucket` from `detect/aggregate.ts`**
+instead of writing a new aggregation — it's literally what `rules.md` §1
+requires ("the three rollup reads use the same aggregation function with
+different parameters, not three implementations").
 
-O buffer é um ring com teto de 200 sinais e 200 lacunas.
+The buffer is a ring capped at 200 signals and 200 gaps.
 
-## Erros e observabilidade
+## Errors and observability
 
-**Falha no tick:** o scheduler nunca morre. Captura, loga em `error`, e **não
-avança** o cursor — o catch-up do minuto seguinte tenta de novo. Se a falha
-persistir, o teto de 10 buckets faz o detector ficar para trás, e o `/health`
-conta a verdade via `bucketLagMinutes`. É deliberado falhar **visivelmente** (lag
-crescendo) em vez de silenciosamente (pulando buckets).
+**Tick failure:** the scheduler never dies. It catches, logs at `error`, and
+**does not advance** the cursor — the next minute's catch-up tries again. If
+the failure persists, the 10-bucket cap makes the detector fall behind, and
+`/health` tells the truth via `bucketLagMinutes`. It is deliberate to fail
+**visibly** (growing lag) instead of silently (skipping buckets).
 
-**Consequência declarada de juntar os processos:** o consumer do ingest chama
-`process.exit(1)` após 5 retries de banco. No processo único isso derruba a API
-junto. Mantido como está por escolha explícita no brainstorm. Como o banco é o
-mesmo que o detector usa, ele estaria inoperante de qualquer forma; o que se
-perde é a API conseguir *reportar* a falha.
+**Declared consequence of merging the processes:** the ingest consumer calls
+`process.exit(1)` after 5 database retries. In the single-process setup this
+takes the API down with it. Kept as-is by explicit choice during the
+brainstorm. Since it's the same database the detector uses, it would be
+inoperative anyway; what's lost is the API's ability to *report* the
+failure.
 
-**SSE:** escrever em socket morto lança — cada `write` é protegido e a conexão é
-removida do `Set`, sem derrubar o broadcast para as outras.
+**SSE:** writing to a dead socket throws — every `write` is guarded and the
+connection is removed from the `Set`, without taking down the broadcast for
+the others.
 
-## Testes
+## Tests
 
-Ordem de escrita (TDD, `rules.md` §4 — determinístico primeiro):
+Writing order (TDD, `rules.md` §4 — deterministic first):
 
-1. **`scheduler.test.ts`** — lógica pura, com relógio e `RollupSource` injetados,
-   sem timer e sem banco: cálculo do bucket-alvo (folga, drift, disparo
-   duplicado), catch-up limitado a 10, boot processando só o mais recente, e
-   falha de tick não avançando o cursor.
-2. **`signal-store.test.ts`** — teto do ring, ordem (mais novo primeiro), `limit`.
-3. **`sse.test.ts`** — formato do wire (`event:` + `data:` + linha em branco),
-   conexão morta removida sem lançar.
-4. **`routes.test.ts`** — via `app.inject()` do Fastify, mesmo padrão dos testes
-   da API de injeção do gerador. Fonte falsa, sem banco.
-5. **`queries.integration.test.ts`** — o **único** que precisa do banco real, e o
-   mais importante: verifica que `expectedConversion` volta como `number` e não
-   `string`, e que `bucket` vira ISO. É onde mora a falha silenciosa descrita
-   acima.
+1. **`scheduler.test.ts`** — pure logic, with an injected clock and
+   `RollupSource`, no timer and no database: target-bucket calculation
+   (slack, drift, duplicate firing), catch-up capped at 10, boot processing
+   only the most recent one, and a tick failure not advancing the cursor.
+2. **`signal-store.test.ts`** — ring cap, order (newest first), `limit`.
+3. **`sse.test.ts`** — wire format (`event:` + `data:` + blank line), dead
+   connection removed without throwing.
+4. **`routes.test.ts`** — via Fastify's `app.inject()`, same pattern as the
+   generator's injection API tests. Fake source, no database.
+5. **`queries.integration.test.ts`** — the **only** one that needs the real
+   database, and the most important: verifies that `expectedConversion`
+   comes back as a `number`, not a `string`, and that `bucket` turns into
+   ISO. This is where the silent failure described above lives.
 
-**Verificação manual, no fim:** subir o processo único, injetar um incidente pela
-API do gerador, e ver o `signal` chegar no SSE dentro de ~3 minutos (persistência
-de 3 janelas). É a primeira vez que o sistema funciona ponta a ponta.
+**Manual verification, at the end:** bring up the single process, inject an
+incident through the generator's API, and watch the `signal` arrive on SSE
+within ~3 minutes (3-window persistence). This is the first time the system
+works end to end.
 
-## Fora de escopo
+## Out of scope
 
-Escrita em `incidents`, fingerprint com decline dominante, ciclo de vida,
-memória/pgvector (`orchestrate/`); teste residual, beam search, peeling, custo,
-prioridade (`diagnose/`); narrador e ferramentas (`agent/`); qualquer componente
-de UI. O `EvidenceObject` não é montado aqui — `diagnose/evidence.ts` o monta,
-conforme `flight_logs/who_assembles_the_evidence_object.md`.
+Writing to `incidents`, fingerprinting with the dominant decline, lifecycle,
+memory/pgvector (`orchestrate/`); residual test, beam search, peeling, cost,
+priority (`diagnose/`); narrator and tools (`agent/`); any UI component. The
+`EvidenceObject` is not assembled here — `diagnose/evidence.ts` assembles it,
+per `flight_logs/who_assembles_the_evidence_object.md`.
