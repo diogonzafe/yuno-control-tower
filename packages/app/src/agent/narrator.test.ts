@@ -19,9 +19,9 @@ const evidence: EvidenceObject = {
 
 const input: NarrationInput = { evidence, recommendation: null };
 
-// rules.md §4, narrator row: "Teste que faz parsing de números no output e
-// confere contra o objeto de evidência — este teste é o que garante a
-// fronteira #2." Boundary #2 is that the narrator never calculates: any number
+// rules.md §4, narrator row: "Test that parses numbers out of the output and
+// checks them against the evidence object — this test is what guarantees
+// boundary #2." Boundary #2 is that the narrator never calculates: any number
 // it prints must have come literally from a field of the closed evidence object.
 describe("assertNarrativeUsesOnlyEvidenceNumbers (rules.md §3 boundary #2)", () => {
   it("accepts a narrative whose every number appears in the evidence", () => {
@@ -59,7 +59,7 @@ describe("assertNarrativeUsesOnlyEvidenceNumbers (rules.md §3 boundary #2)", ()
   it("accepts a rate written as a percentage", () => {
     // observedRate is 0.12 in the object; operations reads "12%". Rejecting the
     // human form would push every LLM narrative to the template fallback and
-    // defeat spec.md §4 criterion 4 ("explicação legível").
+    // defeat spec.md §4 criterion 4 ("legible explanation").
     expect(() =>
       assertNarrativeUsesOnlyEvidenceNumbers("Conversion fell to 12%, against 70% expected.", input),
     ).not.toThrow();

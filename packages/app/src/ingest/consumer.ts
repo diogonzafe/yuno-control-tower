@@ -9,8 +9,15 @@ const logger = pino({ name: "ingest-consumer", level: process.env.VITEST ? "sile
 
 const STREAM_KEY = "stream:transactions";
 const GROUP_NAME = "ingest";
-const CONSUMER_NAME = "app-1";
-const BATCH_SIZE = 100;
+const CONSUMER_NAME = process.env.INGEST_CONSUMER_NAME ?? "app-1";
+// Each batch costs a fixed 7 serialized round-trips — XREADGROUP and XACK on
+// Redis, plus BEGIN, three inserts and COMMIT on Postgres — and both are cloud
+// services roughly 220ms away. That cost does not grow with the batch, so at
+// 100 the loop spends almost all of its time waiting and drains ~41 events/s,
+// which is below what the generator produces at peak. Raising the batch
+// amortises the same round-trips over 10x the rows.
+// See .superpowers/sdd/2026-08-30-orchestrate/ingest-throughput-investigation.md
+const BATCH_SIZE = 1000;
 const BLOCK_MS = 500;
 const MAX_DB_RETRIES = 5;
 const RETRY_BASE_DELAY_MS = 200;

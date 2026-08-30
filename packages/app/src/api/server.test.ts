@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import type { ConfirmedDrop, EvidenceObject } from "@control-tower/contracts";
 import type { RollupSource } from "../db/queries.js";
@@ -158,33 +159,12 @@ describe("GET /api/evidence", () => {
 describe("agentic REST endpoints", () => {
   it("returns persisted incidents", async () => {
     const { app, repository } = build();
-    await repository.upsertIncidentFromEvidence({
-      evidence: {
-        fingerprint: "country=BR|merchantId=BR_STORE_01|providerId=adyen#05",
-        dimensions: { merchantId: "BR_STORE_01", country: "BR", providerId: "adyen" },
-        observedRate: 0.41,
-        expectedRate: 0.95,
-        expectedSource: "cross_sectional",
-        deltaPp: 3,
-        ci: { low: 0.36, high: 0.46, level: 0.95 },
-        attempts: 420,
-        approved: 172,
-        windowBucket: "2026-08-30T14:06:00.000Z",
-        windowUsed: "1m",
-        consecutiveWindows: 3,
-        startedAt: "2026-08-30T14:03:00.000Z",
-        startedAtExact: true,
-        declineMix: [],
-        dominantDecline: "05",
-        suppressedEchoes: [],
-        lostApprovals: 244,
-        costUsdMinor: 24_400,
-        costUsdPerMin: 8_133,
-        costLocal: { BRL: 122_000 },
-        priorityScore: 8_133,
-        diagnosisSource: "beam_search",
-        investigationTrail: [],
-      },
+    repository.seedIncident({
+      incidentId: randomUUID(),
+      fingerprint: "country=BR|merchantId=BR_STORE_01|providerId=adyen#05",
+      status: "open",
+      detectedAt: "2026-08-30T14:06:00.000Z",
+      startedAt: "2026-08-30T14:03:00.000Z",
       narrativeOps: "ops",
       narrativeExec: "exec",
       playbookId: "provider-default",
@@ -233,33 +213,13 @@ describe("agentic REST endpoints", () => {
       createdAt: "2026-08-30T14:06:00.000Z",
       completedAt: "2026-08-30T14:06:01.000Z",
     });
-    const incidentId = await repository.upsertIncidentFromEvidence({
-      evidence: {
-        fingerprint: "country=BR|merchantId=BR_STORE_01|providerId=adyen#05",
-        dimensions: { merchantId: "BR_STORE_01", country: "BR", providerId: "adyen" },
-        observedRate: 0.41,
-        expectedRate: 0.95,
-        expectedSource: "cross_sectional",
-        deltaPp: 3,
-        ci: { low: 0.36, high: 0.46, level: 0.95 },
-        attempts: 420,
-        approved: 172,
-        windowBucket: "2026-08-30T14:06:00.000Z",
-        windowUsed: "1m",
-        consecutiveWindows: 3,
-        startedAt: "2026-08-30T14:03:00.000Z",
-        startedAtExact: true,
-        declineMix: [],
-        dominantDecline: "05",
-        suppressedEchoes: [],
-        lostApprovals: 244,
-        costUsdMinor: 24_400,
-        costUsdPerMin: 8_133,
-        costLocal: { BRL: 122_000 },
-        priorityScore: 8_133,
-        diagnosisSource: "agent",
-        investigationTrail: [],
-      },
+    const incidentId = randomUUID();
+    repository.seedIncident({
+      incidentId,
+      fingerprint: "country=BR|merchantId=BR_STORE_01|providerId=adyen#05",
+      status: "open",
+      detectedAt: "2026-08-30T14:06:00.000Z",
+      startedAt: "2026-08-30T14:03:00.000Z",
       narrativeOps: "ops",
       narrativeExec: "exec",
       playbookId: "provider-default",

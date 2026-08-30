@@ -1,15 +1,13 @@
 import {
   InvestigationAuditStep,
   InvestigationAuditTrail,
-  type EvidenceObject,
   type ConclusionTag,
   type InvestigationAuditStep as InvestigationAuditStepType,
   type InvestigationAuditTrail as InvestigationAuditTrailType,
   type InvestigationRequestV1,
   type InvestigationRunFailureCode,
 } from "@control-tower/contracts";
-import { and, desc, eq, isNull, ne } from "drizzle-orm";
-import { randomUUID } from "node:crypto";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { incidents, investigationRuns, investigationSteps } from "../db/schema.js";
 import type { InvestigationActor, InvestigationAuditStore } from "./audit.js";
@@ -71,12 +69,6 @@ export interface InvestigationRunRepository extends InvestigationAuditStore {
   listRunsByIncident(incidentId: string): Promise<RunRecord[]>;
   listSteps(runId: string): Promise<InvestigationAuditStepType[]>;
   listOrphanRuns(): Promise<RunRecord[]>;
-  upsertIncidentFromEvidence(input: {
-    evidence: EvidenceObject;
-    narrativeOps: string | null;
-    narrativeExec: string | null;
-    playbookId: string | null;
-  }): Promise<string>;
   listIncidents(limit?: number): Promise<IncidentRecord[]>;
 }
 
@@ -235,39 +227,11 @@ export class InMemoryInvestigationRunRepository implements InvestigationRunRepos
     return [...this.runs.values()].filter((run) => run.status === "running");
   }
 
-  async upsertIncidentFromEvidence(input: {
-    evidence: EvidenceObject;
-    narrativeOps: string | null;
-    narrativeExec: string | null;
-    playbookId: string | null;
-  }): Promise<string> {
-    const existing = [...this.incidentRows.values()].find(
-      (incident) => incident.fingerprint === input.evidence.fingerprint && incident.status !== "resolved",
-    );
-    if (existing) {
-      this.incidentRows.set(existing.incidentId, {
-        ...existing,
-        detectedAt: input.evidence.windowBucket,
-        startedAt: input.evidence.startedAt,
-        narrativeOps: input.narrativeOps,
-        narrativeExec: input.narrativeExec,
-        playbookId: input.playbookId,
-      });
-      return existing.incidentId;
-    }
-
-    const incidentId = randomUUID();
-    this.incidentRows.set(incidentId, {
-      incidentId,
-      fingerprint: input.evidence.fingerprint,
-      status: "open",
-      detectedAt: input.evidence.windowBucket,
-      startedAt: input.evidence.startedAt,
-      narrativeOps: input.narrativeOps,
-      narrativeExec: input.narrativeExec,
-      playbookId: input.playbookId,
-    });
-    return incidentId;
+  // Test-double seeding, deliberately absent from InvestigationRunRepository:
+  // the real incident writer lives in orchestrate/incidents.ts, and this exists
+  // only so API route tests can populate listIncidents without a database.
+  seedIncident(record: IncidentRecord): void {
+    this.incidentRows.set(record.incidentId, record);
   }
 
   async listIncidents(limit = 50): Promise<IncidentRecord[]> {
@@ -444,75 +408,6 @@ export class PostgresInvestigationRunRepository implements InvestigationRunRepos
       .from(investigationRuns)
       .where(and(eq(investigationRuns.actor, "agent"), eq(investigationRuns.status, "running")));
     return rows.map(toRunRecord);
-  }
-
-  async upsertIncidentFromEvidence(input: {
-    evidence: EvidenceObject;
-    narrativeOps: string | null;
-    narrativeExec: string | null;
-    playbookId: string | null;
-  }): Promise<string> {
-    const [existing] = await this.database
-      .select()
-      .from(incidents)
-      .where(and(eq(incidents.fingerprint, input.evidence.fingerprint), ne(incidents.status, "resolved")))
-      .orderBy(desc(incidents.detectedAt));
-
-    if (existing) {
-      await this.database
-        .update(incidents)
-        .set({
-          dimensions: input.evidence.dimensions,
-          dominantDecline: input.evidence.dominantDecline,
-          ciLow: input.evidence.ci.low.toString(),
-          ciHigh: input.evidence.ci.high.toString(),
-          ciLevel: input.evidence.ci.level.toString(),
-          startedAt: new Date(input.evidence.startedAt),
-          startedAtExact: input.evidence.startedAtExact,
-          detectedAt: new Date(input.evidence.windowBucket),
-          baselineRate: input.evidence.expectedRate.toString(),
-          currentRate: input.evidence.observedRate.toString(),
-          lostApprovals: input.evidence.lostApprovals,
-          costLocal: input.evidence.costLocal,
-          costUsdMinor: input.evidence.costUsdMinor,
-          costUsdPerMin: input.evidence.costUsdPerMin,
-          priorityScore: input.evidence.priorityScore.toString(),
-          evidence: input.evidence,
-          narrativeOps: input.narrativeOps,
-          narrativeExec: input.narrativeExec,
-          playbookId: input.playbookId,
-        })
-        .where(eq(incidents.incidentId, existing.incidentId));
-      return existing.incidentId;
-    }
-
-    const incidentId = randomUUID();
-    await this.database.insert(incidents).values({
-      incidentId,
-      fingerprint: input.evidence.fingerprint,
-      dimensions: input.evidence.dimensions,
-      dominantDecline: input.evidence.dominantDecline,
-      status: "open",
-      ciLow: input.evidence.ci.low.toString(),
-      ciHigh: input.evidence.ci.high.toString(),
-      ciLevel: input.evidence.ci.level.toString(),
-      startedAt: new Date(input.evidence.startedAt),
-      startedAtExact: input.evidence.startedAtExact,
-      detectedAt: new Date(input.evidence.windowBucket),
-      resolvedAt: null,
-      baselineRate: input.evidence.expectedRate.toString(),
-      currentRate: input.evidence.observedRate.toString(),
-      lostApprovals: input.evidence.lostApprovals,
-      costLocal: input.evidence.costLocal,
-      costUsdMinor: input.evidence.costUsdMinor,
-      costUsdPerMin: input.evidence.costUsdPerMin,
-      priorityScore: input.evidence.priorityScore.toString(),
-      evidence: input.evidence,
-      narrativeOps: input.narrativeOps,
-      narrativeExec: input.narrativeExec,
-      playbookId: input.playbookId,
-    });
-    return incidentId;
   }
 
   async listIncidents(limit = 50): Promise<IncidentRecord[]> {

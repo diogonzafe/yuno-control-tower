@@ -17,6 +17,7 @@ const [
   { createEvidenceStore },
   { createSseHub },
   { buildServer },
+  orchestrate,
 ] = await Promise.all([
   import("pino"),
   import("./ingest/consumer.js"),
@@ -27,14 +28,56 @@ const [
   import("./api/evidence-store.js"),
   import("./api/sse.js"),
   import("./api/server.js"),
+  import("./orchestrate/index.js"),
 ]);
+
+// An EvidenceObject carries only `diagnosis.cell`, so it has to find the
+// ConfirmedDrop it came from by dimensions. Containment does not work: the two
+// sit on different branches of the split. crossSectionalSweep (detect/trigger.ts)
+// emits signals at provider, paymentMethod and issuer cells, while the beam
+// search never adds paymentMethod to an issuer cell — so an issuer incident has
+// signal {merchantId, country, paymentMethod: "CARD", issuerId} against evidence
+// {merchantId, country, issuerId}, and any full-dimension test drops it.
+// merchantId×country is the only reliable join, because it is exactly what
+// diagnose/run.ts's rootsOf collapses signals to before running the search that
+// produced this evidence. Several signals can share one root; any of them is a
+// valid trigger, since by construction they agree on it.
+function sharesRoot(
+  cell: Record<string, string | undefined>,
+  signal: Record<string, string | undefined>,
+): boolean {
+  if (cell.merchantId === undefined || cell.country === undefined) return false;
+  return cell.merchantId === signal.merchantId && cell.country === signal.country;
+}
 
 const logger = pino({ name: "app" });
 const port = Number(process.env.APP_PORT ?? process.env.PORT ?? 4000);
 
+// onResult is synchronous and the scheduler's catch-up loop calls it once per
+// bucket without awaiting what the callback starts, so unserialized ticks would
+// interleave their writes: bucket N+1's reconcile could run before bucket N's
+// openOrUpdate bumped detected_at and resolve a cell that was just reconfirmed,
+// and two openOrUpdate calls for one fingerprint could both miss the SELECT and
+// both INSERT — incidents.fingerprint carries an index, not a unique
+// constraint, so that yields two live ids for one cell and two investigations.
+let orchestrationTail: Promise<void> = Promise.resolve();
+
+function enqueueOrchestration(bucket: string, work: () => Promise<void>): void {
+  // The .catch is applied to the stored tail, not to a copy: the tail must stay
+  // fulfilled so one failed bucket cannot poison every bucket behind it.
+  // openOrUpdate is idempotent by fingerprint and reconcile derives everything
+  // from detected_at, so the next bucket recovers on its own.
+  orchestrationTail = orchestrationTail.then(work).catch((error: unknown) => {
+    logger.error({ error, bucket }, "orchestration failed for this tick");
+  });
+}
+
 const store = createSignalStore();
 const evidenceStore = createEvidenceStore();
 const hub = createSseHub();
+const incidentWriter = orchestrate.createIncidentWriter();
+const lifecycle = orchestrate.createLifecycle();
+const incidentMemory = orchestrate.createIncidentMemory();
 const repository = new agent.PostgresInvestigationRunRepository(undefined, {
   onRun: (run) => hub.broadcast("investigation-run", run),
   onStep: (step) => hub.broadcast("investigation-step", step),
@@ -46,6 +89,8 @@ const coordinator = agent.createAgentCoordinator({
   loadCoverage: queries.loadRoutingCoverage,
   loadDeclineCatalog: queries.loadDeclineCatalog,
   repository,
+  incidentWriter,
+  memory: incidentMemory,
   config: agent.loadAgentConfig(),
   onEvidence: (evidence: import("@control-tower/contracts").EvidenceObject) => {
     evidenceStore.add([evidence]);
@@ -53,6 +98,7 @@ const coordinator = agent.createAgentCoordinator({
   },
   onNarrative: (payload: { incidentId: string; narrative: import("@control-tower/contracts").NarrativeOutput }) =>
     hub.broadcast("narrative", payload),
+  onMemoryError: (error: unknown) => logger.warn({ error }, "incident memory recall failed"),
 });
 let ingestUp = true;
 
@@ -81,20 +127,53 @@ const scheduler = startScheduler({
     store.addSignals(signals);
     store.addGaps(evidenceGaps);
     evidenceStore.add(evidence);
+
+    // Broadcast before any await, exactly as this callback did before incidents
+    // were wired in. None of these payloads carries an incidentId, so nothing is
+    // gained by waiting — and a database hiccup, or a queued bucket ahead of
+    // this one, must not cost the UI a whole tick of signals and gaps.
     for (const item of evidence) hub.broadcast("evidence", item);
     for (const signal of signals) hub.broadcast("signal", signal);
     for (const gap of evidenceGaps) hub.broadcast("evidence-gap", gap);
-    for (const signal of signals) {
-      void coordinator.handleSignal(signal).catch((error: unknown) => {
-        logger.error({ error, bucket, signal }, "agent coordinator failed");
-      });
-    }
+
     if (signals.length > 0 || evidenceGaps.length > 0) {
       logger.info(
         { bucket, signals: signals.length, evidenceGaps: evidenceGaps.length, evidence: evidence.length },
         "detection tick produced output",
       );
     }
+
+    enqueueOrchestration(bucket, async () => {
+      // Order matters: openOrUpdate bumps detected_at for every cell still
+      // down, so a cell reconfirmed in THIS bucket is never resolved by the
+      // reconcile pass that follows it.
+      const opened = new Map<string, string>();
+      for (const item of evidence) {
+        const upserted = await incidentWriter.openOrUpdate(item);
+        opened.set(item.fingerprint, upserted.incidentId);
+      }
+
+      const transitions = await lifecycle.reconcile({ bucket, evidenceGaps });
+      if (transitions.resolve.length > 0 || transitions.inconclusive.length > 0) {
+        hub.broadcast("incident-transitions", { bucket, ...transitions });
+        logger.info({ bucket, ...transitions }, "incident lifecycle reconciled");
+      }
+
+      for (const item of evidence) {
+        const incidentId = opened.get(item.fingerprint);
+        if (!incidentId) continue;
+        // Peeling can put two evidence objects under one signal — that is
+        // spec.md §4 criterion 5, and each gets its own incident and its own
+        // investigation off the same trigger.
+        const trigger = signals.find((signal) => sharesRoot(item.dimensions, signal.dimensions));
+        if (!trigger) continue;
+        void coordinator
+          .handleSignal({ signal: trigger, incidentId, fingerprint: item.fingerprint })
+          .catch((error: unknown) => {
+            logger.error({ error, bucket, incidentId }, "agent coordinator failed");
+          });
+      }
+    });
   },
 });
 

@@ -1,60 +1,60 @@
-# Registrar resumos auditáveis de decisão, não chain-of-thought
+# Record auditable decision summaries, not chain-of-thought
 
-## Opções consideradas
+## Options considered
 
-- Pedir ao investigador que escreva todo o raciocínio em tags
-  `<thinking>` e persistir esse texto no banco.
-- Usar, quando disponível, o resumo de raciocínio fornecido pelo provider do
-  modelo como trilha oficial do produto.
-- Exigir em cada chamada de tool um contexto de decisão curto, estruturado e
-  referenciado aos passos anteriores, mantendo o raciocínio interno fora do
-  banco.
-- Registrar somente argumentos e resultados das tools, sem explicar por que o
-  agente escolheu cada próxima consulta.
+- Ask the investigator to write out all its reasoning in `<thinking>` tags
+  and persist that text in the database.
+- Use, where available, the reasoning summary provided by the model
+  provider as the product's official trail.
+- Require a short, structured decision context on every tool call,
+  referenced to prior steps, keeping internal reasoning out of the database.
+- Record only the tools' arguments and results, without explaining why the
+  agent chose each next query.
 
-## O que escolhemos
+## What we chose
 
-Cada chamada de tool do investigador carrega um `decisionContext` validado com:
+Every investigator tool call carries a validated `decisionContext` with:
 
-- `tag`, escolhida de uma enumeração fechada da etapa investigativa;
-- `summary`, com no máximo 500 caracteres e baseada somente em evidência
-  visível;
-- `hypothesis`, opcional e estruturada como dimensão e valor investigados;
-- `basedOnStepNos`, contendo apenas passos já concluídos do mesmo run.
+- `tag`, chosen from a closed enumeration of the investigative step;
+- `summary`, at most 500 characters and based only on visible evidence;
+- `hypothesis`, optional and structured as a dimension and an investigated
+  value;
+- `basedOnStepNos`, containing only already-completed steps from the same
+  run.
 
-O wrapper da tool remove `decisionContext` antes de chamar o serviço
-determinístico. A auditoria persiste o contexto em campos próprios de
-`investigation_steps`; o dashboard renderiza `tag` como um marcador visual e
-mostra o resumo junto dos argumentos e resultados da tool.
+The tool wrapper strips `decisionContext` before calling the deterministic
+service. The audit trail persists the context in dedicated
+`investigation_steps` columns; the dashboard renders `tag` as a visual marker
+and shows the summary alongside the tool's arguments and results.
 
-As tags iniciais são `HYPOTHESIS`, `DRILL_DOWN`, `COMPARE_HISTORY`,
-`CHECK_DECLINE_MIX`, `VALIDATE_RESIDUAL`, `CONFIRM_ONSET` e
-`ESTIMATE_IMPACT`. A conclusão estruturada usa `STOP_CONCLUSIVE` ou
-`STOP_INCONCLUSIVE` e referencia os passos que a sustentam. O contexto das
-chamadas fica em `investigation_steps`; a tag, o resumo e os passos de suporte
-da conclusão ficam em `investigation_runs`. A conclusão não é modelada como uma
-sétima tool.
+The initial tags are `HYPOTHESIS`, `DRILL_DOWN`, `COMPARE_HISTORY`,
+`CHECK_DECLINE_MIX`, `VALIDATE_RESIDUAL`, `CONFIRM_ONSET`, and
+`ESTIMATE_IMPACT`. The structured conclusion uses `STOP_CONCLUSIVE` or
+`STOP_INCONCLUSIVE` and references the steps that support it. Call-level
+context lives in `investigation_steps`; the conclusion's tag, summary, and
+supporting steps live in `investigation_runs`. The conclusion is not modeled
+as a seventh tool.
 
-Não solicitamos nem persistimos chain-of-thought, conteúdo em tags
-`<thinking>`, tokens de raciocínio ou texto oculto do provider. Um eventual
-resumo de raciocínio exposto pelo provider pode servir à observabilidade
-técnica, mas nunca substitui a trilha de domínio nem participa do diagnóstico.
+We do not request or persist chain-of-thought, `<thinking>`-tag content,
+reasoning tokens, or hidden provider text. A reasoning summary the provider
+happens to expose may serve technical observability, but it never replaces
+the domain trail and never participates in diagnosis.
 
-## Por quê
+## Why
 
-O dashboard precisa explicar a sequência de decisões do investigador, mas texto
-livre de raciocínio não é um contrato estável, verificável ou seguro. Um contexto
-estruturado permite validar tamanho, vocabulário, referências e ausência de
-números não observados, além de ligar cada justificativa à pergunta e ao
-resultado que realmente foram auditados.
+The dashboard needs to explain the investigator's sequence of decisions, but
+free-form reasoning text is not a stable, verifiable, or safe contract. A
+structured context lets us validate length, vocabulary, references, and the
+absence of unobserved numbers, while also tying each justification to the
+question and result that were actually audited.
 
-Separar `decisionContext` do input determinístico preserva a fronteira do
-projeto: o agente escolhe o que consultar, enquanto números e regras continuam
-nos serviços determinísticos. Também evita tratar XML ou HTML gerado pelo modelo
-como interface do dashboard.
+Separating `decisionContext` from the deterministic input preserves the
+project's boundary: the agent chooses what to query, while numbers and rules
+stay in the deterministic services. It also avoids treating model-generated
+XML or HTML as the dashboard's interface.
 
-O custo é aumentar os schemas das seis tools, a migration, os testes e o prompt.
-O resumo continua sendo uma explicação produzida pelo modelo e não uma prova de
-causalidade por si só; a prova permanece nos resultados das tools e nos passos
-referenciados. A enumeração de tags também exigirá versionamento se o fluxo de
-investigação ganhar novas etapas.
+The cost is a larger schema across the six tools, the migration, the tests,
+and the prompt. The summary is still an explanation produced by the model,
+not proof of causality by itself; the proof remains in the tools' results and
+the referenced steps. The tag enumeration will also need versioning if the
+investigation flow gains new stages.

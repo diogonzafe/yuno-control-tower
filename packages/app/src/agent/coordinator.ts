@@ -4,6 +4,7 @@ import {
   type EvidenceObject,
   type InvestigationRequestV1,
   type NarrativeOutput,
+  type SimilarIncident,
 } from "@control-tower/contracts";
 import { randomUUID } from "node:crypto";
 import type { AgentConfig } from "./config.js";
@@ -18,30 +19,27 @@ import {
 import { DECLINE_CURRENT_LOOKBACK_MIN, DECLINE_HISTORY_LOOKBACK_MIN } from "../diagnose/constants.js";
 import { buildEvidence } from "../diagnose/evidence.js";
 import { runDiagnosis, type Diagnosis } from "../diagnose/run.js";
+import type { IncidentWriter } from "../orchestrate/incidents.js";
+import type { IncidentMemory } from "../orchestrate/memory.js";
 
 type CoordinatorDeps = DeterministicInvestigationDataSourceDeps & {
   repository: InvestigationRunRepository;
+  incidentWriter: IncidentWriter;
+  memory: IncidentMemory;
   config: AgentConfig;
   onEvidence?: (evidence: EvidenceObject) => void;
   onNarrative?: (payload: { incidentId: string; narrative: NarrativeOutput }) => void;
+  onMemoryError?: (error: unknown) => void;
 };
 
 function shift(iso: string, minutes: number): string {
   return new Date(new Date(iso).getTime() + minutes * 60_000).toISOString();
 }
 
-// Identity of the incident being investigated, independent of which window
-// re-confirmed it: the same cell plus the same onset is the same incident.
-function signalKey(signal: ConfirmedDrop): string {
-  const dimensions = Object.entries(signal.dimensions)
-    .filter(([, value]) => value !== undefined)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([key, value]) => `${key}=${value}`)
-    .join("|");
-  return `${dimensions}@${signal.startedAt}`;
-}
-
-function buildRequest(signal: ConfirmedDrop): InvestigationRequestV1 {
+function buildRequest(
+  signal: ConfirmedDrop,
+  similarIncidents: SimilarIncident[],
+): InvestigationRequestV1 {
   if (!signal.dimensions.merchantId || !signal.dimensions.country) {
     throw new Error("ConfirmedDrop must include merchantId and country for orchestration");
   }
@@ -57,7 +55,7 @@ function buildRequest(signal: ConfirmedDrop): InvestigationRequestV1 {
         merchantId: signal.dimensions.merchantId,
         country: signal.dimensions.country,
       },
-      similarIncidents: [],
+      similarIncidents,
     },
   };
 }
@@ -127,7 +125,12 @@ function fallbackStatusFromFailure(
 export function createAgentCoordinator(deps: CoordinatorDeps) {
   const dataSource = createDeterministicInvestigationDataSource(deps);
 
-  async function persistOutcome(request: InvestigationRequestV1, diagnosis: Diagnosis, runIds: string[]) {
+  async function persistOutcome(
+    request: InvestigationRequestV1,
+    incidentId: string,
+    diagnosis: Diagnosis,
+    runIds: string[],
+  ) {
     const evidence = buildEvidence({
       diagnosis,
       rows: await deps.source.getHistory(shift(request.trigger.windowBucket, -120), shift(request.trigger.windowBucket, 1)),
@@ -135,8 +138,11 @@ export function createAgentCoordinator(deps: CoordinatorDeps) {
     });
     const recommendation = matchRecommendation(diagnosis);
     const narrative = await renderNarratives(deps.config, { evidence, recommendation });
-    const incidentId = await deps.repository.upsertIncidentFromEvidence({
-      evidence,
+
+    // The row already exists: orchestrate/incidents.ts wrote it at tick time
+    // from deterministic evidence. The agent only enriches it (rules.md §3).
+    await deps.incidentWriter.attachNarrative({
+      incidentId,
       narrativeOps: narrative.operations,
       narrativeExec: narrative.executive,
       playbookId: recommendation?.playbookId ?? null,
@@ -152,7 +158,11 @@ export function createAgentCoordinator(deps: CoordinatorDeps) {
     return { incidentId, evidence, narrative };
   }
 
-  async function executeFallback(request: InvestigationRequestV1, previousRunIds: string[]) {
+  async function executeFallback(
+    request: InvestigationRequestV1,
+    incidentId: string,
+    previousRunIds: string[],
+  ) {
     const runId = randomUUID();
     const now = new Date().toISOString();
     const fallbackRequest: InvestigationRequestV1 = { ...request, runId };
@@ -168,7 +178,7 @@ export function createAgentCoordinator(deps: CoordinatorDeps) {
     if (!diagnosis) {
       throw new Error("Fallback diagnosis produced no candidates");
     }
-    await persistOutcome(request, diagnosis, previousRunIds.concat(runId));
+    await persistOutcome(request, incidentId, diagnosis, previousRunIds.concat(runId));
     await deps.repository.completeRun({
       runId,
       completedAt: new Date().toISOString(),
@@ -185,16 +195,36 @@ export function createAgentCoordinator(deps: CoordinatorDeps) {
   // still live (three-window persistence, by design). Without this guard each
   // tick would start a fresh investigator + narrator run for the same cell —
   // unbounded LLM spend and a rate-limit risk on exactly the key rules.md §6.8
-  // flags as a demo dependency.
+  // flags as a demo dependency. Keyed on the incident id, which openOrUpdate
+  // keeps stable while the incident is live and reissues after it resolves:
+  // "investigate each live incident once", including two simultaneous
+  // incidents that share one root (spec.md §4 criterion 5).
   const investigated = new Set<string>();
 
   return {
-    async handleSignal(signal: ConfirmedDrop): Promise<void> {
-      const incidentKey = signalKey(signal);
-      if (investigated.has(incidentKey)) return;
-      investigated.add(incidentKey);
+    async handleSignal(input: {
+      signal: ConfirmedDrop;
+      incidentId: string;
+      fingerprint: string;
+    }): Promise<void> {
+      const { signal, incidentId } = input;
+      if (investigated.has(incidentId)) return;
+      investigated.add(incidentId);
 
-      const request = buildRequest(signal);
+      // A memory failure must never block an investigation: recalling a repeat
+      // incident is a bonus (spec.md §5), not a precondition for diagnosing the
+      // live one.
+      const similarIncidents = await deps.memory
+        .recallByFingerprint({ fingerprint: input.fingerprint, excludeIncidentId: incidentId })
+        .catch((error: unknown) => {
+          // Unlike the runInvestigation failure path below, this has no
+          // durable record (no failRun) — onMemoryError is the only trace a
+          // persistently failing recall leaves, so a real bug in the memory
+          // layer doesn't degrade silently and indefinitely to "no priors".
+          deps.onMemoryError?.(error);
+          return [];
+        });
+      const request = buildRequest(signal, similarIncidents);
       await deps.repository.createRun({
         runId: request.runId,
         actor: "agent",
@@ -219,12 +249,12 @@ export function createAgentCoordinator(deps: CoordinatorDeps) {
             status: fallbackStatusFromFailure(result.failureCode),
             failureCode: result.failureCode,
           });
-          await executeFallback(request, [request.runId]);
+          await executeFallback(request, incidentId, [request.runId]);
           return;
         }
 
         const materialized = await materializeAgentDiagnosis(deps, request, result.diagnosis);
-        const persisted = await persistOutcome(request, materialized, [request.runId]);
+        const persisted = await persistOutcome(request, incidentId, materialized, [request.runId]);
         await deps.repository.completeRun({
           runId: request.runId,
           completedAt: result.completedAt,
@@ -234,7 +264,7 @@ export function createAgentCoordinator(deps: CoordinatorDeps) {
         });
         await deps.repository.linkRunToIncident(request.runId, persisted.incidentId);
       } catch {
-        await executeFallback(request, [request.runId]);
+        await executeFallback(request, incidentId, [request.runId]);
       }
     },
 
@@ -247,7 +277,10 @@ export function createAgentCoordinator(deps: CoordinatorDeps) {
           status: "failed",
           failureCode: "MODEL_ERROR",
         });
-        await executeFallback(orphan.requestSnapshot, [orphan.runId]);
+        // A run that never linked to an incident has nothing to enrich: the
+        // tick that produced it will re-open the incident on its own.
+        if (!orphan.incidentId) continue;
+        await executeFallback(orphan.requestSnapshot, orphan.incidentId, [orphan.runId]);
       }
     },
   };
