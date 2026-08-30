@@ -27,3 +27,4 @@ Files:
 7. `contrato_do_evento_de_transacao.md` — Transaction event contract on the Redis Stream
 8. `ingestao_em_micro_batch_com_dedup.md` — Micro-batch ingestion with deduplication via RETURNING
 9. `deteccao_wilson.md` — Wilson detector and `ConfirmedDrop` output contract
+10. `infra_gerenciada_na_nuvem.md` — Managed cloud Postgres/Redis instead of docker-compose
