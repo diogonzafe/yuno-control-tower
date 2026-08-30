@@ -251,7 +251,7 @@ As trilhas rodam em paralelo. As horas são de relógio, não de pessoa.
 
 ### H+13 → H+17 · Camada agêntica
 - Ferramentas envolvendo o que a etapa anterior já faz
-- Investigador em LangGraph, budget de 12 passos, timeout
+- Investigador em Mastra, budget de 12 passos, timeout
 - Fallback automático para o beam search
 - `investigation_steps` gravando cada pergunta e cada número
 - Narrador com saída de operações e executiva, com template determinístico de reserva
@@ -297,7 +297,7 @@ F4 depende de F0 e F2, mas não de F3. Pode andar em paralelo com a camada agên
 | Dados | Gerador, injeção, console do júri, catálogos | contrato (F0) |
 | Estatística | Rollups, gatilhos, intervalo de Wilson, varredura retroativa, custo | contrato |
 | Diagnóstico | Beam search, teste residual, priorização | rollups |
-| Agente e UI | Ferramentas, LangGraph, narrador, front SSE | interface das ferramentas, pode mockar |
+| Agente e UI | Ferramentas, Mastra, narrador, front SSE | interface das ferramentas, pode mockar |
 
 Quem cuida da frente de Dados **não deve** ler a implementação do detector. É isso que mantém o ensaio adversarial da F5 honesto.
 

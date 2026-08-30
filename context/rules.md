@@ -9,7 +9,7 @@ doc_related:
   - "flight_logs/README.md"
 domain: "engineering-governance"
 dimension_schema: []
-time: "2026-08-30T01:00:00Z"
+time: "2026-08-30T02:14:36Z"
 ---
 
 # The Control Tower — Regras de engenharia
@@ -159,7 +159,7 @@ Um runtime só significa: um `package.json`, tipos compartilhados de ponta a pon
 | Schema + migrations | **Drizzle** (`drizzle-orm` + `drizzle-kit`) sobre postgres.js | `push` durante a fase de fundações, `generate` quando congela. Resolve o `BIGINT` como string de graça. Ver §6.3.1 |
 | Stream | **Redis 7 + Redis Streams** via `ioredis` | Consumer groups e replay reais. **BullMQ é a ferramenta errada aqui**: é fila de job, não stream de eventos |
 | Estatística | **Nenhuma biblioteca** | Wilson é 8 linhas. `simple-statistics` se precisarem de algo mais |
-| Agente | **Mastra** (padrão) ou loop ReAct escrito à mão | Ver §6.4 |
+| Agente | **Mastra** | Ver §6.4 e `flight_logs/ai_agent_module.md` |
 | LLM | **`openai`** SDK com function calling | **GPT-5.6 Sol** no investigador, **GPT-5.6 Terra** no narrador. Ver §6.4.1 |
 | Front | **Vite + React 19 + TypeScript** | Boot instantâneo, zero surpresa de build. Next é possível, mas SSR não serve para nada aqui |
 | Estado no front | **TanStack Query** + `EventSource` nativo | SSE não precisa de biblioteca |
@@ -363,15 +363,17 @@ Uma nota para a sabatina: chegar com a pasta de migrations versionada, e não co
 
 ### 6.4 A decisão do agente
 
-Três caminhos, e a escolha muda com o time.
+**Mastra é o framework do módulo agêntico.** A decisão considera o SDK de
+agentes da OpenAI, LangGraph JS e um loop ReAct manual, mas escolhe Mastra pela
+integração nativa com TypeScript, ferramentas tipadas, observabilidade, evals,
+Studio e suporte a múltiplos providers. O custo aceito é uma dependência mais
+ampla e maior superfície conceitual durante o desafio de 24 horas.
 
-**Mastra** — TypeScript nativo, primitivas de agente, ferramenta e workflow prontas, observabilidade embutida. É o padrão recomendado se alguém do time já usou. DX melhor que LangGraph JS em TS.
-
-**LangGraph JS** (`@langchain/langgraph`) — o grafo explícito mapeia um-para-um no diagrama de arquitetura, o que é bom para a defesa. Mais cerimônia.
-
-**Loop ReAct à mão** — cerca de 80 linhas sobre o SDK `openai`: um `while` com budget, um `switch` de ferramenta, um array de mensagens. Sem framework, sem versão quebrando, e cada passo é debugável com um `console.log`.
-
-**Recomendação honesta para 24 horas:** se ninguém no time já rodou Mastra ou LangGraph em produção, escrevam à mão. O agente aqui tem seis ferramentas e um orçamento de doze passos. Framework resolve problemas que este projeto não tem, e adiciona um modo de falha que aparece justamente sob pressão de demo. "Escrevemos o loop porque queríamos controle total do budget e da trilha de auditoria" é uma resposta forte na sabatina, não uma desculpa.
+Mastra fica restrito à orquestração do julgamento agêntico. Regras numéricas e
+de negócio continuam determinísticas e independentes do framework, cada chamada
+é preservada em `investigation_steps`, e qualquer falha, timeout ou esgotamento
+do budget cai no beam search. O contrato completo e as alternativas estão em
+`flight_logs/ai_agent_module.md`.
 
 #### 6.4.1 Divisão dos modelos
 
