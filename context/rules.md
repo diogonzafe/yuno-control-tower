@@ -6,9 +6,10 @@ doc_related:
   - "context/spec.md"
   - "context/schema.md"
   - "context/roadmap.md"
+  - "flight_logs/README.md"
 domain: "engineering-governance"
 dimension_schema: []
-time: "2026-08-30T00:34:43Z"
+time: "2026-08-30T01:00:00Z"
 ---
 
 # The Control Tower — Regras de engenharia
@@ -57,8 +58,8 @@ Sem docstring de parágrafo, sem bloco de comentário decorativo (`// ======`), 
 ### 2.1 Cabeçalho obrigatório de documentação Markdown
 
 Todo arquivo `.md` criado no repositório começa com YAML front matter, antes do
-primeiro título, delimitado por `---`. Os seis campos são obrigatórios e não
-podem ser duplicados:
+primeiro título, delimitado por `---` — exceto os de `flight_logs/` (ver §7.2).
+Os seis campos são obrigatórios e não podem ser duplicados:
 
 ```yaml
 ---
@@ -127,7 +128,8 @@ Antes de abrir PR, confirmar:
 - [ ] Lógica de agregação não duplicada entre rollup, teste residual e varredura retroativa
 - [ ] Se toca em decisão travada (DD1–DD11), o PR não a contradiz sem discussão prévia registrada
 - [ ] Se toca em pendência aberta (P1–P4) ainda não resolvida, a lacuna está anotada, não resolvida por suposição
-- [ ] Todo `.md` novo possui front matter válido com `title`, `doc_id`, `doc_related`, `domain`, `dimension_schema` e `time`
+- [ ] Toda decisão importante tomada no PR tem flight log em `flight_logs/` e linha no índice (ver §7)
+- [ ] Todo `.md` novo — exceto os de `flight_logs/` — possui front matter válido com `title`, `doc_id`, `doc_related`, `domain`, `dimension_schema` e `time`
 - [ ] Cada `doc_id` novo é único e cada `time` alterado representa mudança substantiva em UTC/RFC 3339
 
 ---
@@ -472,3 +474,29 @@ Quatro comandos depois do clone. Vale medir isso: um README em que o juiz roda o
 **Chave da API e rate limit.** A demo depende deles. Três defesas: uma segunda chave de outra conta, o modelo de reserva configurável por `.env`, e o narrador com template determinístico de fallback. A UI nunca pode ficar em branco porque uma chamada falhou na frente do júri.
 
 **Modelo de raciocínio e latência.** O investigador faz até 12 chamadas de ferramenta em sequência. Se cada uma levar alguns segundos, o diagnóstico demora mais que a detecção, e isso aparece na demo. Medir cedo, e se necessário reduzir o budget para 8 passos — o beam search determinístico já entrega a célula, o agente só precisa refinar e justificar.
+
+---
+
+## 7. Flight logs — registro de decisões importantes
+
+O briefing (`spec.md` §6) cobra um *decision log*: alternativas consideradas e o porquê da escolha. Neste projeto ele é o diretório `flight_logs/`, um arquivo por decisão, escrito na hora em que a decisão é tomada — não reconstruído na véspera da entrega.
+
+### 7.1 Quando criar
+
+Cria flight log a decisão que:
+
+- trava uma nova `DD` ou supersede uma existente;
+- resolve uma pendência `P1`–`P4`;
+- fixa um contrato de dados público, uma das três fronteiras da §3, a stack (§6) ou uma dependência de produção;
+- descarta uma alternativa que a sabatina provavelmente vai questionar;
+- assume uma simplificação consciente longe do comportamento real do domínio (PIX síncrono, malha de roteamento completa, câmbio diário).
+
+**Não** cria flight log: refactor, renomeação, escolha de implementação local e reversível, detalhe já fechado por teste, mudança só de formatação ou texto. Na dúvida, pergunta ao usuário antes de decidir.
+
+### 7.2 Formato
+
+- Um arquivo por decisão, nome em `snake_case`, conteúdo em português.
+- Markdown simples, **sem** front matter YAML — exceção à §2.1. Vai publicado na plataforma da hackathon só com as quatro seções.
+- Corpo em quatro seções, nesta ordem: **título** (decisão em uma linha), **opções consideradas**, **o que escolhemos**, **por quê** — e o "por quê" inclui o que a escolha custa, não só o benefício.
+- Ao criar o arquivo, acrescenta a linha no índice de `flight_logs/README.md`.
+- Se a decisão também trava uma `DD` ou fecha uma `P`, `context/schema.md` é atualizado no mesmo commit; os dois não podem divergir.
