@@ -6,7 +6,11 @@ doc_related:
   - "YCT-RULES-001"
 domain: "decision-log"
 dimension_schema: []
+<<<<<<< HEAD
 time: "2026-08-30T15:00:00Z"
+=======
+time: "2026-08-30T06:35:00Z"
+>>>>>>> origin/dev
 ---
 
 # Flight Logs
@@ -29,4 +33,8 @@ Files:
 9. `deteccao_wilson.md` — Wilson detector and `ConfirmedDrop` output contract
 10. `infra_gerenciada_na_nuvem.md` — Managed cloud Postgres/Redis instead of docker-compose
 11. `quem_monta_o_evidence_object.md` — `diagnose/` assembles the `EvidenceObject`, not the agent
-12. `estado_do_detector_fica_em_memoria.md` — Confirmed signals and `PersistenceState` live only in process memory (ring buffer + SSE), never in `incidents`; the tick is timer-driven, not ingest-driven
+12. `diagnostico_por_densidade_de_deficit.md` — Deficit density over absolute deficit; peeling around a beam search
+13. `mix_de_recusas_referencia_catalogo.md` — Catalogue baseline as decline-mix reference; deterministic 91 disambiguation
+14. `prioridade_pelo_custo_conservador.md` — Priority as conservative cost per minute, with no separate confidence weight
+15. `trilha_deterministica_e_fingerprint.md` — The fallback also produces an investigation trail; fingerprint carries the dominant decline
+16. `estado_do_detector_fica_em_memoria.md` — Confirmed signals and `PersistenceState` live only in process memory (ring buffer + SSE), never in `incidents`; the tick is timer-driven, not ingest-driven
