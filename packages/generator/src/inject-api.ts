@@ -18,7 +18,23 @@ const incidentDimensionsSchema = z.object({
   country: z.enum(["AR", "MX", "BR"]).optional(),
   paymentMethod: z.enum(["CARD", "PIX"]).optional(),
   issuerId: z.string().min(1).optional(),
-}).strict();
+}).strict().superRefine((dimensions, ctx) => {
+  if (dimensions.paymentMethod === "PIX" && dimensions.country !== undefined && dimensions.country !== "BR") {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["country"],
+      message: "PIX is only valid when country is BR",
+    });
+  }
+
+  if (dimensions.paymentMethod === "PIX" && dimensions.issuerId !== undefined && dimensions.issuerId !== "NA") {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["issuerId"],
+      message: "PIX incidents must not carry an issuer other than NA",
+    });
+  }
+});
 
 // Mirrors GeneratorIncident (incident.ts) exactly — this is the jury's
 // injection console contract, so a malformed request must fail loudly with

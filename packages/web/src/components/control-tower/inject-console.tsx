@@ -38,6 +38,7 @@ export function InjectConsole({ catalog, catalogFailed }: { catalog: Catalog | n
   const [form, setForm] = useState<Form>(initialForm);
   const [active, setActive] = useState<ActiveIncident[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const refreshActive = () => {
     fetch("/api/inject")
@@ -56,10 +57,15 @@ export function InjectConsole({ catalog, catalogFailed }: { catalog: Catalog | n
   const merchantOptions = catalog?.merchants.filter((merchant) => !form.country || merchant.id.startsWith(form.country)) ?? [];
   const pixOnlyBr = form.paymentMethod === "PIX" && form.country !== "BR";
 
-  const update = <K extends keyof Form>(key: K, value: Form[K]) => setForm((current) => ({ ...current, [key]: value }));
+  const update = <K extends keyof Form>(key: K, value: Form[K]) => setForm((current) => ({
+    ...current,
+    [key]: value,
+    ...(key === "paymentMethod" && value === "PIX" ? { issuerId: "" } : {}),
+  }));
 
   const submit = async () => {
     setSubmitting(true);
+    setSubmitError(null);
     try {
       const dimensions: Record<string, string> = {};
       if (form.providerId) dimensions.providerId = form.providerId;
@@ -68,7 +74,7 @@ export function InjectConsole({ catalog, catalogFailed }: { catalog: Catalog | n
       if (form.issuerId) dimensions.issuerId = form.issuerId;
       if (form.merchantId) dimensions.merchantId = form.merchantId;
 
-      await fetch("/api/inject", {
+      const response = await fetch("/api/inject", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -78,7 +84,13 @@ export function InjectConsole({ catalog, catalogFailed }: { catalog: Catalog | n
           conversionMultiplier: targetRateToMultiplier(form.targetRate),
         }),
       });
+      if (!response.ok) {
+        const body = await response.text();
+        throw new Error(body || `Injection failed (${response.status})`);
+      }
       refreshActive();
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : "Injection failed");
     } finally {
       setSubmitting(false);
     }
@@ -148,7 +160,8 @@ export function InjectConsole({ catalog, catalogFailed }: { catalog: Catalog | n
         </div>
 
         <div>
-          <button type="button" className="ct-btn ct-btn--primary" onClick={submit} disabled={submitting}>Inject incident now</button>
+          <button type="button" className="ct-btn ct-btn--primary" onClick={submit} disabled={submitting || pixOnlyBr}>Inject incident now</button>
+          {submitError && <small role="alert">{submitError}</small>}
         </div>
 
         {active.length > 0 && (

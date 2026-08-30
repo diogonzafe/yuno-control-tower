@@ -75,6 +75,44 @@ describe("buildInjectApi", () => {
     expect(response.statusCode).toBe(400);
   });
 
+  it("rejects PIX outside Brazil", async () => {
+    const generator = freshGenerator();
+    const app = buildInjectApi(generator);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/incidents",
+      payload: {
+        id: "pix-mx",
+        startsAt: "2026-08-30T14:00:00.000Z",
+        dimensions: { country: "MX", paymentMethod: "PIX" },
+        conversionMultiplier: 0.15,
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(generator.activeIncidents()).toHaveLength(0);
+  });
+
+  it("rejects an issuer on a PIX incident", async () => {
+    const generator = freshGenerator();
+    const app = buildInjectApi(generator);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/incidents",
+      payload: {
+        id: "pix-issuer",
+        startsAt: "2026-08-30T14:00:00.000Z",
+        dimensions: { country: "BR", paymentMethod: "PIX", issuerId: "itau" },
+        conversionMultiplier: 0.15,
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(generator.activeIncidents()).toHaveLength(0);
+  });
+
   it("removes an incident by id, returning 404 for an id that doesn't exist", async () => {
     const generator = freshGenerator();
     const app = buildInjectApi(generator);
