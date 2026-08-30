@@ -10,6 +10,7 @@ config({ path: resolve(import.meta.dirname, "../../../.env") });
 const [
   { createLogger },
   { startConsumer },
+  { startRetention },
   queries,
   { startScheduler },
   agent,
@@ -21,6 +22,7 @@ const [
 ] = await Promise.all([
   import("./logging.js"),
   import("./ingest/consumer.js"),
+  import("./ingest/retention.js"),
   import("./db/queries.js"),
   import("./detect/scheduler.js"),
   import("./agent/index.js"),
@@ -116,6 +118,12 @@ startConsumer().catch((error: unknown) => {
   process.exit(1);
 });
 
+// Nothing reads `transactions` — it exists so the insert can dedup redelivered
+// batches before they reach the rollups. Unpruned it is the fastest-growing
+// object in the database and it filled the Railway volume, which stops Postgres
+// mid-recovery and takes the whole app down with it.
+const retention = startRetention();
+
 const scheduler = startScheduler({
   source: queries.createRollupSource(),
   declineSource: queries.createDeclineSource(),
@@ -197,6 +205,7 @@ logger.info({ port }, "app started: ingest + detector + API");
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, () => {
     scheduler.stop();
+    retention?.stop();
     hub.stop();
     // Insurance: even if app.close() somehow still hangs (a socket hub.stop()
     // didn't reach, some other stuck handle), the process must not survive

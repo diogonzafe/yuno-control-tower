@@ -8,6 +8,8 @@
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
     "db:migrate": "drizzle-kit migrate",
+    "start:app": "pnpm --filter @control-tower/app start",
+    "start:generator": "pnpm --filter @control-tower/generator start",
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck"
   },

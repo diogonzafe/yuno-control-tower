@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 
 import { pickAutoIncidents } from "./auto-incidents.ts";
 import { buildGeneratorCatalog, type MerchantTrafficWeights } from "./catalog.ts";
-import { emitTransaction } from "./emit.ts";
+import { DEFAULT_STREAM_MAXLEN, emitTransaction } from "./emit.ts";
 import { createGenerator, startGenerator } from "./engine.ts";
 import { buildInjectApi } from "./inject-api.ts";
 import { createSeededRandom } from "./random.ts";
@@ -51,9 +51,17 @@ const catalog = buildGeneratorCatalog({ defaultConversion, randomizeConversion, 
 // XADD sequentially — see flight_logs for the measured symptom.
 const baseTps = parseOptionalNumber(process.env.GENERATOR_BASE_TPS) ?? 60;
 
+// Bounds what the stream costs in Redis memory: XACK does not delete, so
+// without a cap the run accumulates every transaction it ever emitted.
+const streamMaxLength = parseOptionalInteger(process.env.GENERATOR_STREAM_MAXLEN) ?? DEFAULT_STREAM_MAXLEN;
+
 const redis = new Redis(redisUrl);
 const generator = createGenerator({ catalog, trafficWeights, random });
-const runtime = startGenerator(generator, (event) => emitTransaction(redis, event), { baseTps });
+const runtime = startGenerator(
+  generator,
+  (event) => emitTransaction(redis, event, "stream:transactions", streamMaxLength),
+  { baseTps },
+);
 
 for (const incident of pickAutoIncidents(catalog, autoIncidentCount, random, new Date())) {
   generator.addIncident(incident);
