@@ -61,6 +61,7 @@ function deps(overrides: Partial<Parameters<typeof createAgentCoordinator>[0]> =
         timeoutMs: 50,
       },
       onEvidence: (item: EvidenceObject) => { evidence.push(item); },
+      memory: { async recallByFingerprint() { return []; } },
       ...overrides,
     } as Parameters<typeof createAgentCoordinator>[0],
   };
@@ -171,6 +172,59 @@ describe("createAgentCoordinator fallback (rules.md §3 boundary #3)", () => {
         fingerprint: FINGERPRINT,
       }),
     ).rejects.toThrow();
+  });
+});
+
+describe("createAgentCoordinator memory recall (spec.md §5 bonus)", () => {
+  it("passes recalled incidents to the investigator", async () => {
+    const recalled = [
+      {
+        incidentId: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        fingerprint: "country=BR|merchantId=BR_STORE_01|providerId=adyen#91",
+        rootCauseDimension: "provider" as const,
+        dominantDecline: "91",
+        summary: "Same cell was down from 1970-01-01T00:07:00.000Z until 1970-01-01T00:47:00.000Z.",
+      },
+    ];
+    const { built, repository } = deps({
+      memory: {
+        async recallByFingerprint() {
+          return recalled;
+        },
+      },
+    });
+
+    await createAgentCoordinator(built).handleSignal({
+      signal: confirmedDrop(BR_ROOT),
+      incidentId: INCIDENT_ID,
+      fingerprint: FINGERPRINT,
+    });
+
+    // Every run for this incident carries the request snapshot the investigator
+    // was given, so the history reached the prompt rather than being dropped.
+    const runs = await repository.listRunsByIncident(INCIDENT_ID);
+    expect(runs.length).toBeGreaterThan(0);
+    expect(runs[0]?.requestSnapshot.context.similarIncidents).toEqual(recalled);
+  });
+
+  it("investigates anyway when the memory lookup fails", async () => {
+    // Memory is never on the critical path: a repeat incident is a bonus
+    // (spec.md §5), not a precondition for diagnosing the live one.
+    const { built, evidence } = deps({
+      memory: {
+        async recallByFingerprint() {
+          throw new Error("memory unavailable");
+        },
+      },
+    });
+
+    await createAgentCoordinator(built).handleSignal({
+      signal: confirmedDrop(BR_ROOT),
+      incidentId: INCIDENT_ID,
+      fingerprint: FINGERPRINT,
+    });
+
+    expect(evidence).toHaveLength(1);
   });
 });
 

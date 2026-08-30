@@ -77,6 +77,7 @@ const evidenceStore = createEvidenceStore();
 const hub = createSseHub();
 const incidentWriter = orchestrate.createIncidentWriter();
 const lifecycle = orchestrate.createLifecycle();
+const incidentMemory = orchestrate.createIncidentMemory();
 const repository = new agent.PostgresInvestigationRunRepository(undefined, {
   onRun: (run) => hub.broadcast("investigation-run", run),
   onStep: (step) => hub.broadcast("investigation-step", step),
@@ -89,6 +90,7 @@ const coordinator = agent.createAgentCoordinator({
   loadDeclineCatalog: queries.loadDeclineCatalog,
   repository,
   incidentWriter,
+  memory: incidentMemory,
   config: agent.loadAgentConfig(),
   onEvidence: (evidence: import("@control-tower/contracts").EvidenceObject) => {
     evidenceStore.add([evidence]);

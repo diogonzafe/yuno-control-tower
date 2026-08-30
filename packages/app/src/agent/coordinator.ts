@@ -4,6 +4,7 @@ import {
   type EvidenceObject,
   type InvestigationRequestV1,
   type NarrativeOutput,
+  type SimilarIncident,
 } from "@control-tower/contracts";
 import { randomUUID } from "node:crypto";
 import type { AgentConfig } from "./config.js";
@@ -19,10 +20,12 @@ import { DECLINE_CURRENT_LOOKBACK_MIN, DECLINE_HISTORY_LOOKBACK_MIN } from "../d
 import { buildEvidence } from "../diagnose/evidence.js";
 import { runDiagnosis, type Diagnosis } from "../diagnose/run.js";
 import type { IncidentWriter } from "../orchestrate/incidents.js";
+import type { IncidentMemory } from "../orchestrate/memory.js";
 
 type CoordinatorDeps = DeterministicInvestigationDataSourceDeps & {
   repository: InvestigationRunRepository;
   incidentWriter: IncidentWriter;
+  memory: IncidentMemory;
   config: AgentConfig;
   onEvidence?: (evidence: EvidenceObject) => void;
   onNarrative?: (payload: { incidentId: string; narrative: NarrativeOutput }) => void;
@@ -32,7 +35,10 @@ function shift(iso: string, minutes: number): string {
   return new Date(new Date(iso).getTime() + minutes * 60_000).toISOString();
 }
 
-function buildRequest(signal: ConfirmedDrop): InvestigationRequestV1 {
+function buildRequest(
+  signal: ConfirmedDrop,
+  similarIncidents: SimilarIncident[],
+): InvestigationRequestV1 {
   if (!signal.dimensions.merchantId || !signal.dimensions.country) {
     throw new Error("ConfirmedDrop must include merchantId and country for orchestration");
   }
@@ -48,7 +54,7 @@ function buildRequest(signal: ConfirmedDrop): InvestigationRequestV1 {
         merchantId: signal.dimensions.merchantId,
         country: signal.dimensions.country,
       },
-      similarIncidents: [],
+      similarIncidents,
     },
   };
 }
@@ -204,7 +210,13 @@ export function createAgentCoordinator(deps: CoordinatorDeps) {
       if (investigated.has(incidentId)) return;
       investigated.add(incidentId);
 
-      const request = buildRequest(signal);
+      // A memory failure must never block an investigation: recalling a repeat
+      // incident is a bonus (spec.md §5), not a precondition for diagnosing the
+      // live one.
+      const similarIncidents = await deps.memory
+        .recallByFingerprint({ fingerprint: input.fingerprint, excludeIncidentId: incidentId })
+        .catch(() => []);
+      const request = buildRequest(signal, similarIncidents);
       await deps.repository.createRun({
         runId: request.runId,
         actor: "agent",
