@@ -1,8 +1,16 @@
+import { timingSafeEqual } from "node:crypto";
+
 import Fastify, { type FastifyInstance } from "fastify";
 import { z } from "zod";
 
 import type { TransactionGenerator } from "./engine.ts";
 import type { GeneratorIncident } from "./incident.ts";
+
+export type InjectApiOptions = {
+  // When set, every request must carry `Authorization: Bearer <token>`.
+  // run.ts requires this whenever the API is exposed beyond loopback.
+  token?: string;
+};
 
 const incidentDimensionsSchema = z.object({
   merchantId: z.string().min(1).optional(),
@@ -25,8 +33,23 @@ const incidentSchema = z.object({
   declineWeights: z.record(z.string(), z.number().nonnegative()).optional(),
 });
 
-export function buildInjectApi(generator: TransactionGenerator): FastifyInstance {
+export function buildInjectApi(
+  generator: TransactionGenerator,
+  options: InjectApiOptions = {},
+): FastifyInstance {
   const app = Fastify({ logger: false });
+
+  const { token } = options;
+  if (token) {
+    const expected = Buffer.from(`Bearer ${token}`, "utf8");
+    app.addHook("preHandler", async (request, reply) => {
+      const provided = Buffer.from(request.headers.authorization ?? "", "utf8");
+      // Length check first: timingSafeEqual throws on a length mismatch.
+      if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) {
+        await reply.status(401).send({ error: "unauthorized" });
+      }
+    });
+  }
 
   app.post("/incidents", async (request, reply) => {
     const result = incidentSchema.safeParse(request.body);

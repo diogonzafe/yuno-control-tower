@@ -30,7 +30,7 @@ const [
 ]);
 
 const logger = pino({ name: "app" });
-const port = Number(process.env.APP_PORT ?? 4000);
+const port = Number(process.env.APP_PORT ?? process.env.PORT ?? 4000);
 
 const store = createSignalStore();
 const evidenceStore = createEvidenceStore();

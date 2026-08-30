@@ -19,7 +19,18 @@ if (!redisUrl) {
   throw new Error("REDIS_URL is not set — check .env");
 }
 
-const injectPort = Number(process.env.GENERATOR_INJECT_PORT ?? 4100);
+// Railway (and most PaaS) inject the bound port as PORT; its presence is also
+// the signal that this runs on a managed host and must bind every interface.
+// GENERATOR_INJECT_PORT stays the local override for `pnpm dev`.
+const onManagedHost = process.env.PORT !== undefined;
+const injectPort = Number(process.env.PORT ?? process.env.GENERATOR_INJECT_PORT ?? 4100);
+const injectBindHost = onManagedHost ? "0.0.0.0" : "127.0.0.1";
+// The injection API mutates the live stream, so once it is reachable off-box it
+// must be authenticated. Fail loud rather than expose it open.
+const injectApiToken = process.env.INJECT_API_TOKEN;
+if (injectBindHost === "0.0.0.0" && !injectApiToken) {
+  throw new Error("INJECT_API_TOKEN is required when the injection API binds 0.0.0.0");
+}
 const trafficWeights = parseTrafficWeights(process.env.GENERATOR_TRAFFIC_WEIGHTS);
 const defaultConversion = parseOptionalNumber(process.env.GENERATOR_DEFAULT_CONVERSION);
 const randomizeConversion = parseBooleanFlag(process.env.GENERATOR_RANDOMIZE_CONVERSION);
@@ -48,8 +59,11 @@ for (const incident of pickAutoIncidents(catalog, autoIncidentCount, random, new
   generator.addIncident(incident);
 }
 
-const injectApi = buildInjectApi(generator);
-await injectApi.listen({ port: injectPort, host: "127.0.0.1" });
+const injectApi = buildInjectApi(generator, { token: injectApiToken });
+// Loopback locally so `pnpm dev` needs no token; all interfaces on a managed
+// host, where the platform router only reaches 0.0.0.0 and INJECT_API_TOKEN
+// gates every request (see inject-api.ts).
+await injectApi.listen({ port: injectPort, host: injectBindHost });
 
 logger.info(
   {

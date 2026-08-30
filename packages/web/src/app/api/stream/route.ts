@@ -1,6 +1,10 @@
 import { getIncidents, getPortfolioSeries, getProviderSeries } from "@control-tower/app";
 
 export const dynamic = "force-dynamic";
+// A serverless platform caps a streaming response at the function timeout
+// (~10s default on Vercel). The client (use-control-tower-stream.ts) reconnects
+// on drop, so the worst case degrades to a reconnect every maxDuration.
+export const maxDuration = 60;
 
 const LOOKBACK_MS = 60 * 60_000;
 

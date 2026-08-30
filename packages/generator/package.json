@@ -8,7 +8,8 @@
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "dev": "tsx watch src/run.ts"
+    "dev": "tsx watch src/run.ts",
+    "start": "tsx src/run.ts"
   },
   "dependencies": {
     "@control-tower/contracts": "workspace:^",
