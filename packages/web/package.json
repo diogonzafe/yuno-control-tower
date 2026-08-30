@@ -13,13 +13,13 @@
   "dependencies": {
     "@control-tower/app": "workspace:^",
     "@control-tower/contracts": "workspace:^",
+    "dotenv": "^16.4.7",
     "next": "^16.1.6",
     "react": "^19.2.3",
     "react-dom": "^19.2.3"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
-    "dotenv": "^16.4.7",
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",
     "typescript": "^5.7.2"
