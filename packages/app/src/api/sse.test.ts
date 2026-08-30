@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createSseHub, type SseConnection } from "./sse.js";
 
-function fakeConnection(options: { failOnWrite?: boolean } = {}) {
+function fakeConnection(options: { failOnWrite?: boolean; failOnEnd?: boolean } = {}) {
   const written: string[] = [];
   const closeListeners: Array<() => void> = [];
+  let ended = false;
   const connection: SseConnection = {
     write(chunk) {
       if (options.failOnWrite) throw new Error("socket closed");
@@ -11,8 +12,12 @@ function fakeConnection(options: { failOnWrite?: boolean } = {}) {
       return true;
     },
     on(_event, listener) { closeListeners.push(listener); },
+    end() {
+      if (options.failOnEnd) throw new Error("socket already closed");
+      ended = true;
+    },
   };
-  return { connection, written, close: () => closeListeners.forEach((listener) => listener()) };
+  return { connection, written, isEnded: () => ended, close: () => closeListeners.forEach((listener) => listener()) };
 }
 
 afterEach(() => { vi.useRealTimers(); });
@@ -81,5 +86,31 @@ describe("createSseHub", () => {
 
     expect(client.written).toEqual([": keepalive\n\n"]);
     hub.stop();
+  });
+
+  it("ends every registered connection on stop, so app.close() does not hang on an open SSE socket", () => {
+    const hub = createSseHub();
+    const first = fakeConnection();
+    const second = fakeConnection();
+    hub.register(first.connection);
+    hub.register(second.connection);
+
+    hub.stop();
+
+    expect(first.isEnded()).toBe(true);
+    expect(second.isEnded()).toBe(true);
+    expect(hub.connectionCount()).toBe(0);
+  });
+
+  it("ends the other connections even when one connection's end() throws", () => {
+    const hub = createSseHub();
+    const healthy = fakeConnection();
+    const broken = fakeConnection({ failOnEnd: true });
+    hub.register(broken.connection);
+    hub.register(healthy.connection);
+
+    expect(() => hub.stop()).not.toThrow();
+
+    expect(healthy.isEnded()).toBe(true);
   });
 });

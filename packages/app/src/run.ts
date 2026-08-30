@@ -63,6 +63,10 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, () => {
     scheduler.stop();
     hub.stop();
+    // Insurance: even if app.close() somehow still hangs (a socket hub.stop()
+    // didn't reach, some other stuck handle), the process must not survive
+    // Ctrl+C forever mid-demo.
+    setTimeout(() => process.exit(0), 5_000).unref();
     app.close()
       .catch((error: unknown) => logger.error({ error }, "error while shutting down"))
       .finally(() => process.exit(0));

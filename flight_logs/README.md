@@ -6,7 +6,7 @@ doc_related:
   - "YCT-RULES-001"
 domain: "decision-log"
 dimension_schema: []
-time: "2026-08-30T02:14:36Z"
+time: "2026-08-30T15:00:00Z"
 ---
 
 # Flight Logs
@@ -29,3 +29,4 @@ Files:
 9. `deteccao_wilson.md` — Wilson detector and `ConfirmedDrop` output contract
 10. `infra_gerenciada_na_nuvem.md` — Managed cloud Postgres/Redis instead of docker-compose
 11. `quem_monta_o_evidence_object.md` — `diagnose/` assembles the `EvidenceObject`, not the agent
+12. `estado_do_detector_fica_em_memoria.md` — Confirmed signals and `PersistenceState` live only in process memory (ring buffer + SSE), never in `incidents`; the tick is timer-driven, not ingest-driven

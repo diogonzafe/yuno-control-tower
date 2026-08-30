@@ -1,3 +1,4 @@
+import cors from "@fastify/cors";
 import Fastify, { type FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { RollupSource } from "../db/queries.js";
@@ -28,7 +29,16 @@ const conversionQuery = z.object({
 });
 
 export function buildServer(deps: ServerDeps): FastifyInstance {
-  const app = Fastify({ logger: false });
+  // `forceCloseConnections: true` (rather than the default 'idle') is what
+  // makes `app.close()` actually resolve while an SSE client is connected:
+  // an open EventSource is never "idle", and the 'idle' default only force-
+  // closes through a branch gated on `serverFactory`, which this server
+  // does not use.
+  const app = Fastify({ logger: false, forceCloseConnections: true });
+
+  // Pre-approved by rules.md §6.5. Both `fetch` and `EventSource` from a Vite
+  // dev server on a different port are blocked outright without this.
+  void app.register(cors, { origin: true });
 
   app.get("/health", async () => {
     const status = deps.getSchedulerStatus();

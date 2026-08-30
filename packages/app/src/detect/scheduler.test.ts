@@ -1,8 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ConfirmedDrop, EvidenceGap } from "@control-tower/contracts";
 import type { RollupSource } from "../db/queries.js";
 import type { RollupRow } from "./types.js";
-import { bucketsToProcess, createScheduler, targetBucket } from "./scheduler.js";
+import { bucketsToProcess, createScheduler, startScheduler, targetBucket } from "./scheduler.js";
+
+afterEach(() => { vi.useRealTimers(); });
 
 describe("targetBucket", () => {
   it("returns the minute that closed most recently, after the ingest grace window", () => {
@@ -156,5 +158,76 @@ describe("createScheduler", () => {
 
     // ONSET_LOOKBACK_MIN is 120: [bucket - 120min, bucket).
     expect(requested).toEqual([["2026-08-30T12:06:00.000Z", "2026-08-30T14:06:00.000Z"]]);
+  });
+});
+
+describe("startScheduler", () => {
+  it("does not start a second tick while the previous one is still in flight", async () => {
+    vi.useFakeTimers();
+    let entries = 0;
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const { deps: d } = deps({
+      source: {
+        getWindowRollups: async (bucket) => {
+          entries += 1;
+          await gate;
+          return healthyRows(bucket);
+        },
+        getHistory: async () => [],
+      },
+    });
+
+    const handle = startScheduler(d, 1000);
+    // Two full intervals pass while the first tick's getWindowRollups is
+    // still hanging on `gate`: a reentrant scheduler would have entered the
+    // source three times (once per tick boundary crossed).
+    await vi.advanceTimersByTimeAsync(2500);
+    expect(entries).toBe(1);
+
+    release();
+    await vi.advanceTimersByTimeAsync(0);
+    handle.stop();
+  });
+});
+
+describe("createScheduler persistence across ticks", () => {
+  function droppedRows(bucket: string): RollupRow[] {
+    // A single cell, well below the merchant's 0.95 expected conversion and
+    // comfortably above MIN_VOLUME (30) — the absolute trigger alone
+    // confirms it, with no sibling cells to also fire the cross-sectional
+    // path, so exactly one signal is expected per confirmed tick.
+    return [{
+      bucket, merchantId: "BR_STORE_01", providerId: "adyen", country: "BR",
+      paymentMethod: "CARD", issuerId: "itau", attempts: 100, approved: 20,
+      amountUsdSum: 1000, approvedUsdSum: 200,
+    }];
+  }
+
+  it("threads PersistenceState across ticks so a drop confirms only on the third window", async () => {
+    let clock = new Date("2026-08-30T14:07:10.000Z");
+    const { deps: d, results } = deps({
+      source: {
+        getWindowRollups: async (bucket) => droppedRows(bucket),
+        getHistory: async () => [],
+      },
+      now: () => clock,
+    });
+    const scheduler = createScheduler(d);
+
+    await scheduler.runOnce();
+    expect(results[0]!.signals).toEqual([]);
+
+    clock = new Date(clock.getTime() + 60_000);
+    await scheduler.runOnce();
+    expect(results[1]!.signals).toEqual([]);
+
+    clock = new Date(clock.getTime() + 60_000);
+    await scheduler.runOnce();
+    expect(results[2]!.signals).toHaveLength(1);
+    expect(results[2]!.signals[0]).toMatchObject({
+      consecutiveWindows: 3,
+      dimensions: { merchantId: "BR_STORE_01", country: "BR" },
+    });
   });
 });

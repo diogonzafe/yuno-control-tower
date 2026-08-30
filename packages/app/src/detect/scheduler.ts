@@ -118,8 +118,21 @@ export function createScheduler(deps: SchedulerDeps): SchedulerHandle {
 
 export function startScheduler(deps: SchedulerDeps, intervalMs = TICK_INTERVAL_MS): SchedulerHandle {
   const scheduler = createScheduler(deps);
+  let running = false;
   const timer = setInterval(() => {
-    scheduler.runOnce().catch((error: unknown) => logger.error({ error }, "scheduler tick rejected unexpectedly"));
+    // Reentrancy guard: a tick that outruns the interval (slow DB, big
+    // catch-up) must not start a second `runOnce` against the same
+    // `lastProcessedBucket`/`persistence` snapshot — that would double-count
+    // the persistence streak and double-broadcast the same signal over SSE.
+    // `runOnce` itself stays unguarded; the tests drive it directly.
+    if (running) {
+      logger.warn("skipped a scheduler tick because the previous one is still in flight");
+      return;
+    }
+    running = true;
+    scheduler.runOnce()
+      .catch((error: unknown) => logger.error({ error }, "scheduler tick rejected unexpectedly"))
+      .finally(() => { running = false; });
   }, intervalMs);
 
   return {

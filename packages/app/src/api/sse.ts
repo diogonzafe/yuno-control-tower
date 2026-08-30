@@ -9,6 +9,7 @@ const DEFAULT_HEARTBEAT_MS = 20_000;
 export type SseConnection = {
   write(chunk: string): boolean;
   on(event: "close", listener: () => void): void;
+  end(): void;
 };
 
 export type SseHub = {
@@ -49,6 +50,17 @@ export function createSseHub(heartbeatMs = DEFAULT_HEARTBEAT_MS): SseHub {
       }
     },
     connectionCount: () => connections.size,
-    stop: () => clearInterval(heartbeat),
+    stop() {
+      clearInterval(heartbeat);
+      for (const connection of connections) {
+        try {
+          connection.end();
+        } catch (error) {
+          // A socket that is already gone must not throw and block shutdown.
+          logger.error({ error }, "failed to end an SSE connection during shutdown");
+        }
+      }
+      connections.clear();
+    },
   };
 }
