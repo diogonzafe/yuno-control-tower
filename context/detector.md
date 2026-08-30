@@ -44,7 +44,7 @@ módulos, funções e tipos.
 - Os contratos Zod de saída em `packages/contracts/src/incident.ts`.
 - A interface (só assinatura) `RollupSource` em `packages/app/src/db/queries.ts`.
 - Toolchain mínima do pacote `app`: `tsconfig`, Vitest, scripts.
-- Documentação: este spec, o flight log `flight_logs/deteccao_wilson.md`, o
+- Documentação: este spec, o flight log `flight_logs/wilson_detection.md`, o
   reparo da nota obsoleta do `AGENTS.md`.
 
 ### 1.2 Fora
@@ -63,7 +63,7 @@ módulos, funções e tipos.
 
 ### 1.3 Premissa herdada
 
-`context/schema.md` DD7 / `flight_logs/taxa_de_conversao_fixada.md`: **a taxa de
+`context/schema.md` DD7 / `flight_logs/fixed_expected_conversion.md`: **a taxa de
 conversão é estacionária no tempo; só o volume é sazonal.** O ruído de madrugada
 é coberto pelo intervalo de Wilson largo, não por baseline por hora. O detector
 não tem modelo, não tem warm-up.
@@ -379,7 +379,7 @@ nunca contra uma célula" (`context/schema.md` §6, `AGENTS.md`) fica garantida 
 construção.
 
 **`crossSectionalSweep` (varredura transversal, profundidade 1).** Raiz =
-merchant×país (interpretação registrada em `flight_logs/deteccao_wilson.md`;
+merchant×país (interpretação registrada em `flight_logs/wilson_detection.md`;
 refina a redação "filhos da raiz" de `context/roadmap.md` §2, necessária para
 cobrir o cenário obrigatório "emissor cai para um único merchant" do
 `context/spec.md` §4). Para cada `(merchantId, country)` em `coverage`, três
@@ -572,7 +572,7 @@ Nenhuma dependência de produção nova — Wilson é fórmula fechada
 ## 8. Decisões e lacunas conhecidas
 
 Registradas aqui para não serem "descobertas" na sabatina; a defesa é o flight
-log `flight_logs/deteccao_wilson.md`.
+log `flight_logs/wilson_detection.md`.
 
 | # | Lacuna | Consequência / mitigação |
 |---|---|---|
@@ -605,7 +605,7 @@ log `flight_logs/deteccao_wilson.md`.
 
   `lost_approvals`, `cost_*`, `priority_score`, `evidence`, `narrative_*`,
   `playbook_id`, `embedding` não são preenchidos pelo detector. A divisão,
-  fechada em `flight_logs/quem_monta_o_evidence_object.md`:
+  fechada em `flight_logs/who_assembles_the_evidence_object.md`:
 
   | Coluna | Quem preenche |
   |---|---|

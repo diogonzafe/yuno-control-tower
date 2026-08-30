@@ -6,8 +6,8 @@ doc_related:
   - "YCT-AGENTS-001"
   - "context/schema.md"
   - "context/roadmap.md"
-  - "flight_logs/contrato_do_evento_de_transacao.md"
-  - "flight_logs/ingestao_em_micro_batch_com_dedup.md"
+  - "flight_logs/transaction_event_contract.md"
+  - "flight_logs/micro_batch_ingestion_with_dedup.md"
 domain: "ingestion"
 dimension_schema: ["merchant", "provider", "country", "payment_method", "issuer", "decline_code"]
 time: "2026-08-30T01:15:00Z"
@@ -60,7 +60,7 @@ não pode carregar nada específico do transporte.
 
 ## Contrato do evento
 
-Ver `flight_logs/contrato_do_evento_de_transacao.md` para as opções
+Ver `flight_logs/transaction_event_contract.md` para as opções
 descartadas e o porquê. Resumo do que entra em `packages/contracts/src/transaction.ts`:
 
 - `transactionEventSchema`: Zod, espelha 1:1 as colunas de `transactions`
@@ -75,7 +75,7 @@ descartadas e o porquê. Resumo do que entra em `packages/contracts/src/transact
 
 ## Pipeline de processamento
 
-Ver `flight_logs/ingestao_em_micro_batch_com_dedup.md` para as opções
+Ver `flight_logs/micro_batch_ingestion_with_dedup.md` para as opções
 descartadas e o porquê. Resumo do fluxo:
 
 **Setup (`consumer.ts`, na inicialização):**

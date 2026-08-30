@@ -129,7 +129,7 @@ O motivo: 92% no merchant é a média de um mix. Dentro dele convivem PIX no Bra
 - **Raiz da varredura transversal de profundidade 1 = `merchant × país`** (não
   "filhos da raiz" global), dividindo por provider, emissor e método. É o que
   cobre "emissor cai para um único merchant". Detalhe e justificativa em
-  `context/detector.md` §5.4 e `flight_logs/deteccao_wilson.md`.
+  `context/detector.md` §5.4 e `flight_logs/wilson_detection.md`.
 - **Não há parâmetro de força de prior a configurar.** O único parâmetro do teste é o nível de confiança, fixo em 95%. Uma peça a menos para justificar na defesa técnica.
 
 ### 6.1 O "desde quando" sem CUSUM (DD8)
@@ -463,7 +463,7 @@ mesmo run. Raciocínio interno, conteúdo `<thinking>` ou chain-of-thought não 
 solicitado nem persistido. Isso atende ao critério de aceitação #3 e sustenta a
 defesa técnica. A conclusão fica em `investigation_runs`, por meio de
 `conclusion_tag`, `conclusion_summary` e `supporting_step_nos`, sem ser tratada
-como uma sétima tool. Ver `flight_logs/resumos_auditaveis_do_agente.md`.
+como uma sétima tool. Ver `flight_logs/auditable_agent_summaries.md`.
 
 Mastra mantém somente o contexto transitório do run atual. Working memory,
 semantic recall e observational memory entre incidentes ficam desabilitadas.

@@ -45,7 +45,7 @@ que dependa dela.
 DD11 está resolvido: o teste do detector é o **intervalo de Wilson** (fórmula
 fechada, `z = 1.96`, persistência de 3 janelas). `context/schema.md` §6.3 é a
 referência normativa; o registro da decisão está em
-`flight_logs/deteccao_wilson.md`. O spec do detector é `context/detector.md`
+`flight_logs/wilson_detection.md`. O spec do detector é `context/detector.md`
 (`YCT-DETECT-001`).
 
 ## Fronteiras arquiteturais inegociáveis
@@ -69,7 +69,7 @@ Portanto:
 - O `EvidenceObject` é montado por `diagnose/evidence.ts`, deterministicamente,
   nunca pelo agente — o fallback precisa produzir o mesmo objeto sem LLM. O
   agente só contribui a trilha opcional; `orchestrate/` persiste o objeto
-  pronto. Ver `flight_logs/quem_monta_o_evidence_object.md`.
+  pronto. Ver `flight_logs/who_assembles_the_evidence_object.md`.
 - Recomendações exigem aprovação humana e nunca são executadas pelo sistema.
 - Preserve `investigation_steps` como registro auditável de cada pergunta,
   argumento, resultado e ator.

@@ -95,7 +95,7 @@ Isso vem direto do roadmap §1 e é a regra mais importante deste documento:
 2. **O narrador nunca calcula.** Recebe um objeto de evidência fechado (já contém todos os números) e só produz texto. Nenhum `+`, `-`, `*`, `/` no código do narrador. Se um número aparece na narrativa que não veio literalmente de um campo do objeto de evidência, é alucinação por construção — e o teste que pega isso é obrigatório (§4).
 3. **Todo caminho agêntico tem fallback determinístico.** Nenhuma feature que passa pelo agente pode ser a única forma de chegar ao diagnóstico. Se o agente não existisse, o beam search da F2 ainda produz o mesmo resultado, só sem a trilha de investigação.
 
-Consequência direta da #3, fechada em `flight_logs/quem_monta_o_evidence_object.md`: **quem monta o `EvidenceObject` é `diagnose/evidence.ts`, deterministicamente — nunca o agente.** Se o agente montasse, o fallback precisaria de uma segunda implementação do mesmo objeto. O agente só contribui a trilha opcional; `orchestrate/` persiste o objeto pronto sem inspecioná-lo; o narrador o consome fechado (fronteira #2).
+Consequência direta da #3, fechada em `flight_logs/who_assembles_the_evidence_object.md`: **quem monta o `EvidenceObject` é `diagnose/evidence.ts`, deterministicamente — nunca o agente.** Se o agente montasse, o fallback precisaria de uma segunda implementação do mesmo objeto. O agente só contribui a trilha opcional; `orchestrate/` persiste o objeto pronto sem inspecioná-lo; o narrador o consome fechado (fronteira #2).
 
 Code review rejeita qualquer PR que viole uma destas três, independente de passar nos testes.
 
@@ -482,7 +482,7 @@ Quatro comandos depois do clone. Vale medir isso: um README em que o juiz roda o
 **Desvio registrado:** na prática o time roda contra Postgres+pgvector e Redis
 gerenciados na nuvem (Railway), não contra o `docker compose up -d` acima —
 não há `docker-compose.yml` no repositório. Ver
-`flight_logs/infra_gerenciada_na_nuvem.md` para o porquê. `pnpm i` +
+`flight_logs/managed_cloud_infra.md` para o porquê. `pnpm i` +
 `pnpm drizzle-kit migrate` (`DATABASE_URL`/`REDIS_URL` já apontando pra nuvem
 via `.env`) substituem a etapa do docker.
 

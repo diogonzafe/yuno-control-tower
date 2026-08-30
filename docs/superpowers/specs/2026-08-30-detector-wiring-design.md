@@ -180,4 +180,4 @@ Escrita em `incidents`, fingerprint com decline dominante, ciclo de vida,
 memória/pgvector (`orchestrate/`); teste residual, beam search, peeling, custo,
 prioridade (`diagnose/`); narrador e ferramentas (`agent/`); qualquer componente
 de UI. O `EvidenceObject` não é montado aqui — `diagnose/evidence.ts` o monta,
-conforme `flight_logs/quem_monta_o_evidence_object.md`.
+conforme `flight_logs/who_assembles_the_evidence_object.md`.

@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript strict/ESM, Node 22, pnpm workspaces, Zod, drizzle-orm (postgres-js driver), ioredis, pino, vitest.
 
-**Spec:** `docs/superpowers/specs/2026-08-30-ingestion-pipeline-design.md` — read it alongside this plan. The two flight logs it references (`flight_logs/contrato_do_evento_de_transacao.md`, `flight_logs/ingestao_em_micro_batch_com_dedup.md`) explain *why* the batching/idempotency approach was chosen; this plan only covers *how*.
+**Spec:** `docs/superpowers/specs/2026-08-30-ingestion-pipeline-design.md` — read it alongside this plan. The two flight logs it references (`flight_logs/transaction_event_contract.md`, `flight_logs/micro_batch_ingestion_with_dedup.md`) explain *why* the batching/idempotency approach was chosen; this plan only covers *how*.
 
 ## Global Constraints
 
@@ -1218,7 +1218,7 @@ git commit -m "feat(ingest): add additive rollup upserts"
 - Consumes: `insertTransactions` (Task 4), `upsertRollupMinute`/`upsertRollupDeclinesMinute` (Task 5), `aggregateDeltas` (Task 2, same file), `db` (Task 3).
 - Produces: `processBatch(events: TransactionEvent[]): Promise<{ insertedCount: number }>`, exported from `packages/app/src/ingest/rollup.ts`. Task 7 (`consumer.ts`) is the only caller.
 
-This is the task that proves the idempotency claim from the spec and from `flight_logs/ingestao_em_micro_batch_com_dedup.md`: processing the same batch twice must leave the rollups identical to processing it once.
+This is the task that proves the idempotency claim from the spec and from `flight_logs/micro_batch_ingestion_with_dedup.md`: processing the same batch twice must leave the rollups identical to processing it once.
 
 - [ ] **Step 1: Write the failing test**
 
