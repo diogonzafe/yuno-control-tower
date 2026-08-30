@@ -23,6 +23,25 @@
 - **Cube facts:** 5 conversion dimensions (merchant, provider, country, payment_method, issuer). `decline_code` is NOT a conversion dimension. `PIX` exists only in `BR`; PIX rows carry `issuerId = "NA"`. Countries: `BR`, `MX`, `AR`. Full provider×country mesh (DD13).
 - **Boundary:** the detector emits `ConfirmedDrop` / `EvidenceGap` in memory and stops. It never writes `incidents`, computes cost, analyzes decline-mix, runs a residual test, or calls an LLM.
 - **Commit** at the end of every task. Never `git commit` outside a task's final step. Do not amend.
+- **Environment:** `pnpm` is NOT on `PATH` on this machine. Invoke it as `"$APPDATA/npm/pnpm"` in Bash (e.g. `"$APPDATA/npm/pnpm" --filter @control-tower/app test`). `node`, `npx`, `git` are on `PATH`. Docker daemon and `psql` are unavailable.
+- **Seed data:** a Railway Postgres holds fictitious 2026-08 data (READ ONLY; `DATABASE_URL` in `.env` — do not print or commit it). The detector is DB-agnostic, so no task connects to it; fixtures must nonetheless use the real IDs below so a later SQL-layer branch needs no fixture rewrite.
+
+## Seed Data Reference (READ ONLY)
+
+Verified against the live DB. Use these exact IDs in every fixture and test.
+
+- **Providers:** `stripe`, `adyen`, `mercado_pago` (note: `mercado_pago`, not `mpago`).
+- **Merchants** — each belongs to exactly one country (the cube's merchant dimension carries country):
+  - BR: `BR_STORE_01` (exp 0.92), `BR_STORE_02` (0.89), `BR_STORE_03` (0.94)
+  - MX: `MX_STORE_01` (0.91), `MX_STORE_02` (0.93), `MX_STORE_03` (0.89)
+  - AR: `AR_STORE_01` (0.87), `AR_STORE_02` (0.90), `AR_STORE_03` (0.88)
+  - all merchants: `min_material_drop_pp = 3`.
+- **Issuers** (3 per country) + `NA` for PIX:
+  - BR: `itau`, `nubank`, `bradesco`
+  - MX: `bbva_mx`, `banorte`, `citibanamex`
+  - AR: `galicia`, `santander_rio`, `macro`
+- **`routing_coverage`:** 12 rows — every provider × every country (CARD) + every provider × BR (PIX). PIX only in BR.
+- **Rollup tables** (`rollup_minute`, `rollup_declines_minute`) are populated for 2026-08-28..29; `incidents` is empty. Not used by this branch.
 
 ---
 
@@ -282,8 +301,8 @@ Add `test` and `typecheck` to `scripts`. Result:
 
 - [ ] **Step 7: Install**
 
-Run: `pnpm install`
-Expected: resolves, writes `pnpm-lock.yaml`, links `@control-tower/contracts` into `packages/app/node_modules`.
+Run: `"$APPDATA/npm/pnpm" install` (pnpm is not on `PATH` — see Global Constraints; use this exact form for every `pnpm` command in every task).
+Expected: resolves, writes `pnpm-lock.yaml`, links `@control-tower/contracts` into `packages/app/node_modules`. The "Ignored build scripts: esbuild" warning is expected and harmless.
 
 - [ ] **Step 8: Write the failing contract test**
 
@@ -298,7 +317,7 @@ import {
 } from "@control-tower/contracts";
 
 const validSignal = {
-  dimensions: { merchantId: "m1", country: "BR", providerId: "adyen" },
+  dimensions: { merchantId: "BR_STORE_01", country: "BR", providerId: "adyen" },
   windowBucket: "2026-08-30T14:06:00.000Z",
   observedRate: 0.41,
   expectedRate: 0.95,
@@ -331,7 +350,7 @@ describe("contracts", () => {
 
   it("accepts an EvidenceGap and pins the reason literal", () => {
     const gap = {
-      dimensions: { merchantId: "m1", country: "MX" },
+      dimensions: { merchantId: "MX_STORE_01", country: "MX" },
       windowBucket: "2026-08-30T14:06:00.000Z",
       attempts: 7,
       reason: "INSUFFICIENT_EVIDENCE",
@@ -478,7 +497,7 @@ describe("types", () => {
   it("compile with the expected shapes", () => {
     const row: RollupRow = {
       bucket: "2026-08-30T14:00:00.000Z",
-      merchantId: "m1",
+      merchantId: "BR_STORE_01",
       providerId: "adyen",
       country: "BR",
       paymentMethod: "CARD",
@@ -488,14 +507,14 @@ describe("types", () => {
       amountUsdSum: 1_000_000,
       approvedUsdSum: 950_000,
     };
-    const filter: SliceFilter = { merchantId: "m1", country: "BR" };
+    const filter: SliceFilter = { merchantId: "BR_STORE_01", country: "BR" };
     const dim: Dimension = "issuerId";
     // A trivial RollupSource implementation must satisfy the interface.
     const src: RollupSource = {
       getWindowRollups: async () => [row],
       getHistory: async () => [row],
     };
-    expect(filter.merchantId).toBe("m1");
+    expect(filter.merchantId).toBe("BR_STORE_01");
     expect(dim).toBe("issuerId");
     expect(typeof src.getWindowRollups).toBe("function");
   });
@@ -739,10 +758,14 @@ git commit -m "add: Wilson interval and 4-state cell evaluate (DD11)"
 
 **Interfaces:**
 - Consumes: `RollupRow`, `MerchantConfig`, `RoutingCoverage` from `./types`.
-- Produces:
-  - `function rollupRow(overrides?: Partial<RollupRow>): RollupRow` — defaults: `bucket "2026-08-30T14:00:00.000Z"`, `merchantId "m1"`, `providerId "adyen"`, `country "BR"`, `paymentMethod "CARD"`, `issuerId "itau"`, `attempts 100`, `approved 95`, `amountUsdSum 1_000_000`, `approvedUsdSum 950_000`.
-  - `function merchant(overrides?: Partial<MerchantConfig>): MerchantConfig` — defaults: `merchantId "m1"`, `expectedConversion 0.9`, `minMaterialDropPp 3.0`.
-  - `function fullCoverage(): RoutingCoverage` — 12 rows: `["stripe","adyen","mpago"] × ["BR","MX","AR"] × CARD`, plus each provider `× BR × PIX`.
+- Produces (all IDs from the Seed Data Reference — use them verbatim):
+  - `const PROVIDERS = ["stripe", "adyen", "mercado_pago"] as const`
+  - `const MERCHANTS_BY_COUNTRY: Record<"BR"|"MX"|"AR", string[]>` — `BR: ["BR_STORE_01","BR_STORE_02","BR_STORE_03"]`, `MX: ["MX_STORE_01","MX_STORE_02","MX_STORE_03"]`, `AR: ["AR_STORE_01","AR_STORE_02","AR_STORE_03"]`
+  - `const ISSUERS_BY_COUNTRY: Record<"BR"|"MX"|"AR", string[]>` — `BR: ["itau","nubank","bradesco"]`, `MX: ["bbva_mx","banorte","citibanamex"]`, `AR: ["galicia","santander_rio","macro"]`
+  - `function countryOf(merchantId: string): "BR" | "MX" | "AR"` — from the `BR_`/`MX_`/`AR_` prefix
+  - `function rollupRow(overrides?: Partial<RollupRow>): RollupRow` — defaults: `bucket "2026-08-30T14:00:00.000Z"`, `merchantId "BR_STORE_01"`, `providerId "adyen"`, `country "BR"`, `paymentMethod "CARD"`, `issuerId "itau"`, `attempts 100`, `approved 95`, `amountUsdSum 1_000_000`, `approvedUsdSum 950_000`.
+  - `function merchant(overrides?: Partial<MerchantConfig>): MerchantConfig` — defaults: `merchantId "BR_STORE_01"`, `expectedConversion 0.9`, `minMaterialDropPp 3.0`.
+  - `function fullCoverage(): RoutingCoverage` — 12 rows: `PROVIDERS × ["BR","MX","AR"] × CARD`, plus each provider `× BR × PIX`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -750,12 +773,12 @@ Create `packages/app/src/detect/fixtures.test.ts`:
 
 ```ts
 import { describe, expect, it } from "vitest";
-import { fullCoverage, merchant, rollupRow } from "./fixtures";
+import { countryOf, fullCoverage, merchant, rollupRow } from "./fixtures";
 
 describe("fixtures", () => {
   it("rollupRow applies defaults and overrides", () => {
     expect(rollupRow()).toMatchObject({
-      merchantId: "m1",
+      merchantId: "BR_STORE_01",
       providerId: "adyen",
       country: "BR",
       paymentMethod: "CARD",
@@ -772,11 +795,16 @@ describe("fixtures", () => {
 
   it("merchant applies defaults and overrides", () => {
     expect(merchant()).toEqual({
-      merchantId: "m1",
+      merchantId: "BR_STORE_01",
       expectedConversion: 0.9,
       minMaterialDropPp: 3.0,
     });
     expect(merchant({ expectedConversion: 0.65 }).expectedConversion).toBe(0.65);
+  });
+
+  it("countryOf reads the merchant prefix", () => {
+    expect(countryOf("MX_STORE_02")).toBe("MX");
+    expect(() => countryOf("ZZ_STORE_01")).toThrow();
   });
 
   it("fullCoverage is the 12-row DD13 mesh", () => {
@@ -787,6 +815,7 @@ describe("fixtures", () => {
       cov.filter((c) => c.paymentMethod === "PIX").every((c) => c.country === "BR"),
     ).toBe(true);
     expect(cov.filter((c) => c.country === "MX")).toHaveLength(3);
+    expect(cov.some((c) => c.providerId === "mercado_pago")).toBe(true);
   });
 });
 ```
@@ -801,10 +830,32 @@ Expected: FAIL — `./fixtures` cannot be resolved.
 ```ts
 import type { MerchantConfig, RollupRow, RoutingCoverage } from "./types";
 
+// Real seed IDs (READ-ONLY DB, fictitious 2026-08 data). Each merchant belongs
+// to exactly one country. See the plan's "Seed Data Reference".
+export const PROVIDERS = ["stripe", "adyen", "mercado_pago"] as const;
+
+export const MERCHANTS_BY_COUNTRY: Record<"BR" | "MX" | "AR", string[]> = {
+  BR: ["BR_STORE_01", "BR_STORE_02", "BR_STORE_03"],
+  MX: ["MX_STORE_01", "MX_STORE_02", "MX_STORE_03"],
+  AR: ["AR_STORE_01", "AR_STORE_02", "AR_STORE_03"],
+};
+
+export const ISSUERS_BY_COUNTRY: Record<"BR" | "MX" | "AR", string[]> = {
+  BR: ["itau", "nubank", "bradesco"],
+  MX: ["bbva_mx", "banorte", "citibanamex"],
+  AR: ["galicia", "santander_rio", "macro"],
+};
+
+export function countryOf(merchantId: string): "BR" | "MX" | "AR" {
+  const prefix = merchantId.slice(0, 2);
+  if (prefix === "BR" || prefix === "MX" || prefix === "AR") return prefix;
+  throw new Error(`unknown merchant country for ${merchantId}`);
+}
+
 export function rollupRow(overrides: Partial<RollupRow> = {}): RollupRow {
   return {
     bucket: "2026-08-30T14:00:00.000Z",
-    merchantId: "m1",
+    merchantId: "BR_STORE_01",
     providerId: "adyen",
     country: "BR",
     paymentMethod: "CARD",
@@ -819,19 +870,18 @@ export function rollupRow(overrides: Partial<RollupRow> = {}): RollupRow {
 
 export function merchant(overrides: Partial<MerchantConfig> = {}): MerchantConfig {
   return {
-    merchantId: "m1",
+    merchantId: "BR_STORE_01",
     expectedConversion: 0.9,
     minMaterialDropPp: 3.0,
     ...overrides,
   };
 }
 
-// DD13: full provider x country mesh; PIX only in BR. 12 rows.
+// DD13: full provider x country mesh; PIX only in BR. 12 rows (matches routing_coverage).
 export function fullCoverage(): RoutingCoverage {
-  const providers = ["stripe", "adyen", "mpago"] as const;
   const countries = ["BR", "MX", "AR"] as const;
   const rows: RoutingCoverage = [];
-  for (const providerId of providers) {
+  for (const providerId of PROVIDERS) {
     for (const country of countries) {
       rows.push({ providerId, country, paymentMethod: "CARD" });
     }
@@ -885,9 +935,9 @@ describe("matchesFilter", () => {
   });
 
   it("matches only when every key equals", () => {
-    const r = rollupRow({ merchantId: "m1", providerId: "adyen" });
-    expect(matchesFilter(r, { merchantId: "m1" })).toBe(true);
-    expect(matchesFilter(r, { merchantId: "m1", providerId: "adyen" })).toBe(true);
+    const r = rollupRow({ merchantId: "BR_STORE_01", providerId: "adyen" });
+    expect(matchesFilter(r, { merchantId: "BR_STORE_01" })).toBe(true);
+    expect(matchesFilter(r, { merchantId: "BR_STORE_01", providerId: "adyen" })).toBe(true);
     expect(matchesFilter(r, { providerId: "stripe" })).toBe(false);
   });
 });
@@ -896,7 +946,7 @@ describe("aggregate", () => {
   const rows = [
     rollupRow({ providerId: "adyen", attempts: 100, approved: 30, amountUsdSum: 10, approvedUsdSum: 3 }),
     rollupRow({ providerId: "stripe", attempts: 100, approved: 90, amountUsdSum: 10, approvedUsdSum: 9 }),
-    rollupRow({ providerId: "mpago", attempts: 100, approved: 95, amountUsdSum: 10, approvedUsdSum: 9 }),
+    rollupRow({ providerId: "mercado_pago", attempts: 100, approved: 95, amountUsdSum: 10, approvedUsdSum: 9 }),
   ];
 
   it("sums everything with no opts", () => {
@@ -1071,13 +1121,13 @@ describe("crossSectionalExpected", () => {
   const windowRows = [
     rollupRow({ providerId: "adyen", attempts: 100, approved: 30 }),
     rollupRow({ providerId: "stripe", attempts: 100, approved: 90 }),
-    rollupRow({ providerId: "mpago", attempts: 100, approved: 95 }),
+    rollupRow({ providerId: "mercado_pago", attempts: 100, approved: 95 }),
   ];
 
   it("is the siblings-minus-self rate in the same window", () => {
     const e = crossSectionalExpected(
       windowRows,
-      { merchantId: "m1", country: "BR" },
+      { merchantId: "BR_STORE_01", country: "BR" },
       "providerId",
       "adyen",
     );
@@ -1088,7 +1138,7 @@ describe("crossSectionalExpected", () => {
     const onlyChild = [rollupRow({ providerId: "adyen", attempts: 50, approved: 10 })];
     const e = crossSectionalExpected(
       onlyChild,
-      { merchantId: "m1", country: "BR" },
+      { merchantId: "BR_STORE_01", country: "BR" },
       "providerId",
       "adyen",
     );
@@ -1105,7 +1155,7 @@ describe("temporalExpected", () => {
     ];
     const e = temporalExpected(
       history,
-      { merchantId: "m1" },
+      { merchantId: "BR_STORE_01" },
       "2026-08-30T13:00:00.000Z",
       "2026-08-30T14:00:00.000Z",
     );
@@ -1195,19 +1245,22 @@ import { absoluteTrigger } from "./trigger";
 import { merchant, rollupRow } from "./fixtures";
 
 describe("absoluteTrigger", () => {
-  const merchants = [merchant({ merchantId: "m1", expectedConversion: 0.9, minMaterialDropPp: 3 })];
+  const merchants = [
+    merchant({ merchantId: "BR_STORE_01", expectedConversion: 0.9, minMaterialDropPp: 3 }),
+    merchant({ merchantId: "AR_STORE_01", expectedConversion: 0.9, minMaterialDropPp: 3 }),
+  ];
 
   it("emits a MATERIAL_DROP candidate at merchant x country when the aggregate collapses", () => {
-    // m1 / BR aggregate: 90 approved / 300 attempts = 0.30, p_lim = 0.87
+    // BR_STORE_01 / BR aggregate: 90 approved / 300 attempts = 0.30, p_lim = 0.87
     const rows = [
-      rollupRow({ merchantId: "m1", country: "BR", providerId: "adyen", attempts: 100, approved: 30 }),
-      rollupRow({ merchantId: "m1", country: "BR", providerId: "stripe", attempts: 100, approved: 30 }),
-      rollupRow({ merchantId: "m1", country: "BR", providerId: "mpago", attempts: 100, approved: 30 }),
+      rollupRow({ merchantId: "BR_STORE_01", country: "BR", providerId: "adyen", attempts: 100, approved: 30 }),
+      rollupRow({ merchantId: "BR_STORE_01", country: "BR", providerId: "stripe", attempts: 100, approved: 30 }),
+      rollupRow({ merchantId: "BR_STORE_01", country: "BR", providerId: "mercado_pago", attempts: 100, approved: 30 }),
     ];
     const out = absoluteTrigger(rows, merchants);
     expect(out).toHaveLength(1);
     expect(out[0]).toMatchObject({
-      dimensions: { merchantId: "m1", country: "BR" },
+      dimensions: { merchantId: "BR_STORE_01", country: "BR" },
       state: "MATERIAL_DROP",
       expectedSource: "absolute",
       expectedRate: 0.9,
@@ -1220,19 +1273,19 @@ describe("absoluteTrigger", () => {
 
   it("emits nothing when the aggregate is healthy", () => {
     const rows = [
-      rollupRow({ merchantId: "m1", country: "BR", attempts: 300, approved: 285 }), // 0.95 > 0.87
+      rollupRow({ merchantId: "BR_STORE_01", country: "BR", attempts: 300, approved: 285 }), // 0.95 > 0.87
     ];
     expect(absoluteTrigger(rows, merchants)).toEqual([]);
   });
 
   it("emits INSUFFICIENT_EVIDENCE when the interval crosses p_lim and n < MIN_VOLUME", () => {
     const rows = [
-      rollupRow({ merchantId: "m1", country: "AR", attempts: 6, approved: 3 }),
+      rollupRow({ merchantId: "AR_STORE_01", country: "AR", issuerId: "galicia", attempts: 6, approved: 3 }),
     ];
     const out = absoluteTrigger(rows, merchants);
     expect(out).toHaveLength(1);
     expect(out[0]).toMatchObject({
-      dimensions: { merchantId: "m1", country: "AR" },
+      dimensions: { merchantId: "AR_STORE_01", country: "AR" },
       state: "INSUFFICIENT_EVIDENCE",
     });
   });
@@ -1369,38 +1422,41 @@ import { crossSectionalSweep } from "./trigger";
 import { fullCoverage } from "./fixtures";
 
 describe("crossSectionalSweep", () => {
-  const merchants = [merchant({ merchantId: "m1", expectedConversion: 0.9, minMaterialDropPp: 3 })];
+  const merchants = [
+    merchant({ merchantId: "BR_STORE_01", expectedConversion: 0.9, minMaterialDropPp: 3 }),
+    merchant({ merchantId: "MX_STORE_01", expectedConversion: 0.9, minMaterialDropPp: 3 }),
+  ];
 
   function brCardRow(providerId: string, issuerId: string, attempts: number, approved: number) {
-    return rollupRow({ merchantId: "m1", country: "BR", paymentMethod: "CARD", providerId, issuerId, attempts, approved });
+    return rollupRow({ merchantId: "BR_STORE_01", country: "BR", paymentMethod: "CARD", providerId, issuerId, attempts, approved });
   }
 
   it("isolates the provider that concentrates the deficit", () => {
     const rows = [
-      // adyen collapsed across its issuers; stripe and mpago healthy
+      // adyen collapsed across its issuers; stripe and mercado_pago healthy
       brCardRow("adyen", "itau", 40, 8),
       brCardRow("adyen", "nubank", 30, 6),
       brCardRow("adyen", "bradesco", 30, 6),
       brCardRow("stripe", "itau", 100, 95),
-      brCardRow("mpago", "itau", 100, 95),
+      brCardRow("mercado_pago", "itau", 100, 95),
     ];
     const out = crossSectionalSweep(rows, fullCoverage(), merchants);
     const providerHit = out.find(
       (c) => c.dimensions.providerId === "adyen" && !c.dimensions.issuerId,
     );
     expect(providerHit).toMatchObject({
-      dimensions: { merchantId: "m1", country: "BR", providerId: "adyen" },
+      dimensions: { merchantId: "BR_STORE_01", country: "BR", providerId: "adyen" },
       state: "MATERIAL_DROP",
       expectedSource: "cross_sectional",
     });
-    // expected for adyen = siblings (stripe+mpago) = 190/200 = 0.95
+    // expected for adyen = siblings (stripe + mercado_pago) = 190/200 = 0.95
     expect(providerHit?.expectedRate).toBeCloseTo(0.95, 10);
   });
 
   it("skips the paymentMethod split outside BR (no siblings)", () => {
     const rows = [
-      rollupRow({ merchantId: "m1", country: "MX", paymentMethod: "CARD", providerId: "adyen", issuerId: "bbva", attempts: 100, approved: 20 }),
-      rollupRow({ merchantId: "m1", country: "MX", paymentMethod: "CARD", providerId: "stripe", issuerId: "bbva", attempts: 100, approved: 95 }),
+      rollupRow({ merchantId: "MX_STORE_01", country: "MX", paymentMethod: "CARD", providerId: "adyen", issuerId: "bbva_mx", attempts: 100, approved: 20 }),
+      rollupRow({ merchantId: "MX_STORE_01", country: "MX", paymentMethod: "CARD", providerId: "stripe", issuerId: "bbva_mx", attempts: 100, approved: 95 }),
     ];
     const out = crossSectionalSweep(rows, fullCoverage(), merchants);
     expect(out.every((c) => c.dimensions.paymentMethod === undefined || c.dimensions.providerId !== undefined)).toBe(true);
@@ -1410,22 +1466,22 @@ describe("crossSectionalSweep", () => {
 
   it("does not split issuer on PIX rows", () => {
     const rows = [
-      rollupRow({ merchantId: "m1", country: "BR", paymentMethod: "PIX", providerId: "adyen", issuerId: "NA", attempts: 100, approved: 20 }),
-      rollupRow({ merchantId: "m1", country: "BR", paymentMethod: "PIX", providerId: "stripe", issuerId: "NA", attempts: 100, approved: 95 }),
+      rollupRow({ merchantId: "BR_STORE_01", country: "BR", paymentMethod: "PIX", providerId: "adyen", issuerId: "NA", attempts: 100, approved: 20 }),
+      rollupRow({ merchantId: "BR_STORE_01", country: "BR", paymentMethod: "PIX", providerId: "stripe", issuerId: "NA", attempts: 100, approved: 95 }),
     ];
     const out = crossSectionalSweep(rows, fullCoverage(), merchants);
     expect(out.some((c) => c.dimensions.issuerId === "NA")).toBe(false);
   });
 
   it("ignores a provider absent from routing_coverage", () => {
-    const skinny = fullCoverage().filter((c) => c.providerId !== "mpago");
+    const skinny = fullCoverage().filter((c) => c.providerId !== "mercado_pago");
     const rows = [
       brCardRow("adyen", "itau", 100, 95),
       brCardRow("stripe", "itau", 100, 95),
-      brCardRow("mpago", "itau", 100, 5), // collapsed, but not covered -> ignored
+      brCardRow("mercado_pago", "itau", 100, 5), // collapsed, but not covered -> ignored
     ];
     const out = crossSectionalSweep(rows, skinny, merchants);
-    expect(out.some((c) => c.dimensions.providerId === "mpago")).toBe(false);
+    expect(out.some((c) => c.dimensions.providerId === "mercado_pago")).toBe(false);
   });
 });
 ```
@@ -1546,7 +1602,10 @@ export function crossSectionalSweep(
 }
 ```
 
-Note: `r[splitDim]` is typed `string` because `Dimension` keys on `RollupRow` are all string-valued. `parent.country` is `string | undefined`; the `coverage.filter` comparison against `c.country` (`string`) is correct — when `parent.country` is set (always, here) it narrows fine.
+Notes:
+- `r[splitDim]` is typed `string` because every `Dimension` key on `RollupRow` is string-valued (`country`/`paymentMethod` are string unions).
+- `parent.country` is `string | undefined`; comparing it to `c.country` (`string`) is fine — in practice it is always set here.
+- If `const childFilter: SliceFilter = { ...parent, [splitDim]: value }` trips the computed-key check under `strict`, write it as `{ ...parent, [splitDim]: value } as SliceFilter` (same shape, just silences the widened index type). The identical pattern in `expected.ts` (`exclude: { [splitDim]: childValue }`) is the precedent.
 
 - [ ] **Step 4: Run to verify it passes**
 
@@ -1608,19 +1667,19 @@ function cand(dims: Candidate["dimensions"], state: Candidate["state"] = "MATERI
 
 describe("fingerprint", () => {
   it("is order-independent over the fixed keys", () => {
-    expect(fingerprint({ country: "BR", merchantId: "m1", providerId: "adyen" })).toBe(
-      fingerprint({ providerId: "adyen", merchantId: "m1", country: "BR" }),
+    expect(fingerprint({ country: "BR", merchantId: "BR_STORE_01", providerId: "adyen" })).toBe(
+      fingerprint({ providerId: "adyen", merchantId: "BR_STORE_01", country: "BR" }),
     );
   });
   it("distinguishes different slices", () => {
-    expect(fingerprint({ merchantId: "m1", country: "BR" })).not.toBe(
-      fingerprint({ merchantId: "m1", country: "BR", providerId: "adyen" }),
+    expect(fingerprint({ merchantId: "BR_STORE_01", country: "BR" })).not.toBe(
+      fingerprint({ merchantId: "BR_STORE_01", country: "BR", providerId: "adyen" }),
     );
   });
 });
 
 describe("step", () => {
-  const dims = { merchantId: "m1", country: "BR", providerId: "adyen" };
+  const dims = { merchantId: "BR_STORE_01", country: "BR", providerId: "adyen" };
 
   it("promotes only on the PERSISTENCE_WINDOWS-th consecutive window", () => {
     let state: PersistenceState = new Map();
@@ -1658,8 +1717,8 @@ describe("step", () => {
   });
 
   it("tracks fingerprints independently", () => {
-    const a = { merchantId: "m1", country: "BR", providerId: "adyen" };
-    const b = { merchantId: "m2", country: "MX", issuerId: "bbva" };
+    const a = { merchantId: "BR_STORE_01", country: "BR", providerId: "adyen" };
+    const b = { merchantId: "MX_STORE_02", country: "MX", issuerId: "bbva_mx" };
     let r = step([cand(a), cand(b)], new Map(), "t1");
     r = step([cand(a)], r.next, "t2"); // b misses
     expect(r.next.has(fingerprint(b))).toBe(false);
@@ -1782,7 +1841,7 @@ function series(startIso: string, points: Array<[number, number]>) {
   return points.map(([approved, attempts], i) =>
     rollupRow({
       bucket: new Date(t0 + i * 60_000).toISOString(),
-      merchantId: "m1",
+      merchantId: "BR_STORE_01",
       country: "BR",
       providerId: "adyen",
       issuerId: "itau",
@@ -1806,7 +1865,7 @@ describe("onsetScan", () => {
     ]);
     const r = onsetScan(
       rows,
-      { merchantId: "m1", country: "BR", providerId: "adyen" },
+      { merchantId: "BR_STORE_01", country: "BR", providerId: "adyen" },
       "2026-08-30T14:05:00.000Z",
       0.9,
       3,
@@ -1823,7 +1882,7 @@ describe("onsetScan", () => {
     ]);
     const r = onsetScan(
       rows,
-      { merchantId: "m1", country: "BR", providerId: "adyen" },
+      { merchantId: "BR_STORE_01", country: "BR", providerId: "adyen" },
       "2026-08-30T14:02:00.000Z",
       0.9,
       3,
@@ -1842,7 +1901,7 @@ describe("onsetScan", () => {
     ]);
     const r = onsetScan(
       rows,
-      { merchantId: "m1", country: "BR", providerId: "adyen" },
+      { merchantId: "BR_STORE_01", country: "BR", providerId: "adyen" },
       "2026-08-30T14:04:00.000Z",
       0.9,
       3,
@@ -1954,29 +2013,35 @@ Create `packages/app/src/detect/tick.test.ts`:
 import { describe, expect, it } from "vitest";
 import { ConfirmedDrop } from "@control-tower/contracts";
 import { runDetectionTick } from "./tick";
-import { fullCoverage, merchant, rollupRow } from "./fixtures";
+import {
+  ISSUERS_BY_COUNTRY,
+  MERCHANTS_BY_COUNTRY,
+  PROVIDERS,
+  fullCoverage,
+  merchant,
+  rollupRow,
+} from "./fixtures";
 import type { PersistenceState } from "./persistence";
 import type { RollupRow } from "./types";
 
-const MERCHANTS = [
-  merchant({ merchantId: "m1", expectedConversion: 0.9, minMaterialDropPp: 3 }),
-  merchant({ merchantId: "m2", expectedConversion: 0.9, minMaterialDropPp: 3 }),
-];
-const COVERAGE = fullCoverage();
-const ISSUERS: Record<string, string[]> = {
-  BR: ["itau", "nubank", "bradesco"],
-  MX: ["bbva", "banorte", "banamex"],
-  AR: ["galicia", "santander", "macro"],
-};
-const PROVIDERS = ["stripe", "adyen", "mpago"];
+const COUNTRIES = ["BR", "MX", "AR"] as const;
 
-// A full healthy window: every covered CARD cell at 95/100, every PIX cell at 96/100.
+// Every merchant threshold pinned to 0.9 / 3pp so the tests control p_lim exactly.
+const MERCHANTS = COUNTRIES.flatMap((c) =>
+  MERCHANTS_BY_COUNTRY[c].map((merchantId) =>
+    merchant({ merchantId, expectedConversion: 0.9, minMaterialDropPp: 3 }),
+  ),
+);
+const COVERAGE = fullCoverage();
+
+// One healthy window: every covered CARD cell at 95/100, every BR PIX cell at 96/100.
+// A merchant belongs to exactly one country (real seed model).
 function healthyWindow(bucket: string): RollupRow[] {
   const rows: RollupRow[] = [];
-  for (const merchantId of ["m1", "m2"]) {
-    for (const country of ["BR", "MX", "AR"] as const) {
+  for (const country of COUNTRIES) {
+    for (const merchantId of MERCHANTS_BY_COUNTRY[country]) {
       for (const providerId of PROVIDERS) {
-        for (const issuerId of ISSUERS[country]!) {
+        for (const issuerId of ISSUERS_BY_COUNTRY[country]) {
           rows.push(rollupRow({ bucket, merchantId, country, providerId, issuerId, paymentMethod: "CARD", attempts: 100, approved: 95 }));
         }
         if (country === "BR") {
@@ -1988,15 +2053,15 @@ function healthyWindow(bucket: string): RollupRow[] {
   return rows;
 }
 
-// Mutate a window: adyen in BR collapses for BOTH merchants; issuer "bbva" in MX
-// collapses for m1 only.
+// adyen CARD in BR collapses for ALL BR merchants; issuer bbva_mx collapses for
+// MX_STORE_01 only.
 function injectIncidents(rows: RollupRow[]): RollupRow[] {
   return rows.map((r) => {
     if (r.country === "BR" && r.providerId === "adyen" && r.paymentMethod === "CARD") {
-      return { ...r, approved: 20 }; // 20/100
+      return { ...r, approved: 20 };
     }
-    if (r.country === "MX" && r.issuerId === "bbva" && r.merchantId === "m1") {
-      return { ...r, approved: 15 }; // 15/100
+    if (r.country === "MX" && r.issuerId === "bbva_mx" && r.merchantId === "MX_STORE_01") {
+      return { ...r, approved: 15 };
     }
     return r;
   });
@@ -2008,10 +2073,11 @@ function bucketAt(i: number): string {
 
 describe("runDetectionTick", () => {
   it("stays silent on a healthy window", () => {
+    const windows = [0, 1, 2, 3, 4, 5].map((i) => healthyWindow(bucketAt(i)));
     const r = runDetectionTick({
       bucket: bucketAt(5),
-      windowRows: healthyWindow(bucketAt(5)),
-      history: [bucketAt(0), bucketAt(1), bucketAt(2), bucketAt(3), bucketAt(4)].flatMap(healthyWindow),
+      windowRows: windows[5]!,
+      history: windows.slice(0, 5).flat(),
       merchants: MERCHANTS,
       coverage: COVERAGE,
       prevState: new Map(),
@@ -2021,39 +2087,37 @@ describe("runDetectionTick", () => {
   });
 
   it("emits nothing for the first two dropped windows, then confirms on the third", () => {
+    // buckets 0..1 healthy, buckets 2..4 dropped
+    const windows = [
+      healthyWindow(bucketAt(0)),
+      healthyWindow(bucketAt(1)),
+      injectIncidents(healthyWindow(bucketAt(2))),
+      injectIncidents(healthyWindow(bucketAt(3))),
+      injectIncidents(healthyWindow(bucketAt(4))),
+    ];
     let state: PersistenceState = new Map();
-    const history: RollupRow[] = [bucketAt(0), bucketAt(1)].flatMap(healthyWindow);
-
-    for (const i of [2, 3]) {
-      const res = runDetectionTick({
+    let res: ReturnType<typeof runDetectionTick> | undefined;
+    for (let i = 2; i <= 4; i++) {
+      res = runDetectionTick({
         bucket: bucketAt(i),
-        windowRows: injectIncidents(healthyWindow(bucketAt(i))),
-        history,
+        windowRows: windows[i]!,
+        history: windows.slice(0, i).flat(),
         merchants: MERCHANTS,
         coverage: COVERAGE,
         prevState: state,
       });
-      expect(res.signals).toEqual([]);
+      if (i < 4) expect(res.signals).toEqual([]);
       state = res.nextState;
-      history.push(...injectIncidents(healthyWindow(bucketAt(i))));
     }
+    const final = res!;
 
-    const final = runDetectionTick({
-      bucket: bucketAt(4),
-      windowRows: injectIncidents(healthyWindow(bucketAt(4))),
-      history,
-      merchants: MERCHANTS,
-      coverage: COVERAGE,
-      prevState: state,
-    });
-
-    // Two independent stories: adyen/BR (for m1 and m2) and bbva/MX (m1 only).
+    // Two independent stories: adyen/BR and bbva_mx/MX_STORE_01.
     const fps = final.signals.map((s) => JSON.stringify(s.dimensions));
     expect(final.signals.length).toBeGreaterThanOrEqual(2);
     expect(fps.some((f) => f.includes('"providerId":"adyen"') && f.includes('"country":"BR"'))).toBe(true);
-    expect(fps.some((f) => f.includes('"issuerId":"bbva"') && f.includes('"merchantId":"m1"'))).toBe(true);
-    // never an m2/bbva signal — that issuer stayed healthy for m2
-    expect(fps.some((f) => f.includes('"issuerId":"bbva"') && f.includes('"merchantId":"m2"'))).toBe(false);
+    expect(fps.some((f) => f.includes('"issuerId":"bbva_mx"') && f.includes('"merchantId":"MX_STORE_01"'))).toBe(true);
+    // bbva_mx stayed healthy for MX_STORE_02 — never a signal there
+    expect(fps.some((f) => f.includes('"issuerId":"bbva_mx"') && f.includes('"merchantId":"MX_STORE_02"'))).toBe(false);
 
     for (const s of final.signals) {
       expect(() => ConfirmedDrop.parse(s)).not.toThrow();
@@ -2065,49 +2129,58 @@ describe("runDetectionTick", () => {
     }
   });
 
-  it("confirms a thin cell via the 5-minute window", () => {
-    // A slice that is thin per-minute (attempts 8) but >= 30 over 5 minutes.
+  it("confirms a thin candidate slice via the 5-minute window", () => {
+    // The whole adyen provider slice for AR_STORE_01 is collapsed AND thin:
+    // 8 attempts per issuer -> 24 for the provider slice per minute (< MIN_VOLUME),
+    // but >= MIN_VOLUME once summed over 5 minutes.
     function thinWindow(bucket: string): RollupRow[] {
-      const rows = healthyWindow(bucket);
-      return rows.map((r) =>
-        r.merchantId === "m1" && r.country === "AR" && r.providerId === "adyen" && r.issuerId === "galicia"
+      return healthyWindow(bucket).map((r) =>
+        r.merchantId === "AR_STORE_01" && r.country === "AR" && r.providerId === "adyen"
           ? { ...r, attempts: 8, approved: 1 }
           : r,
       );
     }
+    const windows = [0, 1, 2, 3, 4, 5].map((i) => thinWindow(bucketAt(i)));
     let state: PersistenceState = new Map();
-    const history: RollupRow[] = [];
-    for (const i of [0, 1, 2, 3]) history.push(...thinWindow(bucketAt(i)));
-
-    let res = runDetectionTick({ bucket: bucketAt(3), windowRows: thinWindow(bucketAt(3)), history, merchants: MERCHANTS, coverage: COVERAGE, prevState: state });
-    state = res.nextState;
-    history.push(...thinWindow(bucketAt(4)));
-    res = runDetectionTick({ bucket: bucketAt(4), windowRows: thinWindow(bucketAt(4)), history, merchants: MERCHANTS, coverage: COVERAGE, prevState: state });
-    state = res.nextState;
-    history.push(...thinWindow(bucketAt(5)));
-    res = runDetectionTick({ bucket: bucketAt(5), windowRows: thinWindow(bucketAt(5)), history, merchants: MERCHANTS, coverage: COVERAGE, prevState: state });
-
-    const hit = res.signals.find(
-      (s) => s.dimensions.country === "AR" && s.dimensions.providerId === "adyen",
+    let res: ReturnType<typeof runDetectionTick> | undefined;
+    for (let i = 3; i <= 5; i++) {
+      res = runDetectionTick({
+        bucket: bucketAt(i),
+        windowRows: windows[i]!,
+        history: windows.slice(0, i).flat(),
+        merchants: MERCHANTS,
+        coverage: COVERAGE,
+        prevState: state,
+      });
+      state = res.nextState;
+    }
+    const hit = res!.signals.find(
+      (s) =>
+        s.dimensions.merchantId === "AR_STORE_01" &&
+        s.dimensions.country === "AR" &&
+        s.dimensions.providerId === "adyen" &&
+        s.dimensions.issuerId === undefined,
     );
     expect(hit).toBeDefined();
     expect(hit?.windowUsed).toBe("5m");
     expect(hit?.attempts).toBeGreaterThanOrEqual(30);
   });
 
-  it("reports an evidence gap, never a signal, when a cell is thin on both windows", () => {
+  it("reports an evidence gap, never a signal, when a candidate slice is thin on every window", () => {
+    // mercado_pago provider slice for AR_STORE_02: 1 attempt per issuer -> 3/min,
+    // 15 over 5 minutes — never reaches MIN_VOLUME.
     function sparseWindow(bucket: string): RollupRow[] {
       return healthyWindow(bucket).map((r) =>
-        r.merchantId === "m2" && r.country === "AR" && r.providerId === "mpago" && r.issuerId === "macro"
-          ? { ...r, attempts: 3, approved: 0 }
+        r.merchantId === "AR_STORE_02" && r.country === "AR" && r.providerId === "mercado_pago"
+          ? { ...r, attempts: 1, approved: 0 }
           : r,
       );
     }
-    const history = [bucketAt(0), bucketAt(1), bucketAt(2), bucketAt(3)].flatMap(sparseWindow);
+    const windows = [0, 1, 2, 3, 4].map((i) => sparseWindow(bucketAt(i)));
     const res = runDetectionTick({
       bucket: bucketAt(4),
-      windowRows: sparseWindow(bucketAt(4)),
-      history,
+      windowRows: windows[4]!,
+      history: windows.slice(0, 4).flat(),
       merchants: MERCHANTS,
       coverage: COVERAGE,
       prevState: new Map(),
@@ -2115,7 +2188,9 @@ describe("runDetectionTick", () => {
     expect(res.signals).toEqual([]);
     expect(
       res.evidenceGaps.some(
-        (g) => g.dimensions.country === "AR" && g.dimensions.providerId === "mpago",
+        (g) =>
+          g.dimensions.merchantId === "AR_STORE_02" &&
+          g.dimensions.providerId === "mercado_pago",
       ),
     ).toBe(true);
   });
@@ -2251,7 +2326,6 @@ export function runDetectionTick(input: TickInput): TickOutput {
 
   const { promoted, next } = step(candidates, input.prevState, input.bucket);
 
-  const merchantsById = new Map(input.merchants.map((m) => [m.merchantId, m]));
   const scanSeries = [...input.history, ...input.windowRows];
 
   const signals: ConfirmedDrop[] = promoted.map((c) => {
@@ -2290,7 +2364,7 @@ export function runDetectionTick(input: TickInput): TickOutput {
 }
 ```
 
-Note on `merchantsById`: it is currently only used implicitly through the candidates (each `Candidate` already carries `expectedRate` and `deltaPp`). If the typecheck flags it as unused, delete the `const merchantsById = ...` line — it is a convenience hook for the orchestrator branch and not required here.
+`MerchantConfig` is imported only for the `TickInput` type; `input.merchants` is passed straight through to the triggers, which do the merchant lookup. The tick never needs a merchant map of its own.
 
 - [ ] **Step 4: Run to verify it passes**
 
@@ -2340,7 +2414,9 @@ git commit -m "add: runDetectionTick composing trigger/persistence/onset-scan"
 
 No gaps.
 
-**2. Placeholder scan:** No "TBD"/"TODO"/"handle edge cases"/"similar to Task N". Every code and test step contains the actual content. The one conditional instruction (delete `merchantsById` if unused) is explicit about the condition and the action.
+**2. Placeholder scan:** No "TBD"/"TODO"/"handle edge cases"/"similar to Task N". Every code and test step contains the actual content. The one conditional instruction (`as SliceFilter` cast in Task 9 if the computed key trips `strict`) is explicit about condition and action.
+
+**Seed-data alignment:** all fixtures and tests use the real seed IDs from the Seed Data Reference (`stripe`/`adyen`/`mercado_pago`; `BR_STORE_0n`/`MX_STORE_0n`/`AR_STORE_0n`; `itau`/`nubank`/`bradesco`, `bbva_mx`/`banorte`/`citibanamex`, `galicia`/`santander_rio`/`macro`; PIX issuer `NA`). Each merchant belongs to one country, so `healthyWindow` iterates country → its merchants, not a cross product.
 
 **3. Type consistency:**
 - `Candidate` shape defined in Task 8, extended-by-use (not by shape) in Task 9, consumed in Tasks 10 and 12 — same field names (`dimensions`, `state`, `ci`, `observedRate`, `expectedRate`, `expectedSource`, `deltaPp`, `attempts`, `approved`, `windowUsed`).
