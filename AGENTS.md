@@ -9,7 +9,7 @@ doc_related:
   - "flight_logs/README.md"
 domain: "engineering-governance"
 dimension_schema: []
-time: "2026-08-30T03:15:01Z"
+time: "2026-08-30T05:00:00Z"
 ---
 
 # AGENTS.md
@@ -66,6 +66,10 @@ Portanto:
   `rollup_declines_minute`.
 - Todo caminho agêntico de diagnóstico deve ter o beam search determinístico
   como fallback.
+- O `EvidenceObject` é montado por `diagnose/evidence.ts`, deterministicamente,
+  nunca pelo agente — o fallback precisa produzir o mesmo objeto sem LLM. O
+  agente só contribui a trilha opcional; `orchestrate/` persiste o objeto
+  pronto. Ver `flight_logs/quem_monta_o_evidence_object.md`.
 - Recomendações exigem aprovação humana e nunca são executadas pelo sistema.
 - Preserve `investigation_steps` como registro auditável de cada pergunta,
   argumento, resultado e ator.
