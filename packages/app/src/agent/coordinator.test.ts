@@ -19,13 +19,18 @@ const COVERAGE: RoutingCoverage = ["stripe", "adyen", "mercado_pago"].map((provi
   paymentMethod: "CARD",
 }));
 
+const INCIDENT_ID = "11111111-2222-3333-4444-555555555555";
+const FINGERPRINT = "country=BR|merchantId=BR_STORE_01|providerId=adyen#91";
+
 function deps(overrides: Partial<Parameters<typeof createAgentCoordinator>[0]> = {}) {
   const evidence: EvidenceObject[] = [];
+  const attached: Array<{ incidentId: string; playbookId: string | null }> = [];
   const repository = new InMemoryInvestigationRunRepository();
   const rows = brCardGrid();
 
   return {
     evidence,
+    attached,
     repository,
     built: {
       source: {
@@ -37,6 +42,14 @@ function deps(overrides: Partial<Parameters<typeof createAgentCoordinator>[0]> =
       loadCoverage: async () => COVERAGE,
       loadDeclineCatalog: async () => DECLINE_CATALOG,
       repository,
+      incidentWriter: {
+        async openOrUpdate() {
+          return { incidentId: INCIDENT_ID, status: "open" as const };
+        },
+        async attachNarrative(input: { incidentId: string; playbookId: string | null }) {
+          attached.push(input);
+        },
+      },
       config: {
         investigatorModel: "openai/gpt-5.4",
         narratorModel: "openai/gpt-5.4",
@@ -61,7 +74,11 @@ describe("createAgentCoordinator fallback (rules.md §3 boundary #3)", () => {
     const { built, evidence } = deps();
     const coordinator = createAgentCoordinator(built);
 
-    await coordinator.handleSignal(confirmedDrop(BR_ROOT));
+    await coordinator.handleSignal({
+      signal: confirmedDrop(BR_ROOT),
+      incidentId: INCIDENT_ID,
+      fingerprint: FINGERPRINT,
+    });
 
     expect(evidence).toHaveLength(1);
     expect(evidence[0]?.diagnosisSource).toBe("beam_search");
@@ -77,10 +94,27 @@ describe("createAgentCoordinator fallback (rules.md §3 boundary #3)", () => {
   it("carries the cost figures the executive narrative needs", async () => {
     const { built, evidence } = deps();
 
-    await createAgentCoordinator(built).handleSignal(confirmedDrop(BR_ROOT));
+    await createAgentCoordinator(built).handleSignal({
+      signal: confirmedDrop(BR_ROOT),
+      incidentId: INCIDENT_ID,
+      fingerprint: FINGERPRINT,
+    });
 
     expect(evidence[0]?.costUsdPerMin).toBeGreaterThan(0);
     expect(evidence[0]?.lostApprovals).toBeGreaterThan(0);
+  });
+
+  it("enriches the incident the tick already opened instead of creating one", async () => {
+    const { built, attached } = deps();
+
+    await createAgentCoordinator(built).handleSignal({
+      signal: confirmedDrop(BR_ROOT),
+      incidentId: INCIDENT_ID,
+      fingerprint: FINGERPRINT,
+    });
+
+    expect(attached).toHaveLength(1);
+    expect(attached[0]?.incidentId).toBe(INCIDENT_ID);
   });
 
   it("investigates an incident once, not on every window that re-confirms it", async () => {
@@ -88,11 +122,13 @@ describe("createAgentCoordinator fallback (rules.md §3 boundary #3)", () => {
     const coordinator = createAgentCoordinator(built);
     const signal = confirmedDrop(BR_ROOT);
 
-    // The detector re-emits a live incident every tick by design; a fresh agent
-    // run per tick would be unbounded LLM spend during the demo.
-    await coordinator.handleSignal(signal);
-    await coordinator.handleSignal(signal);
-    await coordinator.handleSignal(signal);
+    // The detector re-emits a live incident every tick by design, and
+    // openOrUpdate hands back the same incident id each time; a fresh agent run
+    // per tick would be unbounded LLM spend during the demo.
+    const input = { signal, incidentId: INCIDENT_ID, fingerprint: FINGERPRINT };
+    await coordinator.handleSignal(input);
+    await coordinator.handleSignal(input);
+    await coordinator.handleSignal(input);
 
     expect(evidence).toHaveLength(1);
   });
@@ -102,10 +138,17 @@ describe("createAgentCoordinator fallback (rules.md §3 boundary #3)", () => {
     const { built, evidence } = deps();
     const coordinator = createAgentCoordinator(built);
 
-    await coordinator.handleSignal(confirmedDrop(BR_ROOT));
     await coordinator.handleSignal({
-      ...confirmedDrop(BR_ROOT),
-      startedAt: "2026-08-30T18:00:00.000Z",
+      signal: confirmedDrop(BR_ROOT),
+      incidentId: INCIDENT_ID,
+      fingerprint: FINGERPRINT,
+    });
+    // A later onset resolves the first incident and opens a second, so the tick
+    // hands the coordinator a fresh id — which is what makes it investigate again.
+    await coordinator.handleSignal({
+      signal: { ...confirmedDrop(BR_ROOT), startedAt: "2026-08-30T18:00:00.000Z" },
+      incidentId: "99999999-8888-7777-6666-555555555555",
+      fingerprint: FINGERPRINT,
     });
 
     expect(evidence).toHaveLength(2);
@@ -122,7 +165,11 @@ describe("createAgentCoordinator fallback (rules.md §3 boundary #3)", () => {
     // run.ts only .catch()es this promise; a rejection here is logged, never
     // allowed to take the detector down with it.
     await expect(
-      createAgentCoordinator(built).handleSignal(confirmedDrop(BR_ROOT)),
+      createAgentCoordinator(built).handleSignal({
+        signal: confirmedDrop(BR_ROOT),
+        incidentId: INCIDENT_ID,
+        fingerprint: FINGERPRINT,
+      }),
     ).rejects.toThrow();
   });
 });
@@ -131,7 +178,11 @@ describe("createAgentCoordinator evidence assembly (rules.md §3 consequence)", 
   it("uses buildEvidence for the fallback path, never a second assembler", async () => {
     const { built, evidence } = deps();
 
-    await createAgentCoordinator(built).handleSignal(confirmedDrop(BR_ROOT));
+    await createAgentCoordinator(built).handleSignal({
+      signal: confirmedDrop(BR_ROOT),
+      incidentId: INCIDENT_ID,
+      fingerprint: FINGERPRINT,
+    });
 
     // Shape check: every field buildEvidence is responsible for is present, so
     // a divergent assembly path inside agent/ would fail here.

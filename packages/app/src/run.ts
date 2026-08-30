@@ -17,6 +17,7 @@ const [
   { createEvidenceStore },
   { createSseHub },
   { buildServer },
+  orchestrate,
 ] = await Promise.all([
   import("pino"),
   import("./ingest/consumer.js"),
@@ -27,7 +28,21 @@ const [
   import("./api/evidence-store.js"),
   import("./api/sse.js"),
   import("./api/server.js"),
+  import("./orchestrate/index.js"),
 ]);
+
+// A causal cell refines the root that triggered it: it fixes every dimension
+// the root fixes, and may fix more (DD17 root is merchant×country, DD19 caps
+// depth at 3). `buildEvidence` keeps only `diagnosis.cell`, so containment is
+// how an EvidenceObject finds the ConfirmedDrop it came from.
+function refines(
+  cell: Record<string, string | undefined>,
+  root: Record<string, string | undefined>,
+): boolean {
+  return Object.entries(root)
+    .filter(([, value]) => value !== undefined)
+    .every(([key, value]) => cell[key] === value);
+}
 
 const logger = pino({ name: "app" });
 const port = Number(process.env.APP_PORT ?? 4000);
@@ -35,6 +50,8 @@ const port = Number(process.env.APP_PORT ?? 4000);
 const store = createSignalStore();
 const evidenceStore = createEvidenceStore();
 const hub = createSseHub();
+const incidentWriter = orchestrate.createIncidentWriter();
+const lifecycle = orchestrate.createLifecycle();
 const repository = new agent.PostgresInvestigationRunRepository(undefined, {
   onRun: (run) => hub.broadcast("investigation-run", run),
   onStep: (step) => hub.broadcast("investigation-step", step),
@@ -46,6 +63,7 @@ const coordinator = agent.createAgentCoordinator({
   loadCoverage: queries.loadRoutingCoverage,
   loadDeclineCatalog: queries.loadDeclineCatalog,
   repository,
+  incidentWriter,
   config: agent.loadAgentConfig(),
   onEvidence: (evidence: import("@control-tower/contracts").EvidenceObject) => {
     evidenceStore.add([evidence]);
@@ -81,20 +99,55 @@ const scheduler = startScheduler({
     store.addSignals(signals);
     store.addGaps(evidenceGaps);
     evidenceStore.add(evidence);
-    for (const item of evidence) hub.broadcast("evidence", item);
-    for (const signal of signals) hub.broadcast("signal", signal);
-    for (const gap of evidenceGaps) hub.broadcast("evidence-gap", gap);
-    for (const signal of signals) {
-      void coordinator.handleSignal(signal).catch((error: unknown) => {
-        logger.error({ error, bucket, signal }, "agent coordinator failed");
-      });
-    }
-    if (signals.length > 0 || evidenceGaps.length > 0) {
-      logger.info(
-        { bucket, signals: signals.length, evidenceGaps: evidenceGaps.length, evidence: evidence.length },
-        "detection tick produced output",
-      );
-    }
+
+    void (async () => {
+      // Order matters: openOrUpdate bumps detected_at for every cell still
+      // down, so a cell reconfirmed in THIS bucket is never resolved by the
+      // reconcile pass that follows it.
+      const opened = new Map<string, string>();
+      for (const item of evidence) {
+        const upserted = await incidentWriter.openOrUpdate(item);
+        opened.set(item.fingerprint, upserted.incidentId);
+      }
+
+      const transitions = await lifecycle.reconcile({ bucket, evidenceGaps });
+      if (transitions.resolve.length > 0 || transitions.inconclusive.length > 0) {
+        hub.broadcast("incident-transitions", { bucket, ...transitions });
+        logger.info({ bucket, ...transitions }, "incident lifecycle reconciled");
+      }
+
+      for (const item of evidence) hub.broadcast("evidence", item);
+      for (const signal of signals) hub.broadcast("signal", signal);
+      for (const gap of evidenceGaps) hub.broadcast("evidence-gap", gap);
+
+      for (const item of evidence) {
+        const incidentId = opened.get(item.fingerprint);
+        if (!incidentId) continue;
+        // The causal cell always fixes every dimension the root fixes, plus up
+        // to three more (DD19), so the trigger is the signal the evidence
+        // refines. Peeling can put two evidence objects under one signal —
+        // that is criterion 5, and each gets its own investigation.
+        const trigger = signals.find((signal) => refines(item.dimensions, signal.dimensions));
+        if (!trigger) continue;
+        void coordinator
+          .handleSignal({ signal: trigger, incidentId, fingerprint: item.fingerprint })
+          .catch((error: unknown) => {
+            logger.error({ error, bucket, incidentId }, "agent coordinator failed");
+          });
+      }
+
+      if (signals.length > 0 || evidenceGaps.length > 0) {
+        logger.info(
+          { bucket, signals: signals.length, evidenceGaps: evidenceGaps.length, evidence: evidence.length },
+          "detection tick produced output",
+        );
+      }
+    })().catch((error: unknown) => {
+      // A failed write must not kill the tick: openOrUpdate is idempotent by
+      // fingerprint and reconcile derives everything from detected_at, so the
+      // next bucket recovers on its own.
+      logger.error({ error, bucket }, "orchestration failed for this tick");
+    });
   },
 });
 
