@@ -5,8 +5,10 @@ import { rollupMinute } from "./schema.js";
 import { createRollupSource, loadMerchantConfigs, loadRoutingCoverage } from "./queries.js";
 
 // 1970 keeps this test impossibly far from both the ~90k rows of real
-// retroactive data and anything the live generator writes today.
-const BUCKET = new Date("1970-01-01T00:00:00.000Z");
+// retroactive data and anything the live generator writes today. The :05
+// minute keeps it clear of ingest/process-batch.integration.test.ts, which
+// owns :00 in the same cell and runs in parallel under vitest.
+const BUCKET = new Date("1970-01-01T00:05:00.000Z");
 const CELL = {
   bucket: BUCKET,
   merchantId: "BR_STORE_01",
@@ -40,11 +42,11 @@ describe("createRollupSource", () => {
       approvedUsdSum: 200,
     });
 
-    const rows = await createRollupSource().getWindowRollups("1970-01-01T00:00:00.000Z");
+    const rows = await createRollupSource().getWindowRollups("1970-01-01T00:05:00.000Z");
     const row = rows.find((candidate) => candidate.merchantId === "BR_STORE_01");
 
     expect(row).toBeDefined();
-    expect(row!.bucket).toBe("1970-01-01T00:00:00.000Z");
+    expect(row!.bucket).toBe("1970-01-01T00:05:00.000Z");
     expect(row!.attempts).toBe(40);
     expect(row!.approved).toBe(10);
     expect(typeof row!.amountUsdSum).toBe("number");
@@ -63,12 +65,12 @@ describe("createRollupSource", () => {
     });
 
     const included = await createRollupSource().getHistory(
-      "1969-12-31T23:00:00.000Z",
-      "1970-01-01T00:01:00.000Z",
+      "1970-01-01T00:04:30.000Z",
+      "1970-01-01T00:06:00.000Z",
     );
     const excluded = await createRollupSource().getHistory(
-      "1969-12-31T23:00:00.000Z",
-      "1970-01-01T00:00:00.000Z",
+      "1970-01-01T00:04:30.000Z",
+      "1970-01-01T00:05:00.000Z",
     );
 
     expect(included.some((row) => row.merchantId === "BR_STORE_01")).toBe(true);
