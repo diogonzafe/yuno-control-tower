@@ -26,6 +26,9 @@ importers:
       drizzle-orm:
         specifier: ^0.36.4
         version: 0.36.4(postgres@3.4.9)
+      fastify:
+        specifier: ^5.2.0
+        version: 5.12.1
       ioredis:
         specifier: ^5.4.1
         version: 5.11.1
@@ -35,6 +38,9 @@ importers:
       postgres:
         specifier: ^3.4.5
         version: 3.4.9
+      zod:
+        specifier: ^3.24.1
+        version: 3.25.76
     devDependencies:
       '@types/node':
         specifier: ^26.4.0
