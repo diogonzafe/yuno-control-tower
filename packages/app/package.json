@@ -6,7 +6,7 @@
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "ingest:dev": "tsx watch src/ingest/run.ts"
+    "dev": "tsx watch src/run.ts"
   },
   "dependencies": {
     "@control-tower/contracts": "workspace:^",
