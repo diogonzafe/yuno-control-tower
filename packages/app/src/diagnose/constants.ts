@@ -34,7 +34,7 @@ export const DECLINE_CURRENT_LOOKBACK_MIN = 15;
 // carries enough declines (TEMPORAL_MIN_DECLINES) to replace the catalogue
 // baseline. Six hours is wide enough to accumulate that volume without
 // reaching into a different part of the day — the same order of magnitude as
-// the detector's own temporal fallback (schema.md §6, "últimas 2–6 horas").
+// the detector's own temporal fallback (schema.md §6, "last 2-6 hours").
 export const DECLINE_HISTORY_LOOKBACK_MIN = 360;
 
 // DD4 locks the three countries, so the local currency of a slice is a lookup,

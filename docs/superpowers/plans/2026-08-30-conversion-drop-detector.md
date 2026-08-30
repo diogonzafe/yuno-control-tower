@@ -99,20 +99,20 @@ Verified against the live DB. Use these exact IDs in every fixture and test.
 In `AGENTS.md`, find this paragraph (around line 45):
 
 ```
-Conflito conhecido na documentação: DD11 em `context/schema.md` especifica um
-teste beta-binomial, enquanto partes de `context/roadmap.md` e
-`context/rules.md` citam intervalo de Wilson. Não implemente nem altere a
-estatística do detector até o usuário confirmar a escolha autoritativa e os
-arquivos de contexto afetados ficarem consistentes.
+Known documentation conflict: DD11 in `context/schema.md` specifies a
+beta-binomial test, while parts of `context/roadmap.md` and
+`context/rules.md` cite the Wilson interval. Do not implement or change the
+detector's statistic until the user confirms the authoritative choice and
+the affected context files become consistent.
 ```
 
 Replace it with:
 
 ```
-DD11 está resolvido: o teste do detector é o **intervalo de Wilson** (fórmula
-fechada, `z = 1.96`, persistência de 3 janelas). `context/schema.md` §6.3 é a
-referência normativa; o registro da decisão está em
-`flight_logs/wilson_detection.md`. O spec do detector é `context/detector.md`
+DD11 is resolved: the detector's test is the **Wilson interval** (closed-form
+formula, `z = 1.96`, 3-window persistence). `context/schema.md` §6.3 is the
+normative reference; the decision record is at
+`flight_logs/wilson_detection.md`. The detector's spec is `context/detector.md`
 (`YCT-DETECT-001`).
 ```
 

@@ -53,7 +53,7 @@ function deps(overrides: Partial<Parameters<typeof createAgentCoordinator>[0]> =
   };
 }
 
-// rules.md §3 boundary #3: "Todo caminho agêntico tem fallback determinístico."
+// rules.md §3 boundary #3: "Every agentic path has a deterministic fallback."
 // Without an API key every investigator run fails, which is exactly the path
 // these tests exercise — the demo has to survive it.
 describe("createAgentCoordinator fallback (rules.md §3 boundary #3)", () => {
