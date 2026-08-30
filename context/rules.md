@@ -476,6 +476,13 @@ pnpm --filter web dev             # UI
 
 Quatro comandos depois do clone. Vale medir isso: um README em que o juiz roda o projeto em menos de dois minutos é a diferença entre "repo público" como checkbox e como argumento.
 
+**Desvio registrado:** na prática o time roda contra Postgres+pgvector e Redis
+gerenciados na nuvem (Railway), não contra o `docker compose up -d` acima —
+não há `docker-compose.yml` no repositório. Ver
+`flight_logs/infra_gerenciada_na_nuvem.md` para o porquê. `pnpm i` +
+`pnpm drizzle-kit migrate` (`DATABASE_URL`/`REDIS_URL` já apontando pra nuvem
+via `.env`) substituem a etapa do docker.
+
 ### 6.8 Riscos da stack
 
 **Precisão de ponto flutuante em dinheiro.** JS não tem decimal nativo. Por isso todo valor monetário é `BIGINT` em unidades menores no banco. O `bigint({ mode: 'number' })` do Drizzle resolve o boundary — centavos cabem folgado em 2^53. **Mas as queries do cubo passam por `db.execute` cru, e ali o postgres.js devolve string.** Converter explicitamente ao ler resultado de SQL cru, e nunca `float` para dinheiro.

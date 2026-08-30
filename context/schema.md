@@ -126,6 +126,10 @@ O motivo: 92% no merchant é a média de um mix. Dentro dele convivem PIX no Bra
 - **A taxa de conversão no gerador deve ser estacionária no tempo; só o volume é sazonal.** Sem baseline por hora, uma taxa que oscila com o horário gera falso positivo à meia-noite. Isso é defensável e realista: em pagamentos, o volume varia muito mais com a hora do que a taxa de aprovação. Declarar como premissa explícita, não esconder.
 - **O ruído de madrugada continua coberto** — mas pelo intervalo de confiança, não pelo baseline. Volume baixo produz intervalo largo que cobre o esperado, e o sistema não dispara. A resposta na sabatina para "como vocês não disparam às 3h?" é direta: com 6 transações o intervalo vai de 20% a 80%, e não dá pra afirmar nada.
 - **O gatilho roda em dois níveis**: checagem absoluta contra a constante no agregado do merchant, e varredura transversal de profundidade 1 (algum filho da raiz destoando dos irmãos?). O segundo é o que pega o cenário "emissor mexicano cai para um único merchant", que pode ser pequeno demais para mover o agregado.
+- **Raiz da varredura transversal de profundidade 1 = `merchant × país`** (não
+  "filhos da raiz" global), dividindo por provider, emissor e método. É o que
+  cobre "emissor cai para um único merchant". Detalhe e justificativa em
+  `context/detector.md` §5.4 e `flight_logs/deteccao_wilson.md`.
 - **Não há parâmetro de força de prior a configurar.** O único parâmetro do teste é o nível de confiança, fixo em 95%. Uma peça a menos para justificar na defesa técnica.
 
 ### 6.1 O "desde quando" sem CUSUM (DD8)

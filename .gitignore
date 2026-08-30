@@ -20,6 +20,8 @@ dist/
 build/
 .next/
 out/
+.pnpm-store/
+.superpowers/
 
 # Python
 __pycache__/
@@ -32,3 +34,4 @@ venv/
 
 # Misc
 .cache/
+.superpowers/
