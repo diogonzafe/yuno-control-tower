@@ -8,7 +8,7 @@ doc_related:
   - "context/roadmap.md"
 domain: "engineering-governance"
 dimension_schema: []
-time: "2026-08-29T22:47:03Z"
+time: "2026-08-29T23:30:00Z"
 ---
 
 # The Control Tower — Regras de engenharia
@@ -129,3 +129,346 @@ Antes de abrir PR, confirmar:
 - [ ] Se toca em pendência aberta (P1–P4) ainda não resolvida, a lacuna está anotada, não resolvida por suposição
 - [ ] Todo `.md` novo possui front matter válido com `title`, `doc_id`, `doc_related`, `domain`, `dimension_schema` e `time`
 - [ ] Cada `doc_id` novo é único e cada `time` alterado representa mudança substantiva em UTC/RFC 3339
+
+---
+
+## 6. Stack (Node / TypeScript)
+
+Fecha as decisões de tecnologia para o prazo de 24 horas. Substitui a estrutura de repositório em Python do documento anterior.
+
+### 6.0 Por que TS inteiro agora fecha
+
+A recomendação original era Python para o motor, por causa do scipy. **DD11 eliminou esse argumento.** O intervalo de Wilson é fórmula fechada; o resto do sistema é contagem, `GROUP BY` e comparação. Não sobrou nenhuma operação numérica que justifique um segundo runtime.
+
+Um runtime só significa: um `package.json`, tipos compartilhados de ponta a ponta entre o gerador e a UI, e nenhuma serialização entre linguagens às três da manhã. Em 24 horas isso vale mais que qualquer biblioteca.
+
+**Onde Node seria pior:** se o projeto precisasse de regressão, decomposição sazonal ou qualquer coisa de `statsmodels`. Não precisa. Vale ter essa resposta pronta, porque um juiz pode perguntar por que não Python.
+
+### 6.1 Escolhas, em uma tabela
+
+| Camada | Escolha | Por quê, e o que foi descartado |
+|---|---|---|
+| Runtime | **Node 22 LTS** + TypeScript strict, ESM | — |
+| Monorepo | **pnpm workspaces** | Tipos compartilhados sem publicar pacote. Turborepo é overhead para 4 pacotes |
+| Contratos | **Zod** | Uma definição vira validação em runtime *e* tipo TS. É o "contrato congelado" da H+0 |
+| API | **Fastify** | SSE trivial, validação por schema nativa, TS de primeira classe. Express é mais lento e sem tipos; Nest é peso morto em 24h |
+| Banco | **Postgres 16 + pgvector** | DD15 |
+| Driver | **postgres.js** (`postgres`), sob o Drizzle | Continua sendo o driver. As queries do cubo são SQL cru via `db.execute(sql\`…\`)` — Drizzle não é usado como query builder ali |
+| Schema + migrations | **Drizzle** (`drizzle-orm` + `drizzle-kit`) sobre postgres.js | `push` durante a fase de fundações, `generate` quando congela. Resolve o `BIGINT` como string de graça. Ver §6.3.1 |
+| Stream | **Redis 7 + Redis Streams** via `ioredis` | Consumer groups e replay reais. **BullMQ é a ferramenta errada aqui**: é fila de job, não stream de eventos |
+| Estatística | **Nenhuma biblioteca** | Wilson é 8 linhas. `simple-statistics` se precisarem de algo mais |
+| Agente | **Mastra** (padrão) ou loop ReAct escrito à mão | Ver §6.4 |
+| LLM | **`openai`** SDK com function calling | **GPT-5.6 Sol** no investigador, **GPT-5.6 Terra** no narrador. Ver §6.4.1 |
+| Front | **Vite + React 19 + TypeScript** | Boot instantâneo, zero surpresa de build. Next é possível, mas SSR não serve para nada aqui |
+| Estado no front | **TanStack Query** + `EventSource` nativo | SSE não precisa de biblioteca |
+| Gráficos | **Recharts** | Barra de erro pronta, que é exatamente o visual do Wilson |
+| Estilo | **Tailwind + shadcn/ui** | Polimento visual de graça |
+| Logs | **pino** | — |
+| Testes | **Vitest**, só em Wilson e no teste residual | Nada mais é testado em 24h. Esses dois, sim |
+
+### 6.2 Processos
+
+Três, não cinco. Cada processo a mais é uma coisa a mais que pode estar caída na hora da demo.
+
+```
+┌─ generator ──┐   escreve no Redis Stream
+│  tsx watch   │   ~60 TPS · API de injeção
+└──────────────┘
+┌─ app ────────┐   consome o stream, roda rollup + detector +
+│  Fastify     │   orquestrador + agente, e serve REST/SSE
+└──────────────┘
+┌─ web ────────┐   Vite dev server
+└──────────────┘
+```
+
+Motor e API no mesmo processo é deliberado: o detector precisa empurrar evento para o SSE no instante em que confirma, e no mesmo processo isso é uma chamada de função em vez de mais um canal Redis.
+
+**Consequência a declarar:** não escala horizontalmente assim. A resposta de sabatina é que o consumo é por consumer group e o detector é stateless por célula, então separar é mudança de deploy, não de arquitetura.
+
+### 6.3 Estrutura do repositório
+
+```
+control-tower/
+├── docker-compose.yml            # postgres+pgvector, redis
+├── pnpm-workspace.yaml
+├── .env.example
+├── README.md                     # arquitetura + como rodar + decision log
+│
+├── drizzle.config.ts
+├── drizzle/                      # migrations geradas (versionadas)
+│   └── 0000_extensions.sql       # CREATE EXTENSION vector — manual, roda primeiro
+│
+├── db/
+│   └── seeds/
+│       ├── merchants.csv
+│       ├── providers.csv
+│       ├── issuers.csv
+│       ├── decline_codes.csv     # do catálogo de decline codes
+│       ├── routing_coverage.csv  # 12 linhas (DD13)
+│       └── fx_rates.csv
+│
+├── packages/
+│   ├── contracts/                # ⚠️ congelado na H+0
+│   │   └── src/
+│   │       ├── transaction.ts    # Zod: evento de transação
+│   │       ├── incident.ts       # Zod: EvidenceObject, estados
+│   │       ├── injection.ts      # Zod: comando do console do júri
+│   │       └── index.ts
+│   │
+│   ├── generator/
+│   │   └── src/
+│   │       ├── volume.ts         # DD7: só o volume é sazonal
+│   │       ├── mix.ts            # mistura basal de decline codes
+│   │       ├── incident.ts       # assinaturas de incidente
+│   │       ├── emit.ts           # XADD no Redis Stream
+│   │       └── inject-api.ts     # HTTP para o console do júri
+│   │
+│   ├── app/
+│   │   └── src/
+│   │       ├── ingest/
+│   │       │   ├── consumer.ts       # consumer group
+│   │       │   └── rollup.ts         # upsert nos dois rollups
+│   │       ├── detect/
+│   │       │   ├── wilson.ts         # ⭐ 8 linhas, com teste
+│   │       │   ├── expected.ts       # constante + corte transversal
+│   │       │   ├── trigger.ts        # merchant × país (DD17)
+│   │       │   ├── persistence.ts    # 3 janelas
+│   │       │   └── onset-scan.ts     # DD8: "desde quando"
+│   │       ├── diagnose/
+│   │       │   ├── beam-search.ts    # profundidade 3 (DD19)
+│   │       │   ├── residual.ts       # ⭐ teste residual, com teste
+│   │       │   ├── peeling.ts        # DD18: incidentes simultâneos
+│   │       │   ├── parsimony.ts      # desempate
+│   │       │   ├── decline-mix.ts    # deslocamento da mistura
+│   │       │   └── cost.ts           # ponta conservadora do intervalo
+│   │       ├── orchestrate/
+│   │       │   ├── fingerprint.ts
+│   │       │   ├── lifecycle.ts      # candidato→confirmado→em curso→resolvido
+│   │       │   └── memory.ts         # exato + pgvector
+│   │       ├── agent/
+│   │       │   ├── tools.ts          # 6 ferramentas sobre diagnose/
+│   │       │   ├── investigator.ts   # budget 12 passos, timeout
+│   │       │   ├── fallback.ts       # cai no beam-search
+│   │       │   └── narrator.ts       # ops + exec, com template reserva
+│   │       ├── api/
+│   │       │   ├── routes.ts
+│   │       │   └── sse.ts
+│   │       └── db/
+│   │           ├── client.ts
+│   │           └── queries.ts        # SQL do cubo, em um lugar só
+│   │
+│   └── web/
+│       └── src/
+│           ├── components/
+│           │   ├── ConversionChart.tsx
+│           │   ├── IncidentFeed.tsx
+│           │   ├── EvidencePanel.tsx     # ⭐ prova o RF3
+│           │   ├── WilsonBar.tsx         # ⭐ intervalo + esperado
+│           │   └── InjectConsole.tsx     # ⭐ o júri usa isto
+│           └── hooks/useEventStream.ts
+│
+└── harness/
+    └── run.ts                    # 30 incidentes, mede acerto (DD20)
+```
+
+Os cinco itens marcados com ⭐ são os que ganham pontos. Se algo for cortado, não é nenhum deles.
+
+#### 6.3.1 Drizzle: onde entra e onde não entra
+
+**Drizzle não substitui o SQL do cubo.** A busca monta `GROUP BY` dinâmico a cada passo, e query builder tipado atrapalha nisso. A divisão é:
+
+| Trabalho | Ferramenta |
+|---|---|
+| Definição de schema e migrations | Drizzle schema em TS + `drizzle-kit` |
+| Insert de transação, upsert de rollup, CRUD de incidente | Drizzle tipado |
+| Queries do cubo: corte transversal, teste residual, peeling, varredura retroativa | **SQL cru** via `db.execute(sql\`…\`)` |
+
+**Por que Drizzle e não `.sql` na mão**
+
+**O `push`.** Entre H+0 e H+3 o schema ainda está se mexendo. `drizzle-kit push` sincroniza o banco direto a partir do TS, sem gerar arquivo de migration. Editar uma coluna e rodar um comando, sem escrever DDL nem numerar arquivo. Quando o contrato congela, um `drizzle-kit generate` produz a pasta de migrations de verdade para o repo público.
+
+**Resolve o `BIGINT` como string.** Era um risco listado no §6.8. `bigint({ mode: 'number' })` devolve `number` em vez de string, e centavos cabem folgado em 2^53. O bug de concatenar dinheiro silenciosamente deixa de existir.
+
+**Uma fonte de verdade em TS**, no mesmo repositório e na mesma linguagem dos schemas Zod do pacote `contracts`.
+
+**Esqueleto do schema**
+
+```ts
+import { pgTable, pgEnum, text, integer, bigint, numeric, timestamp,
+         date, jsonb, uuid, boolean, primaryKey, index, vector } from 'drizzle-orm/pg-core';
+
+export const country = pgEnum('country', ['BR', 'MX', 'AR']);
+export const method  = pgEnum('payment_method', ['CARD', 'PIX']);
+export const family  = pgEnum('decline_family',
+  ['issuer', 'technical', 'auth', 'fraud', 'funds', 'instrument']);   // DD21
+export const scope   = pgEnum('decline_scope', ['card', 'pix']);
+
+export const rollupMinute = pgTable('rollup_minute', {
+  bucket:         timestamp('bucket', { withTimezone: true }).notNull(),
+  merchantId:     text('merchant_id').notNull(),
+  providerId:     text('provider_id').notNull(),
+  country:        country('country').notNull(),
+  paymentMethod:  method('payment_method').notNull(),
+  issuerId:       text('issuer_id').notNull(),          // 'NA' em PIX
+  attempts:       integer('attempts').notNull().default(0),
+  approved:       integer('approved').notNull().default(0),
+  amountUsdSum:   bigint('amount_usd_sum',   { mode: 'number' }).notNull().default(0),
+  approvedUsdSum: bigint('approved_usd_sum', { mode: 'number' }).notNull().default(0),
+}, (t) => [
+  // DD12: 5 dimensões. card_brand e card_type NÃO entram.
+  primaryKey({ columns: [t.bucket, t.merchantId, t.providerId,
+                         t.country, t.paymentMethod, t.issuerId] }),
+  index('ix_rollup_bucket').on(t.bucket.desc()),
+]);
+
+export const incidents = pgTable('incidents', {
+  incidentId:   uuid('incident_id').primaryKey(),
+  fingerprint:  text('fingerprint').notNull(),
+  dimensions:   jsonb('dimensions').notNull(),
+  ciLow:        numeric('ci_low',  { precision: 6, scale: 5 }).notNull(),   // DD11
+  ciHigh:       numeric('ci_high', { precision: 6, scale: 5 }).notNull(),
+  startedAt:    timestamp('started_at', { withTimezone: true }).notNull(),
+  startedAtExact: boolean('started_at_exact').notNull().default(true),
+  costUsdPerMin:  bigint('cost_usd_per_min', { mode: 'number' }).notNull(),
+  evidence:     jsonb('evidence').notNull(),
+  embedding:    vector('embedding', { dimensions: 1536 }),                  // DD15
+}, (t) => [
+  index('ix_incident_fingerprint').on(t.fingerprint),
+  index('ix_incident_embedding')
+    .using('hnsw', t.embedding.op('vector_cosine_ops')),
+]);
+```
+
+**⚠️ Três coisas que o Drizzle não gera sozinho**
+
+1. **`CREATE EXTENSION vector`.** O `drizzle-kit` não emite isso. Precisa de uma migration manual **antes** de todas as outras, ou o `push` quebra na tabela de incidentes. Colocar em `drizzle/0000_extensions.sql` e garantir que roda primeiro.
+2. **Índices parciais e CHECKs compostos**, como o `CHECK` que impede código de cartão em transação PIX. Vão em migration manual acrescentada depois do `generate`.
+3. **Seeds.** São um script `tsx` separado, lendo os CSVs de `db/seeds/`.
+
+**Fluxo**
+
+```bash
+# H+0 → H+3, schema ainda se mexendo
+pnpm drizzle-kit push
+
+# quando o contrato congela
+pnpm drizzle-kit generate      # gera a pasta drizzle/ para o repo público
+pnpm drizzle-kit migrate       # aplica
+pnpm db:seed
+```
+
+Uma nota para a sabatina: chegar com a pasta de migrations versionada, e não com um `push` de desenvolvimento, é o tipo de detalhe que separa "protótipo de hackathon" de "isso roda". Custa um comando na H+3.
+
+### 6.4 A decisão do agente
+
+Três caminhos, e a escolha muda com o time.
+
+**Mastra** — TypeScript nativo, primitivas de agente, ferramenta e workflow prontas, observabilidade embutida. É o padrão recomendado se alguém do time já usou. DX melhor que LangGraph JS em TS.
+
+**LangGraph JS** (`@langchain/langgraph`) — o grafo explícito mapeia um-para-um no diagrama de arquitetura, o que é bom para a defesa. Mais cerimônia.
+
+**Loop ReAct à mão** — cerca de 80 linhas sobre o SDK `openai`: um `while` com budget, um `switch` de ferramenta, um array de mensagens. Sem framework, sem versão quebrando, e cada passo é debugável com um `console.log`.
+
+**Recomendação honesta para 24 horas:** se ninguém no time já rodou Mastra ou LangGraph em produção, escrevam à mão. O agente aqui tem seis ferramentas e um orçamento de doze passos. Framework resolve problemas que este projeto não tem, e adiciona um modo de falha que aparece justamente sob pressão de demo. "Escrevemos o loop porque queríamos controle total do budget e da trilha de auditoria" é uma resposta forte na sabatina, não uma desculpa.
+
+#### 6.4.1 Divisão dos modelos
+
+| Papel | Modelo | Por quê |
+|---|---|---|
+| Investigador | **GPT-5.6 Sol** | É o carro-chefe para raciocínio e uso de ferramenta. O investigador escolhe qual dimensão explorar e quando parar — é aqui que a qualidade do modelo aparece |
+| Narrador | **GPT-5.6 Terra** | Duas saídas de texto a partir de um objeto de evidência fechado. Tarefa bem definida, e a latência é percebida direto na UI |
+| Reserva | **GPT-5.6 Luna** | Se o Terra estourar rate limit durante a demo. Configurável por variável de ambiente |
+
+⚠️ **Conferir as strings exatas de modelo na documentação antes de codar.** A nomenclatura da OpenAI mudou de geração recentemente e as fontes de terceiros ainda citam nomes aposentados. Colocar os identificadores em `.env`, nunca no código, para que trocar seja edição de uma linha.
+
+**Function calling em vez de prompt livre.** As seis ferramentas são declaradas como funções tipadas, geradas a partir dos mesmos schemas Zod do pacote `contracts`. Isso mantém a regra da §3 deste documento: o agente não recebe transação crua, só chama função que devolve métrica.
+
+### 6.5 Dependências
+
+```jsonc
+// packages/app
+{
+  "dependencies": {
+    "fastify": "^5",
+    "@fastify/cors": "^10",
+    "postgres": "^3",
+    "drizzle-orm": "^0.3",
+    "ioredis": "^5",
+    "zod": "^3",
+    "pino": "^9",
+    "openai": "^5",
+    "yaml": "^2"           // playbooks
+  },
+  "devDependencies": { "tsx": "^4", "vitest": "^2", "typescript": "^5", "drizzle-kit": "^0.3" }
+}
+
+// packages/web
+{
+  "dependencies": {
+    "react": "^19", "react-dom": "^19",
+    "@tanstack/react-query": "^5",
+    "recharts": "^2",
+    "lucide-react": "^0.4"
+  },
+  "devDependencies": { "vite": "^6", "tailwindcss": "^4", "typescript": "^5" }
+}
+```
+
+Não entram: query builder para o cubo, biblioteca de estatística, biblioteca de SSE, gerenciador de estado global, biblioteca de cron.
+
+### 6.6 Wilson em TypeScript
+
+Para tirar qualquer dúvida sobre a dependência numérica:
+
+```ts
+export type Interval = { low: number; high: number };
+
+export function wilson(k: number, n: number, z = 1.96): Interval {
+  if (n === 0) return { low: 0, high: 1 };
+  const p = k / n;
+  const d = 1 + (z * z) / n;
+  const center = (p + (z * z) / (2 * n)) / d;
+  const half = (z / d) * Math.sqrt((p * (1 - p)) / n + (z * z) / (4 * n * n));
+  return { low: Math.max(0, center - half), high: Math.min(1, center + half) };
+}
+
+export type CellState = 'MATERIAL_DROP' | 'HEALTHY' | 'MONITORING' | 'INSUFFICIENT_EVIDENCE';
+
+export function evaluate(
+  k: number, n: number, expected: number,
+  deltaPp: number, minVolume: number,
+): { state: CellState; ci: Interval } {
+  const limit = expected - deltaPp / 100;
+  const ci = wilson(k, n);
+  if (ci.high < limit) return { state: 'MATERIAL_DROP', ci };
+  if (ci.low > limit) return { state: 'HEALTHY', ci };
+  return { state: n < minVolume ? 'INSUFFICIENT_EVIDENCE' : 'MONITORING', ci };
+}
+```
+
+Isso é o motor de detecção inteiro. Tudo o mais é SQL e contagem.
+
+### 6.7 Subir o ambiente
+
+```bash
+pnpm i
+docker compose up -d              # postgres+pgvector, redis
+pnpm drizzle-kit migrate && pnpm db:seed
+pnpm --filter generator dev       # ~60 TPS
+pnpm --filter app dev             # motor + API
+pnpm --filter web dev             # UI
+```
+
+Quatro comandos depois do clone. Vale medir isso: um README em que o juiz roda o projeto em menos de dois minutos é a diferença entre "repo público" como checkbox e como argumento.
+
+### 6.8 Riscos da stack
+
+**Precisão de ponto flutuante em dinheiro.** JS não tem decimal nativo. Por isso todo valor monetário é `BIGINT` em unidades menores no banco. O `bigint({ mode: 'number' })` do Drizzle resolve o boundary — centavos cabem folgado em 2^53. **Mas as queries do cubo passam por `db.execute` cru, e ali o postgres.js devolve string.** Converter explicitamente ao ler resultado de SQL cru, e nunca `float` para dinheiro.
+
+**Loop de eventos bloqueado.** O beam search com profundidade 3 sobre 90 células é trivial, mas se alguém escrever uma query por célula em série, o SSE trava. Uma query agregada por nível, não uma por célula.
+
+**Timezone.** Três países, três fusos. Tudo `TIMESTAMPTZ` em UTC no banco, conversão só na renderização. O `started_at` exibido como "14:03" precisa saber de qual país está falando.
+
+**Chave da API e rate limit.** A demo depende deles. Três defesas: uma segunda chave de outra conta, o modelo de reserva configurável por `.env`, e o narrador com template determinístico de fallback. A UI nunca pode ficar em branco porque uma chamada falhou na frente do júri.
+
+**Modelo de raciocínio e latência.** O investigador faz até 12 chamadas de ferramenta em sequência. Se cada uma levar alguns segundos, o diagnóstico demora mais que a detecção, e isso aparece na demo. Medir cedo, e se necessário reduzir o budget para 8 passos — o beam search determinístico já entrega a célula, o agente só precisa refinar e justificar.
