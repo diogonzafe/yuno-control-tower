@@ -6,11 +6,7 @@ doc_related:
   - "YCT-RULES-001"
 domain: "decision-log"
 dimension_schema: []
-<<<<<<< HEAD
 time: "2026-08-30T15:00:00Z"
-=======
-time: "2026-08-30T06:35:00Z"
->>>>>>> origin/dev
 ---
 
 # Flight Logs
