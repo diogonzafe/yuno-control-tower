@@ -29,7 +29,9 @@ function testEvent(overrides: Partial<TransactionEvent> = {}): TransactionEvent 
     issuerId: "itau",
     token: null,
     latencyMs: null,
-    createdAt: "2026-08-30T14:03:10.000Z",
+    // The epoch, not today: this test writes to the shared production-shape
+    // database, so it must never land in a minute real data could occupy.
+    createdAt: "1970-01-01T14:03:10.000Z",
     ...overrides,
   };
 }

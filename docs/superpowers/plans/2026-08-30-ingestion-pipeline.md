@@ -1644,15 +1644,15 @@ pnpm --filter @control-tower/app ingest:dev
 ```
 Expected log line: `"ingest consumer started"` with `stream: "stream:transactions"`, `group: "ingest"`.
 
-Terminal 2 — hand-craft one event and push it onto the stream with `redis-cli` (or any Redis client pointed at the `REDIS_URL` from `.env`):
+Terminal 2 — hand-craft one event and push it onto the stream with `redis-cli` (or any Redis client pointed at the `REDIS_URL` from `.env`). Note `createdAt` is the epoch, **not** today: this writes to (and the cleanup below deletes from) the shared production-shape database, so the bucket must be a minute no real or demo transaction can ever occupy — never re-run this snippet with a present-day timestamp.
 ```bash
-redis-cli -u "$REDIS_URL" XADD stream:transactions '*' payload '{"transactionId":"11111111-1111-4111-8111-111111111111","merchantOrderId":"manual-check","merchantId":"BR_STORE_01","providerId":"adyen","country":"BR","paymentMethod":"CARD","currency":"BRL","amountMinor":1000,"fxRate":5,"fxRateDate":"2026-08-30","fxSource":"MOCK","amountUsdMinor":200,"status":"SUCCESS","declineCode":null,"rawDeclineCode":null,"cardBrand":"visa","cardType":"credit","cardBin":"411111","issuerId":"itau","token":null,"latencyMs":null,"createdAt":"2026-08-30T14:03:00.000Z"}'
+redis-cli -u "$REDIS_URL" XADD stream:transactions '*' payload '{"transactionId":"11111111-1111-4111-8111-111111111111","merchantOrderId":"manual-check","merchantId":"BR_STORE_01","providerId":"adyen","country":"BR","paymentMethod":"CARD","currency":"BRL","amountMinor":1000,"fxRate":5,"fxRateDate":"2026-08-30","fxSource":"MOCK","amountUsdMinor":200,"status":"SUCCESS","declineCode":null,"rawDeclineCode":null,"cardBrand":"visa","cardType":"credit","cardBin":"411111","issuerId":"itau","token":null,"latencyMs":null,"createdAt":"1970-01-01T00:00:00.000Z"}'
 ```
 
 Expected: Terminal 1 shows no error output for this event (a clean batch produces no log line by design — only errors and the startup line are logged). Confirm it landed by querying Postgres directly:
 ```bash
 psql "$DATABASE_URL" -c "select transaction_id, merchant_id, amount_minor from transactions where transaction_id = '11111111-1111-4111-8111-111111111111';"
-psql "$DATABASE_URL" -c "select bucket, merchant_id, attempts, approved from rollup_minute where merchant_id = 'BR_STORE_01' and bucket = '2026-08-30 14:03:00+00';"
+psql "$DATABASE_URL" -c "select bucket, merchant_id, attempts, approved from rollup_minute where merchant_id = 'BR_STORE_01' and bucket = '1970-01-01 00:00:00+00';"
 ```
 Expected: one row in `transactions` with `amount_minor = 1000`, one row in `rollup_minute` with `attempts = 1, approved = 1`.
 
@@ -1661,7 +1661,7 @@ Re-run the same `XADD` + verification a second time with a **new** `transactionI
 Clean up the manual test rows before moving on:
 ```bash
 psql "$DATABASE_URL" -c "delete from transactions where merchant_order_id = 'manual-check';"
-psql "$DATABASE_URL" -c "delete from rollup_minute where merchant_id = 'BR_STORE_01' and bucket = '2026-08-30 14:03:00+00';"
+psql "$DATABASE_URL" -c "delete from rollup_minute where merchant_id = 'BR_STORE_01' and bucket = '1970-01-01 00:00:00+00';"
 ```
 
 Stop the consumer (Ctrl+C in Terminal 1) once verified.

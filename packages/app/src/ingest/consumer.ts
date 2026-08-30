@@ -1,7 +1,7 @@
 import Redis from "ioredis";
 import pino from "pino";
 import { transactionEventSchema, type TransactionEvent } from "@control-tower/contracts";
-import { processBatch } from "./rollup";
+import { processBatch } from "./process-batch";
 
 const logger = pino({ name: "ingest-consumer" });
 
@@ -74,6 +74,20 @@ function parseEntries(rawEntries: RawStreamEntry[]): {
   return { valid, invalidIds };
 }
 
+// Postgres (the `postgres` npm driver) exposes the 5-character SQLSTATE on
+// `error.code`. Class 23 is "integrity constraint violation" (23503
+// foreign_key_violation, 23514 check_violation, ...) — a permanent property of
+// the batch's own data, so retrying identical input can only fail identically.
+function isIntegrityConstraintViolation(error: unknown): boolean {
+  return (
+    error !== null &&
+    typeof error === "object" &&
+    "code" in error &&
+    typeof error.code === "string" &&
+    error.code.startsWith("23")
+  );
+}
+
 async function processBatchWithRetry(events: TransactionEvent[]): Promise<void> {
   let attempt = 0;
   for (;;) {
@@ -81,6 +95,21 @@ async function processBatchWithRetry(events: TransactionEvent[]): Promise<void> 
       await processBatch(events);
       return;
     } catch (error) {
+      if (isIntegrityConstraintViolation(error)) {
+        // Poison batch: retrying and then exiting would crash-loop forever,
+        // because XAUTOCLAIM re-delivers the same entries on restart. Drop it
+        // the same way a malformed payload is dropped — log and let the caller
+        // XACK — so the stream keeps moving.
+        logger.error(
+          {
+            error,
+            transactionIds: events.map((event) => event.transactionId),
+          },
+          "batch violates a database integrity constraint, dropping it without retry",
+        );
+        return;
+      }
+
       attempt += 1;
       logger.error({ attempt, error }, "batch processing failed");
       if (attempt >= MAX_DB_RETRIES) {
@@ -110,17 +139,25 @@ async function handleEntries(redis: Redis, rawEntries: RawStreamEntry[]): Promis
 }
 
 async function reclaimPending(redis: Redis): Promise<void> {
-  const reply = (await redis.call(
-    "XAUTOCLAIM",
-    STREAM_KEY,
-    GROUP_NAME,
-    CONSUMER_NAME,
-    "0",
-    "0",
-  )) as RawAutoClaimReply;
+  // XAUTOCLAIM scans at most COUNT (default 100) pending entries per call and
+  // returns the cursor to resume from; it only comes back as "0" once the scan
+  // has wrapped around. Loop until then, otherwise anything beyond the first
+  // page stays pending forever.
+  let cursor = "0";
+  do {
+    const reply = (await redis.call(
+      "XAUTOCLAIM",
+      STREAM_KEY,
+      GROUP_NAME,
+      CONSUMER_NAME,
+      "0",
+      cursor,
+    )) as RawAutoClaimReply;
 
-  const [, entries] = reply;
-  await handleEntries(redis, entries);
+    const [nextCursor, entries] = reply;
+    await handleEntries(redis, entries);
+    cursor = nextCursor;
+  } while (cursor !== "0");
 }
 
 export async function startConsumer(): Promise<never> {
