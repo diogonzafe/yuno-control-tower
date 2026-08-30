@@ -301,6 +301,7 @@ describe.skipIf(!hasKey)("control tower full flow against a real model and the r
         // -------------------------------------------------------------------
         await writer.attachNarrative({
           incidentId: opened.incidentId,
+          evidence,
           narrativeOps: narrative.operations,
           narrativeExec: narrative.executive,
           playbookId: recommendation?.playbookId ?? null,

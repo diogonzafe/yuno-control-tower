@@ -144,6 +144,7 @@ export function createAgentCoordinator(deps: CoordinatorDeps) {
     // from deterministic evidence. The agent only enriches it (rules.md §3).
     await deps.incidentWriter.attachNarrative({
       incidentId,
+      evidence,
       narrativeOps: narrative.operations,
       narrativeExec: narrative.executive,
       playbookId: recommendation?.playbookId ?? null,

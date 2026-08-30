@@ -197,7 +197,14 @@ export async function runInvestigation(
             // restores the real union.
             schema: AgentDiagnosisWire,
             errorStrategy: "strict",
-            jsonPromptInjection: true,
+            // ...which only pays off with native `response_format`. `true` (or
+            // "system") pastes the schema into the system message instead and
+            // leaves the model free-forming the JSON — the very thing the flat
+            // shape above was written to stop. That injection mode is a
+            // documented Gemini 2.5 workaround; this provider takes tools and
+            // `response_format` in one request, so the schema is enforced
+            // provider-side.
+            jsonPromptInjection: false,
           },
           modelSettings: {
             // One transient schema/API miss shouldn't sink the whole run.
@@ -208,6 +215,17 @@ export async function runInvestigation(
               stepMs: Math.min(options.config.timeoutMs, 30_000),
             },
           },
+          // Mastra caps the agentic loop at 5 steps when this is unset, and
+          // the loop is what carries the run to a final answer. The tool-side
+          // budget in tools.ts never got to fire: the model was still calling
+          // tools at step 5, so generate() returned finishReason "tool-calls"
+          // with empty text and no structured object, and AgentDiagnosisWire
+          // parsed `undefined` — INVALID_OUTPUT on a run that had done nothing
+          // wrong. maxToolCalls is the ceiling an operator already configured,
+          // and it stays the real cap: a step may issue several tool calls, so
+          // StepBudgetExceededError still bounds the work, this only stops
+          // Mastra from cutting the conversation off before its conclusion.
+          maxSteps: options.config.maxToolCalls,
           toolCallConcurrency: 1,
           abortSignal,
         }),

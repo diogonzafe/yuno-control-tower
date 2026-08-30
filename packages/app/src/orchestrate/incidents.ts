@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, ne } from "drizzle-orm";
+import { and, desc, eq, ne, sql } from "drizzle-orm";
 import type { EvidenceObject } from "@control-tower/contracts";
 import { db as defaultDatabase } from "../db/client.js";
 import { incidents } from "../db/schema.js";
@@ -15,6 +15,7 @@ export type IncidentWriter = {
   openOrUpdate(evidence: EvidenceObject): Promise<IncidentUpsert>;
   attachNarrative(input: {
     incidentId: string;
+    evidence: EvidenceObject;
     narrativeOps: string | null;
     narrativeExec: string | null;
     playbookId: string | null;
@@ -41,7 +42,6 @@ function measuredColumns(evidence: EvidenceObject) {
     costUsdMinor: evidence.costUsdMinor,
     costUsdPerMin: evidence.costUsdPerMin,
     priorityScore: evidence.priorityScore.toString(),
-    evidence,
   };
 }
 
@@ -49,7 +49,10 @@ export function createIncidentWriter(database: Database = defaultDatabase): Inci
   return {
     async openOrUpdate(evidence: EvidenceObject): Promise<IncidentUpsert> {
       const [existing] = await database
-        .select({ incidentId: incidents.incidentId })
+        .select({
+          incidentId: incidents.incidentId,
+          diagnosisSource: sql<string | null>`${incidents.evidence}->>'diagnosisSource'`,
+        })
         .from(incidents)
         .where(and(eq(incidents.fingerprint, evidence.fingerprint), ne(incidents.status, "resolved")))
         .orderBy(desc(incidents.detectedAt))
@@ -62,7 +65,20 @@ export function createIncidentWriter(database: Database = defaultDatabase): Inci
         // as "still live".
         await database
           .update(incidents)
-          .set({ ...measuredColumns(evidence), status: "monitoring" })
+          .set({
+            ...measuredColumns(evidence),
+            // Once attachNarrative has put the agent's object here, the tick
+            // must not overwrite it with the deterministic one — the drop
+            // re-confirms every minute while the incident is live, so without
+            // this guard `diagnosisSource` reverts to "beam_search" within a
+            // minute of every successful investigation and the panel never
+            // shows an agent-sourced incident. The stored narrative was
+            // written from this exact object too (rules.md §4: it may not cite
+            // a number absent from it), so the pair stays together. The
+            // measured columns above keep tracking the live window either way.
+            ...(existing.diagnosisSource === "agent" ? {} : { evidence }),
+            status: "monitoring",
+          })
           .where(eq(incidents.incidentId, existing.incidentId));
         return { incidentId: existing.incidentId, status: "monitoring" };
       }
@@ -77,14 +93,38 @@ export function createIncidentWriter(database: Database = defaultDatabase): Inci
         narrativeExec: null,
         playbookId: null,
         ...measuredColumns(evidence),
+        evidence,
       });
       return { incidentId, status: "open" };
     },
 
     async attachNarrative(input) {
+      // The flight log "Who assembles the EvidenceObject" puts `orchestrate/`
+      // in charge of persisting the finished object verbatim, and the agent
+      // path produces a second one: same assembly point (diagnose/evidence.ts),
+      // same numbers, but carrying `diagnosisSource: "agent"` and the trail the
+      // investigator actually walked instead of the replayed deterministic one.
+      // Writing only the narrative here left that object in memory and on SSE
+      // and never in the column the UI reads, so every incident rendered as a
+      // deterministic one no matter how the investigation went.
+      const [row] = await database
+        .select({ fingerprint: incidents.fingerprint })
+        .from(incidents)
+        .where(eq(incidents.incidentId, input.incidentId))
+        .limit(1);
+
+      // Peeling can put two evidence objects under one signal, each with its
+      // own incident (spec.md §4 criterion 5). The agent picks its cell out of
+      // the same candidate list, so it can settle on a sibling's — and that
+      // object belongs to the sibling's row, not this one. Measured columns
+      // stay untouched either way: the narrator verbalizes, it never recomputes
+      // (rules.md §3 boundary #2).
+      const enriches = row?.fingerprint === input.evidence.fingerprint;
+
       await database
         .update(incidents)
         .set({
+          ...(enriches ? { evidence: input.evidence } : {}),
           narrativeOps: input.narrativeOps,
           narrativeExec: input.narrativeExec,
           playbookId: input.playbookId,

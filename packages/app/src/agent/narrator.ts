@@ -121,7 +121,11 @@ export async function renderNarratives(
       structuredOutput: {
         schema: NarrativeOutput,
         errorStrategy: "strict",
-        jsonPromptInjection: true,
+        // Same reason as investigator.ts: `true` pastes the schema into the
+        // system message and drops the provider's native `response_format`,
+        // so the model free-forms the JSON and every miss costs a narrator
+        // attempt — here it silently degrades to renderNarrativeTemplate.
+        jsonPromptInjection: false,
       },
       modelSettings: {
         maxRetries: 0,

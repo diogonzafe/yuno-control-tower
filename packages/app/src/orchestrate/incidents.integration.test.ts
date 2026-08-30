@@ -118,6 +118,7 @@ describe("incident writer", () => {
 
     await writer.attachNarrative({
       incidentId: opened.incidentId,
+      evidence: evidenceFixture(fingerprint, BUCKET_1),
       narrativeOps: "Provider adyen is degraded in BR.",
       narrativeExec: "Escalate to provider-ops.",
       playbookId: "provider-default",
@@ -131,6 +132,64 @@ describe("incident writer", () => {
     expect(after?.costUsdMinor).toBe(before?.costUsdMinor);
     expect(after?.status).toBe(before?.status);
     expect(after?.detectedAt.toISOString()).toBe(before?.detectedAt.toISOString());
+  });
+
+  // The whole point of the agent path: the panel reads incidents.evidence, so
+  // an investigation that never lands there renders as a deterministic one.
+  it("stores the agent's evidence and keeps it across the next tick", async () => {
+    const writer = createIncidentWriter();
+    const fingerprint = `test-${randomUUID()}`;
+    const opened = await writer.openOrUpdate(evidenceFixture(fingerprint, BUCKET_1));
+    created.push(opened.incidentId);
+
+    const agentEvidence: EvidenceObject = {
+      ...evidenceFixture(fingerprint, BUCKET_1),
+      diagnosisSource: "agent",
+      investigationTrail: [],
+    };
+    await writer.attachNarrative({
+      incidentId: opened.incidentId,
+      evidence: agentEvidence,
+      narrativeOps: "CARD is degraded at BR_STORE_01.",
+      narrativeExec: "Escalate to the rail owner.",
+      playbookId: "method-country-default",
+    });
+
+    const [enriched] = await db.select().from(incidents).where(eq(incidents.incidentId, opened.incidentId));
+    expect((enriched?.evidence as EvidenceObject).diagnosisSource).toBe("agent");
+
+    // The drop re-confirms every minute while the incident is live. Before the
+    // guard in openOrUpdate this tick reverted the column to "beam_search",
+    // which is why a successful investigation still rendered as deterministic.
+    const reconfirmed = await writer.openOrUpdate(evidenceFixture(fingerprint, BUCKET_2));
+    expect(reconfirmed.incidentId).toBe(opened.incidentId);
+
+    const [after] = await db.select().from(incidents).where(eq(incidents.incidentId, opened.incidentId));
+    expect((after?.evidence as EvidenceObject).diagnosisSource).toBe("agent");
+    // The measured columns still track the live window.
+    expect(after?.detectedAt.toISOString()).toBe(BUCKET_2);
+  });
+
+  // An agent that settles on a peeled sibling's cell produces an object keyed
+  // by the sibling's fingerprint. It belongs to that row, not this one.
+  it("keeps the deterministic evidence when the agent's object is for another cell", async () => {
+    const writer = createIncidentWriter();
+    const fingerprint = `test-${randomUUID()}`;
+    const opened = await writer.openOrUpdate(evidenceFixture(fingerprint, BUCKET_1));
+    created.push(opened.incidentId);
+
+    await writer.attachNarrative({
+      incidentId: opened.incidentId,
+      evidence: { ...evidenceFixture(`test-${randomUUID()}`, BUCKET_1), diagnosisSource: "agent" },
+      narrativeOps: "ops",
+      narrativeExec: "exec",
+      playbookId: null,
+    });
+
+    const [after] = await db.select().from(incidents).where(eq(incidents.incidentId, opened.incidentId));
+    expect((after?.evidence as EvidenceObject).fingerprint).toBe(fingerprint);
+    expect((after?.evidence as EvidenceObject).diagnosisSource).toBe("beam_search");
+    expect(after?.narrativeOps).toBe("ops");
   });
 
   // priority_score was numeric(10,4), so anything past 999999.9999 minor units
