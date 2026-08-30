@@ -134,7 +134,7 @@ describe("createAgentCoordinator fallback (rules.md §3 boundary #3)", () => {
   });
 
   // Two full fallback runs, each waiting out the investigator timeout.
-  it("treats a later onset of the same cell as a new incident", { timeout: 20_000 }, async () => {
+  it("investigates again when the tick hands it a new incident id", { timeout: 20_000 }, async () => {
     const { built, evidence } = deps();
     const coordinator = createAgentCoordinator(built);
 

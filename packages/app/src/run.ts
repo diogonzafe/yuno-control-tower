@@ -31,21 +31,46 @@ const [
   import("./orchestrate/index.js"),
 ]);
 
-// A causal cell refines the root that triggered it: it fixes every dimension
-// the root fixes, and may fix more (DD17 root is merchant×country, DD19 caps
-// depth at 3). `buildEvidence` keeps only `diagnosis.cell`, so containment is
-// how an EvidenceObject finds the ConfirmedDrop it came from.
-function refines(
+// An EvidenceObject carries only `diagnosis.cell`, so it has to find the
+// ConfirmedDrop it came from by dimensions. Containment does not work: the two
+// sit on different branches of the split. crossSectionalSweep (detect/trigger.ts)
+// emits signals at provider, paymentMethod and issuer cells, while the beam
+// search never adds paymentMethod to an issuer cell — so an issuer incident has
+// signal {merchantId, country, paymentMethod: "CARD", issuerId} against evidence
+// {merchantId, country, issuerId}, and any full-dimension test drops it.
+// merchantId×country is the only reliable join, because it is exactly what
+// diagnose/run.ts's rootsOf collapses signals to before running the search that
+// produced this evidence. Several signals can share one root; any of them is a
+// valid trigger, since by construction they agree on it.
+function sharesRoot(
   cell: Record<string, string | undefined>,
-  root: Record<string, string | undefined>,
+  signal: Record<string, string | undefined>,
 ): boolean {
-  return Object.entries(root)
-    .filter(([, value]) => value !== undefined)
-    .every(([key, value]) => cell[key] === value);
+  if (cell.merchantId === undefined || cell.country === undefined) return false;
+  return cell.merchantId === signal.merchantId && cell.country === signal.country;
 }
 
 const logger = pino({ name: "app" });
 const port = Number(process.env.APP_PORT ?? 4000);
+
+// onResult is synchronous and the scheduler's catch-up loop calls it once per
+// bucket without awaiting what the callback starts, so unserialized ticks would
+// interleave their writes: bucket N+1's reconcile could run before bucket N's
+// openOrUpdate bumped detected_at and resolve a cell that was just reconfirmed,
+// and two openOrUpdate calls for one fingerprint could both miss the SELECT and
+// both INSERT — incidents.fingerprint carries an index, not a unique
+// constraint, so that yields two live ids for one cell and two investigations.
+let orchestrationTail: Promise<void> = Promise.resolve();
+
+function enqueueOrchestration(bucket: string, work: () => Promise<void>): void {
+  // The .catch is applied to the stored tail, not to a copy: the tail must stay
+  // fulfilled so one failed bucket cannot poison every bucket behind it.
+  // openOrUpdate is idempotent by fingerprint and reconcile derives everything
+  // from detected_at, so the next bucket recovers on its own.
+  orchestrationTail = orchestrationTail.then(work).catch((error: unknown) => {
+    logger.error({ error, bucket }, "orchestration failed for this tick");
+  });
+}
 
 const store = createSignalStore();
 const evidenceStore = createEvidenceStore();
@@ -100,7 +125,22 @@ const scheduler = startScheduler({
     store.addGaps(evidenceGaps);
     evidenceStore.add(evidence);
 
-    void (async () => {
+    // Broadcast before any await, exactly as this callback did before incidents
+    // were wired in. None of these payloads carries an incidentId, so nothing is
+    // gained by waiting — and a database hiccup, or a queued bucket ahead of
+    // this one, must not cost the UI a whole tick of signals and gaps.
+    for (const item of evidence) hub.broadcast("evidence", item);
+    for (const signal of signals) hub.broadcast("signal", signal);
+    for (const gap of evidenceGaps) hub.broadcast("evidence-gap", gap);
+
+    if (signals.length > 0 || evidenceGaps.length > 0) {
+      logger.info(
+        { bucket, signals: signals.length, evidenceGaps: evidenceGaps.length, evidence: evidence.length },
+        "detection tick produced output",
+      );
+    }
+
+    enqueueOrchestration(bucket, async () => {
       // Order matters: openOrUpdate bumps detected_at for every cell still
       // down, so a cell reconfirmed in THIS bucket is never resolved by the
       // reconcile pass that follows it.
@@ -116,18 +156,13 @@ const scheduler = startScheduler({
         logger.info({ bucket, ...transitions }, "incident lifecycle reconciled");
       }
 
-      for (const item of evidence) hub.broadcast("evidence", item);
-      for (const signal of signals) hub.broadcast("signal", signal);
-      for (const gap of evidenceGaps) hub.broadcast("evidence-gap", gap);
-
       for (const item of evidence) {
         const incidentId = opened.get(item.fingerprint);
         if (!incidentId) continue;
-        // The causal cell always fixes every dimension the root fixes, plus up
-        // to three more (DD19), so the trigger is the signal the evidence
-        // refines. Peeling can put two evidence objects under one signal —
-        // that is criterion 5, and each gets its own investigation.
-        const trigger = signals.find((signal) => refines(item.dimensions, signal.dimensions));
+        // Peeling can put two evidence objects under one signal — that is
+        // spec.md §4 criterion 5, and each gets its own incident and its own
+        // investigation off the same trigger.
+        const trigger = signals.find((signal) => sharesRoot(item.dimensions, signal.dimensions));
         if (!trigger) continue;
         void coordinator
           .handleSignal({ signal: trigger, incidentId, fingerprint: item.fingerprint })
@@ -135,18 +170,6 @@ const scheduler = startScheduler({
             logger.error({ error, bucket, incidentId }, "agent coordinator failed");
           });
       }
-
-      if (signals.length > 0 || evidenceGaps.length > 0) {
-        logger.info(
-          { bucket, signals: signals.length, evidenceGaps: evidenceGaps.length, evidence: evidence.length },
-          "detection tick produced output",
-        );
-      }
-    })().catch((error: unknown) => {
-      // A failed write must not kill the tick: openOrUpdate is idempotent by
-      // fingerprint and reconcile derives everything from detected_at, so the
-      // next bucket recovers on its own.
-      logger.error({ error, bucket }, "orchestration failed for this tick");
     });
   },
 });
