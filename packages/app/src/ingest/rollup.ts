@@ -37,14 +37,26 @@ function floorToMinute(isoTimestamp: string): Date {
 }
 
 function cellKey(bucket: Date, event: TransactionEvent): string {
-  return [
+  return JSON.stringify([
     bucket.toISOString(),
     event.merchantId,
     event.providerId,
     event.country,
     event.paymentMethod,
     event.issuerId,
-  ].join("|");
+  ]);
+}
+
+function declineCellKey(bucket: Date, event: TransactionEvent, declineCode: string): string {
+  return JSON.stringify([
+    bucket.toISOString(),
+    event.merchantId,
+    event.providerId,
+    event.country,
+    event.paymentMethod,
+    event.issuerId,
+    declineCode,
+  ]);
 }
 
 export function aggregateDeltas(events: TransactionEvent[]): AggregatedDeltas {
@@ -90,7 +102,7 @@ export function aggregateDeltas(events: TransactionEvent[]): AggregatedDeltas {
         );
       }
 
-      const declineKey = `${key}|${declineCode}`;
+      const declineKey = declineCellKey(bucket, event, declineCode);
       const existingDecline = declineMap.get(declineKey);
       if (existingDecline) {
         existingDecline.count += 1;

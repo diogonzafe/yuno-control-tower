@@ -77,14 +77,45 @@ describe("aggregateDeltas", () => {
   });
 
   it("splits events into separate cells across the 5 dimensions", () => {
-    const events = [
-      baseEvent({ transactionId: "00000000-0000-4000-8000-000000000001", providerId: "adyen" }),
-      baseEvent({ transactionId: "00000000-0000-4000-8000-000000000002", providerId: "stripe" }),
+    // Test merchantId dimension
+    const events1 = [
+      baseEvent({ transactionId: "00000000-0000-4000-8000-000000000001", merchantId: "merchant-1" }),
+      baseEvent({ transactionId: "00000000-0000-4000-8000-000000000002", merchantId: "merchant-2" }),
     ];
+    const { minuteDeltas: deltas1 } = aggregateDeltas(events1);
+    expect(deltas1).toHaveLength(2);
 
-    const { minuteDeltas } = aggregateDeltas(events);
+    // Test providerId dimension
+    const events2 = [
+      baseEvent({ transactionId: "00000000-0000-4000-8000-000000000003", providerId: "adyen" }),
+      baseEvent({ transactionId: "00000000-0000-4000-8000-000000000004", providerId: "stripe" }),
+    ];
+    const { minuteDeltas: deltas2 } = aggregateDeltas(events2);
+    expect(deltas2).toHaveLength(2);
 
-    expect(minuteDeltas).toHaveLength(2);
+    // Test country dimension
+    const events3 = [
+      baseEvent({ transactionId: "00000000-0000-4000-8000-000000000005", country: "BR" }),
+      baseEvent({ transactionId: "00000000-0000-4000-8000-000000000006", country: "AR" }),
+    ];
+    const { minuteDeltas: deltas3 } = aggregateDeltas(events3);
+    expect(deltas3).toHaveLength(2);
+
+    // Test paymentMethod dimension
+    const events4 = [
+      baseEvent({ transactionId: "00000000-0000-4000-8000-000000000007", country: "BR", paymentMethod: "CARD" }),
+      baseEvent({ transactionId: "00000000-0000-4000-8000-000000000008", country: "BR", paymentMethod: "PIX" }),
+    ];
+    const { minuteDeltas: deltas4 } = aggregateDeltas(events4);
+    expect(deltas4).toHaveLength(2);
+
+    // Test issuerId dimension
+    const events5 = [
+      baseEvent({ transactionId: "00000000-0000-4000-8000-000000000009", issuerId: "itau" }),
+      baseEvent({ transactionId: "00000000-0000-4000-8000-000000000010", issuerId: "bradesco" }),
+    ];
+    const { minuteDeltas: deltas5 } = aggregateDeltas(events5);
+    expect(deltas5).toHaveLength(2);
   });
 
   it("produces a decline delta only for DECLINED events, counted per decline_code", () => {
