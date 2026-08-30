@@ -54,12 +54,33 @@
 - Keep temporal context out of causal identity and use it only as structured
   metadata for deterministic filtering or reranking if vector search is added.
 
+### Provisional evidence contract
+
+- Block agent-module development until the detector and its deterministic
+  orchestrator publish their final evidence contract.
+- Couple the agent module directly to the detector-orchestrator's internal
+  object shape.
+- Document a small provisional object and mock that can later be replaced by an
+  adapter without changing the narrator or its tests.
+
+### Model provider integration
+
+- Call the OpenAI API through the OpenAI SDK directly from the agent module.
+- Use the existing OpenAI API key through Mastra model routing and keep provider
+  and model identifiers configurable.
+
 ## What we chose
 
 We chose **Mastra** as the framework for the AI agent module. We will not use
 the OpenAI Agents SDK, LangGraph.js, or a hand-written agent loop. Mastra will
 orchestrate model calls and typed tool use, while all numerical and business
 rules remain framework-agnostic and deterministic.
+
+The live provider is OpenAI, authenticated with `OPENAI_API_KEY`, but all model
+calls go through Mastra model routing. The agent module does not import or use
+the OpenAI SDK directly. `INVESTIGATOR_MODEL`, `NARRATOR_MODEL`, and
+`NARRATOR_FALLBACK_MODEL` remain configuration values so exact model IDs can be
+confirmed when implementation begins.
 
 The investigator receives exactly six tools:
 
@@ -83,6 +104,14 @@ combinations. Every invocation is persisted in `investigation_steps` with its
 actor, arguments, and result. The final diagnosis is structured agent output,
 not a seventh tool.
 
+A `CONCLUSIVE` diagnosis is accepted only when its structured output references
+a root cause, a completed residual test, onset evidence returned by
+`scan_incident_onset`, impact evidence returned by
+`estimate_incident_impact`, and the supporting audit steps. Missing required
+evidence makes the agent run invalid and hands control to the fallback. Timeout,
+model error, and exhausted step budget are run failures, not inconclusive
+diagnoses.
+
 `peeling`, `parsimony`, and `beam_search` remain internal deterministic
 mechanisms. Conversion, expected rates, Wilson intervals, decline-code shares,
 onset, cost, priority, fingerprints, lifecycle, and playbook matching are never
@@ -97,9 +126,17 @@ reuse context from another incident.
 
 For the 24-hour delivery, an interrupted, failed, timed-out, or exhausted agent
 run is not resumed from a Mastra snapshot. The run is closed with its terminal
-status and a new deterministic fallback run starts. A later manual retry also
-creates a new `run_id`; it never overwrites an earlier attempt. Durable Mastra
-workflow snapshots remain a future option for genuinely long-running work.
+status. The upstream deterministic incident orchestrator receives the typed
+failure and starts a new beam-search fallback run. The Mastra investigator never
+calls the fallback directly. A later manual retry also creates a new `run_id`;
+it never overwrites an earlier attempt. Durable Mastra workflow snapshots remain
+a future option for genuinely long-running work.
+
+The investigator budget is at most 12 tool executions and 45 seconds of total
+wall-clock time. Each tool invocation counts once, including parallel calls.
+Model-only turns do not consume the tool budget. The 24-hour delivery performs
+no internal model retry: provider errors immediately return a typed run failure
+to the deterministic incident orchestrator.
 
 Audit persistence is split into `investigation_runs` and
 `investigation_steps`. A run records its actor, status, model and prompt version
@@ -146,6 +183,212 @@ features stay disabled. Traces use sensitive-data redaction and a seven-day
 retention window for the hackathon environment; domain incidents and audit rows
 are outside that pruning policy.
 
+The detector and its deterministic incident orchestrator are owned by another
+development front. That orchestrator is not an agent and must not be confused
+with the Mastra runtime. The provisional integration uses three lifecycle
+contracts so the investigator does not receive fields that only exist after it
+runs:
+
+```ts
+type DecimalString = string;
+type IncidentStatus = "open" | "monitoring" | "resolved" | "inconclusive";
+type EvidenceState =
+  | "HEALTHY"
+  | "ANOMALOUS"
+  | "INSUFFICIENT_EVIDENCE";
+
+type InvestigationRequestV0 = {
+  schemaVersion: "0";
+  source: "mock" | "detector_orchestrator";
+  incident: {
+    incidentId: string;
+    fingerprint: string;
+    status: IncidentStatus;
+    detectedAt: string;
+  };
+  trigger: {
+    merchantId: string;
+    country: "AR" | "MX" | "BR";
+    attempts: number;
+    approved: number;
+    expectedRate: DecimalString;
+    currentRate: DecimalString;
+    ciLow: DecimalString;
+    ciHigh: DecimalString;
+    ciLevel: DecimalString;
+    persistenceWindows: number;
+  };
+  similarIncidents: Array<{
+    incidentId: string;
+    fingerprint: string;
+    resolvedAt: string;
+  }>;
+};
+
+type DiagnosisResultV0 =
+  | {
+      conclusion: "CONCLUSIVE";
+      causalDimension:
+        | "merchant"
+        | "provider"
+        | "payment_method"
+        | "issuer";
+      dimensions: {
+        merchantId: string;
+        providerId: string | null;
+        country: "AR" | "MX" | "BR" | null;
+        paymentMethod: "CARD" | "PIX" | null;
+        issuerId: string | null;
+      };
+      dominantDecline: {
+        code: string;
+        family: string;
+        currentShare: DecimalString;
+        referenceShare: DecimalString;
+      } | null;
+      evidence: {
+        residualStepNo: number;
+        onsetStepNo: number;
+        impactStepNo: number;
+        supportingStepNumbers: number[];
+      };
+    }
+  | {
+      conclusion: "INCONCLUSIVE";
+      reason: "INSUFFICIENT_EVIDENCE" | "CONFLICTING_EVIDENCE";
+      missingEvidence: string[];
+      supportingStepNumbers: number[];
+    };
+
+type AgentRunResultV0 =
+  | { status: "COMPLETED"; diagnosis: DiagnosisResultV0 }
+  | {
+      status: "FAILED";
+      reason: "TIMEOUT" | "STEP_BUDGET_EXHAUSTED" | "MODEL_ERROR";
+    };
+
+type ProvisionalEvidenceObjectV0 = InvestigationRequestV0 & {
+  diagnosis: DiagnosisResultV0;
+  onset: {
+    startedAt: string;
+    startedAtExact: boolean;
+  };
+  impact: {
+    lostApprovals: number;
+    costLocalMinor: Partial<Record<"ARS" | "MXN" | "BRL", number>>;
+    costUsdMinor: number;
+    costUsdPerMinute: number;
+    priorityScore: DecimalString;
+  };
+  recommendation: {
+    playbookId: string;
+    title: string;
+    action: string;
+  } | null;
+  repetitions: Array<{
+    matchedIncidentId: string;
+    matchedBy: "exact_fingerprint";
+    resolvedAt: string;
+  }>;
+  audit: {
+    investigationRunId: string;
+    diagnosisActor: "agent" | "fallback";
+    evidenceStepNumbers: number[];
+    generatedAt: string;
+  };
+};
+```
+
+The provisional investigator request mock is:
+
+```ts
+const investigationRequestMock: InvestigationRequestV0 = {
+  schemaVersion: "0",
+  source: "mock",
+  incident: {
+    incidentId: "00000000-0000-4000-8000-000000000001",
+    fingerprint: "fingerprint:v1:merchant=merchant_demo;country=BR",
+    status: "open",
+    detectedAt: "2026-08-30T14:06:00Z",
+  },
+  trigger: {
+    merchantId: "merchant_demo",
+    country: "BR",
+    attempts: 420,
+    approved: 176,
+    expectedRate: "0.66000",
+    currentRate: "0.41905",
+    ciLow: "0.37278",
+    ciHigh: "0.46676",
+    ciLevel: "0.950",
+    persistenceWindows: 3,
+  },
+  similarIncidents: [],
+};
+```
+
+The provisional final evidence mock for narrator tests is:
+
+```ts
+const provisionalEvidenceMock: ProvisionalEvidenceObjectV0 = {
+  ...investigationRequestMock,
+  diagnosis: {
+    conclusion: "CONCLUSIVE",
+    causalDimension: "issuer",
+    dimensions: {
+      merchantId: "merchant_demo",
+      providerId: "adyen",
+      country: "BR",
+      paymentMethod: "CARD",
+      issuerId: "itau",
+    },
+    dominantDecline: {
+      code: "DO_NOT_HONOR",
+      family: "issuer",
+      currentShare: "0.78000",
+      referenceShare: "0.32000",
+    },
+    evidence: {
+      residualStepNo: 4,
+      onsetStepNo: 5,
+      impactStepNo: 6,
+      supportingStepNumbers: [1, 2, 3, 4, 5, 6],
+    },
+  },
+  onset: {
+    startedAt: "2026-08-30T14:03:00Z",
+    startedAtExact: true,
+  },
+  impact: {
+    lostApprovals: 101,
+    costLocalMinor: { BRL: 12840000 },
+    costUsdMinor: 2568000,
+    costUsdPerMinute: 856000,
+    priorityScore: "8560.0000",
+  },
+  recommendation: {
+    playbookId: "issuer_over_declining_v1",
+    title: "Escalate issuer over-declining",
+    action: "Request issuer review and keep human approval pending.",
+  },
+  repetitions: [],
+  audit: {
+    investigationRunId: "00000000-0000-4000-8000-000000000002",
+    diagnosisActor: "agent",
+    evidenceStepNumbers: [1, 2, 3, 4, 5, 6],
+    generatedAt: "2026-08-30T14:06:30Z",
+  },
+};
+```
+
+`schemaVersion: "0"` explicitly marks all three contracts as provisional. The
+deterministic incident orchestrator sends `InvestigationRequestV0`, the Mastra
+investigator returns `AgentRunResultV0`, and the deterministic incident
+orchestrator composes `ProvisionalEvidenceObjectV0` for the narrator after the
+agent or fallback finishes. When the upstream contract is confirmed, adapters
+replace these provisional boundaries without changing the agent's decision
+rules or the narrator's behavior tests.
+
 Playbooks are versioned operational policy owned by Product and Operations. A
 deterministic matcher selects one from `causal_dimension` and `decline_family`.
 The narrator receives a closed evidence object and may explain the selected
@@ -174,6 +417,19 @@ source of truth for payment incidents. Exact fingerprint lookup and the
 deterministic fallback continue working without the agent runtime. Human-owned,
 versioned playbooks prevent the LLM from inventing operational policy and
 preserve the rule that every recommendation requires human approval.
+
+The three provisional lifecycle contracts let the agent module and narrator
+progress without inventing ownership of the detector-orchestrator contract. The
+cost is temporary duplication and expected adapter changes when the real
+objects arrive. Version `0`, runtime validation, and explicit replacement
+boundaries make that cost visible and prevent the mock shapes from silently
+becoming permanent production contracts.
+
+Using the OpenAI API through Mastra keeps the chosen framework responsible for
+model routing, tool calling, and provider integration while avoiding a second,
+direct SDK path. The API key remains external configuration and is never stored
+in repository files. Configurable model IDs add setup work but let the team
+confirm availability at implementation time without changing agent code.
 
 Separating incidents, runs, and steps avoids ambiguous retries. One real-world
 incident can have a failed agent attempt, a successful fallback attempt, and a

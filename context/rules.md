@@ -9,7 +9,7 @@ doc_related:
   - "flight_logs/README.md"
 domain: "engineering-governance"
 dimension_schema: []
-time: "2026-08-30T03:49:58Z"
+time: "2026-08-30T04:46:36Z"
 ---
 
 # The Control Tower — Regras de engenharia
@@ -212,7 +212,8 @@ control-tower/
 │   ├── contracts/                # ⚠️ congelado na H+0
 │   │   └── src/
 │   │       ├── transaction.ts    # Zod: evento de transação
-│   │       ├── incident.ts       # Zod: EvidenceObject, estados
+│   │       ├── investigation.ts  # Zod: request e resultado provisórios v0
+│   │       ├── incident.ts       # Zod: EvidenceObject final, estados
 │   │       ├── injection.ts      # Zod: comando do console do júri
 │   │       └── index.ts
 │   │
@@ -368,9 +369,16 @@ Mastra fica restrito à orquestração do julgamento agêntico. Regras numérica
 de negócio continuam determinísticas e independentes do framework. Cada
 tentativa é preservada em `investigation_runs`, cada chamada fica em
 `investigation_steps`, e qualquer falha, timeout ou esgotamento do budget abre
-um novo run de beam search. Working memory, semantic recall e observational
-memory entre incidentes ficam desabilitadas. O contrato completo e as
-alternativas estão em `flight_logs/ai_agent_module.md`.
+um novo run de beam search pelo orquestrador determinístico de incidentes. O
+investigador Mastra retorna uma falha tipada e nunca chama o fallback
+diretamente. Working memory, semantic recall e observational memory entre
+incidentes ficam desabilitadas. O contrato completo e as alternativas estão em
+`flight_logs/ai_agent_module.md`.
+
+O provider ao vivo é a OpenAI, autenticada por `OPENAI_API_KEY`, mas acessada
+somente pelo model routing do Mastra. O módulo não importa o OpenAI SDK. IDs dos
+modelos permanecem em `INVESTIGATOR_MODEL`, `NARRATOR_MODEL` e
+`NARRATOR_FALLBACK_MODEL`.
 
 Memória histórica não corrige detecção. DD7 continua definindo conversão
 saudável estacionária e volume sazonal. Tempo não entra no fingerprint causal;
@@ -478,7 +486,7 @@ Quatro comandos depois do clone. Vale medir isso: um README em que o juiz roda o
 
 **Chave da API e rate limit.** A demo depende deles. Três defesas: uma segunda chave de outra conta, o modelo de reserva configurável por `.env`, e o narrador com template determinístico de fallback. A UI nunca pode ficar em branco porque uma chamada falhou na frente do júri.
 
-**Modelo de raciocínio e latência.** O investigador faz até 12 chamadas de ferramenta em sequência. Se cada uma levar alguns segundos, o diagnóstico demora mais que a detecção, e isso aparece na demo. Medir cedo, e se necessário reduzir o budget para 8 passos — o beam search determinístico já entrega a célula, o agente só precisa refinar e justificar.
+**Modelo de raciocínio e latência.** O investigador tem no máximo 12 execuções de ferramenta e 45 segundos de relógio por run. Cada tool conta uma vez, inclusive em chamadas paralelas; turno apenas textual do modelo não conta. Não há retry interno de LLM nesta entrega: erro de provider, timeout ou budget esgotado retorna falha tipada ao orquestrador determinístico, que inicia o fallback.
 
 ---
 

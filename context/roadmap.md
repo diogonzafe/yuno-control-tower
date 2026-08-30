@@ -252,8 +252,8 @@ As trilhas rodam em paralelo. As horas são de relógio, não de pessoa.
 
 ### H+13 → H+17 · Camada agêntica
 - Ferramentas envolvendo o que a etapa anterior já faz
-- Investigador em Mastra, budget de 12 passos, timeout
-- Fallback automático para o beam search
+- Investigador em Mastra, budget de 12 tools e timeout total de 45 segundos
+- Sem retry interno de LLM; orquestrador determinístico inicia o beam search após falha tipada
 - `investigation_runs` separando tentativas do agente e do fallback
 - `investigation_steps` gravando cada pergunta, número e resumo auditável
 - Narrador com saída de operações e executiva, com template determinístico de reserva
