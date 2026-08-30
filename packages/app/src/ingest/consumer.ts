@@ -140,9 +140,11 @@ async function handleEntries(redis: Redis, rawEntries: RawStreamEntry[]): Promis
 
 async function reclaimPending(redis: Redis): Promise<void> {
   // XAUTOCLAIM scans at most COUNT (default 100) pending entries per call and
-  // returns the cursor to resume from; it only comes back as "0" once the scan
-  // has wrapped around. Loop until then, otherwise anything beyond the first
-  // page stays pending forever.
+  // returns the cursor to resume from; it only comes back as the stream-id
+  // sentinel "0-0" once the scan has wrapped around (note: "0-0", not a bare
+  // "0" — verified against this project's Redis 8.2.9, which returns "0-0"
+  // even for an empty pending list). Loop until then, otherwise anything
+  // beyond the first page stays pending forever.
   let cursor = "0";
   do {
     const reply = (await redis.call(
@@ -157,7 +159,7 @@ async function reclaimPending(redis: Redis): Promise<void> {
     const [nextCursor, entries] = reply;
     await handleEntries(redis, entries);
     cursor = nextCursor;
-  } while (cursor !== "0");
+  } while (cursor !== "0-0");
 }
 
 export async function startConsumer(): Promise<never> {
