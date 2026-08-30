@@ -8,7 +8,7 @@ import type { MerchantConfig, RollupRow, RoutingCoverage } from "./types.js";
 import { evaluate, wilson } from "./wilson.js";
 
 const bucket = "2026-08-30T14:00:00.000Z";
-const row = (overrides: Partial<RollupRow> = {}): RollupRow => ({ bucket, merchantId: "BR_STORE_01", providerId: "adyen", country: "BR", paymentMethod: "CARD", issuerId: "itau", attempts: 100, approved: 95, amountUsdSum: 1000, approvedUsdSum: 950, ...overrides });
+const row = (overrides: Partial<RollupRow> = {}): RollupRow => ({ bucket, merchantId: "BR_STORE_01", providerId: "adyen", country: "BR", paymentMethod: "CARD", issuerId: "itau", attempts: 100, approved: 95, amountMinorSum: 5000, amountUsdSum: 1000, approvedUsdSum: 950, ...overrides });
 const merchant: MerchantConfig = { merchantId: "BR_STORE_01", expectedConversion: .9, minMaterialDropPp: 3 };
 const coverage: RoutingCoverage = ["adyen", "stripe", "mercado_pago"].flatMap((providerId) => [{ providerId, country: "BR", paymentMethod: "CARD" }, { providerId, country: "BR", paymentMethod: "PIX" }]);
 
