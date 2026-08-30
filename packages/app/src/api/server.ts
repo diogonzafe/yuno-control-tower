@@ -5,11 +5,13 @@ import type { RollupSource } from "../db/queries.js";
 import { aggregateByBucket } from "../detect/aggregate.js";
 import type { SchedulerStatus } from "../detect/scheduler.js";
 import type { SliceFilter } from "../detect/types.js";
+import type { EvidenceStore } from "./evidence-store.js";
 import type { SignalStore } from "./signal-store.js";
 import type { SseConnection, SseHub } from "./sse.js";
 
 export type ServerDeps = {
   store: SignalStore;
+  evidenceStore: EvidenceStore;
   hub: SseHub;
   source: RollupSource;
   getSchedulerStatus: () => SchedulerStatus;
@@ -60,6 +62,15 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
       return;
     }
     return deps.store.recentSignals(query.data.limit);
+  });
+
+  app.get("/api/evidence", async (request, reply) => {
+    const query = limitQuery.safeParse(request.query);
+    if (!query.success) {
+      await reply.status(400).send({ error: "invalid query", issues: query.error.issues });
+      return;
+    }
+    return deps.evidenceStore.recent(query.data.limit);
   });
 
   app.get("/api/evidence-gaps", async (request, reply) => {

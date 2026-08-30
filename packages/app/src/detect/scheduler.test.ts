@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ConfirmedDrop, EvidenceGap } from "@control-tower/contracts";
-import type { RollupSource } from "../db/queries.js";
+import type { ConfirmedDrop, EvidenceGap, EvidenceObject } from "@control-tower/contracts";
+import type { DeclineSource, RollupSource } from "../db/queries.js";
+import type { DeclineCode, DeclineRollupRow } from "../diagnose/types.js";
 import type { RollupRow } from "./types.js";
 import { bucketsToProcess, createScheduler, startScheduler, targetBucket } from "./scheduler.js";
 
@@ -59,17 +60,36 @@ function healthyRows(bucket: string): RollupRow[] {
   }];
 }
 
+const noDeclines: DeclineSource = {
+  getWindowDeclines: async () => [],
+  getHistory: async () => [],
+};
+
 function deps(overrides: Partial<Parameters<typeof createScheduler>[0]> = {}) {
-  const results: Array<{ bucket: string; signals: ConfirmedDrop[]; evidenceGaps: EvidenceGap[] }> = [];
+  const results: Array<{
+    bucket: string;
+    signals: ConfirmedDrop[];
+    evidenceGaps: EvidenceGap[];
+    evidence: EvidenceObject[];
+  }> = [];
   const source: RollupSource = {
     getWindowRollups: async (bucket) => healthyRows(bucket),
     getHistory: async () => [],
   };
   const base = {
     source,
+    declineSource: noDeclines,
     loadMerchants: async () => [{ merchantId: "BR_STORE_01", expectedConversion: 0.95, minMaterialDropPp: 3 }],
     loadCoverage: async () => [{ providerId: "adyen", country: "BR", paymentMethod: "CARD" }],
-    onResult: (result: { bucket: string; signals: ConfirmedDrop[]; evidenceGaps: EvidenceGap[] }) => { results.push(result); },
+    loadDeclineCatalog: async () => [] as DeclineCode[],
+    onResult: (result: {
+      bucket: string;
+      signals: ConfirmedDrop[];
+      evidenceGaps: EvidenceGap[];
+      evidence: EvidenceObject[];
+    }) => {
+      results.push(result);
+    },
     now: () => new Date("2026-08-30T14:07:10.000Z"),
     ...overrides,
   };
@@ -229,5 +249,87 @@ describe("createScheduler persistence across ticks", () => {
       consecutiveWindows: 3,
       dimensions: { merchantId: "BR_STORE_01", country: "BR" },
     });
+  });
+});
+
+describe("createScheduler diagnose wiring", () => {
+  function droppedRows(bucket: string): RollupRow[] {
+    return [{
+      bucket, merchantId: "BR_STORE_01", providerId: "adyen", country: "BR",
+      paymentMethod: "CARD", issuerId: "itau", attempts: 100, approved: 20,
+      amountMinorSum: 5000, amountUsdSum: 1000, approvedUsdSum: 200,
+    }];
+  }
+
+  it("stays silent on the two monitoring ticks that precede confirmation", async () => {
+    let clock = new Date("2026-08-30T14:07:10.000Z");
+    const { deps: d, results } = deps({
+      source: { getWindowRollups: async (bucket) => droppedRows(bucket), getHistory: async () => [] },
+      now: () => clock,
+    });
+    const scheduler = createScheduler(d);
+
+    await scheduler.runOnce();
+    clock = new Date(clock.getTime() + 60_000);
+    await scheduler.runOnce();
+
+    expect(results[0]!.evidence).toEqual([]);
+    expect(results[1]!.evidence).toEqual([]);
+  });
+
+  it("diagnoses the confirmed signal into evidence, through the deterministic path", async () => {
+    let clock = new Date("2026-08-30T14:07:10.000Z");
+    const { deps: d, results } = deps({
+      source: { getWindowRollups: async (bucket) => droppedRows(bucket), getHistory: async () => [] },
+      now: () => clock,
+    });
+    const scheduler = createScheduler(d);
+
+    await scheduler.runOnce();
+    clock = new Date(clock.getTime() + 60_000);
+    await scheduler.runOnce();
+    clock = new Date(clock.getTime() + 60_000);
+    await scheduler.runOnce();
+
+    expect(results[2]!.evidence).toHaveLength(1);
+    expect(results[2]!.evidence[0]).toMatchObject({
+      windowBucket: "2026-08-30T14:08:00.000Z",
+      diagnosisSource: "beam_search",
+      dimensions: { merchantId: "BR_STORE_01", country: "BR" },
+    });
+  });
+
+  it("requests the current-window and temporal-reference decline ranges", async () => {
+    const requested: Array<[string, string]> = [];
+    let clock = new Date("2026-08-30T14:07:10.000Z");
+    const { deps: d, results } = deps({
+      source: { getWindowRollups: async (bucket) => droppedRows(bucket), getHistory: async () => [] },
+      declineSource: {
+        getWindowDeclines: async () => [] as DeclineRollupRow[],
+        getHistory: async (from, to) => { requested.push([from, to]); return []; },
+      },
+      now: () => clock,
+    });
+    const scheduler = createScheduler(d);
+
+    await scheduler.runOnce();
+    clock = new Date(clock.getTime() + 60_000);
+    await scheduler.runOnce();
+    clock = new Date(clock.getTime() + 60_000);
+    await scheduler.runOnce();
+
+    expect(results[2]!.evidence).toHaveLength(1);
+    // Current window: 15 minutes ending at (and including) the confirmed
+    // bucket, 14:08. Reference window: the 6 hours immediately before that,
+    // never overlapping — a reference contaminated by the anomaly it
+    // measures against would not be a baseline.
+    expect(requested).toContainEqual([
+      "2026-08-30T13:54:00.000Z",
+      "2026-08-30T14:09:00.000Z",
+    ]);
+    expect(requested).toContainEqual([
+      "2026-08-30T07:54:00.000Z",
+      "2026-08-30T13:54:00.000Z",
+    ]);
   });
 });

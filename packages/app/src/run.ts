@@ -7,21 +7,31 @@ import { resolve } from "node:path";
 // imports below defer that evaluation until after the environment is loaded.
 config({ path: resolve(import.meta.dirname, "../../../.env") });
 
-const [{ default: pino }, { startConsumer }, queries, { startScheduler }, { createSignalStore }, { createSseHub }, { buildServer }] =
-  await Promise.all([
-    import("pino"),
-    import("./ingest/consumer.js"),
-    import("./db/queries.js"),
-    import("./detect/scheduler.js"),
-    import("./api/signal-store.js"),
-    import("./api/sse.js"),
-    import("./api/server.js"),
-  ]);
+const [
+  { default: pino },
+  { startConsumer },
+  queries,
+  { startScheduler },
+  { createSignalStore },
+  { createEvidenceStore },
+  { createSseHub },
+  { buildServer },
+] = await Promise.all([
+  import("pino"),
+  import("./ingest/consumer.js"),
+  import("./db/queries.js"),
+  import("./detect/scheduler.js"),
+  import("./api/signal-store.js"),
+  import("./api/evidence-store.js"),
+  import("./api/sse.js"),
+  import("./api/server.js"),
+]);
 
 const logger = pino({ name: "app" });
 const port = Number(process.env.APP_PORT ?? 4000);
 
 const store = createSignalStore();
+const evidenceStore = createEvidenceStore();
 const hub = createSseHub();
 let ingestUp = true;
 
@@ -36,21 +46,28 @@ startConsumer().catch((error: unknown) => {
 
 const scheduler = startScheduler({
   source: queries.createRollupSource(),
+  declineSource: queries.createDeclineSource(),
   loadMerchants: queries.loadMerchantConfigs,
   loadCoverage: queries.loadRoutingCoverage,
-  onResult: ({ bucket, signals, evidenceGaps }) => {
+  loadDeclineCatalog: queries.loadDeclineCatalog,
+  onResult: ({ bucket, signals, evidenceGaps, evidence }) => {
     store.addSignals(signals);
     store.addGaps(evidenceGaps);
+    evidenceStore.add(evidence);
     for (const signal of signals) hub.broadcast("signal", signal);
     for (const gap of evidenceGaps) hub.broadcast("evidence-gap", gap);
+    for (const item of evidence) hub.broadcast("evidence", item);
     if (signals.length > 0 || evidenceGaps.length > 0) {
-      logger.info({ bucket, signals: signals.length, evidenceGaps: evidenceGaps.length }, "detection tick produced output");
+      logger.info(
+        { bucket, signals: signals.length, evidenceGaps: evidenceGaps.length, evidence: evidence.length },
+        "detection tick produced output",
+      );
     }
   },
 });
 
 const app = buildServer({
-  store, hub,
+  store, evidenceStore, hub,
   source: queries.createRollupSource(),
   getSchedulerStatus: scheduler.getStatus,
   isIngestUp: () => ingestUp,

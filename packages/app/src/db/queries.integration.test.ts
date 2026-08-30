@@ -1,8 +1,14 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { db } from "./client.js";
-import { rollupMinute } from "./schema.js";
-import { createRollupSource, loadMerchantConfigs, loadRoutingCoverage } from "./queries.js";
+import { rollupDeclinesMinute, rollupMinute } from "./schema.js";
+import {
+  createDeclineSource,
+  createRollupSource,
+  loadDeclineCatalog,
+  loadMerchantConfigs,
+  loadRoutingCoverage,
+} from "./queries.js";
 
 // 1970 keeps this test impossibly far from both the ~90k rows of real
 // retroactive data and anything the live generator writes today. The :05
@@ -99,5 +105,63 @@ describe("catalog loaders", () => {
     expect(coverage).toHaveLength(12);
     expect(coverage.some((route) => route.paymentMethod === "PIX" && route.country === "BR")).toBe(true);
     expect(coverage.some((route) => route.paymentMethod === "PIX" && route.country !== "BR")).toBe(false);
+  });
+
+  it("loads the DD21 decline catalog with numeric shares, never strings", async () => {
+    const catalog = await loadDeclineCatalog();
+
+    expect(catalog.length).toBeGreaterThan(0);
+    const entry = catalog.find((code) => code.code === "05");
+    expect(entry).toBeDefined();
+    expect(entry!.family).toBe("issuer");
+    expect(typeof entry!.baselineShare).toBe("number");
+    expect(entry!.diagnostic).toBe(true);
+  });
+});
+
+describe("createDeclineSource", () => {
+  const DECLINE_BUCKET = new Date("1970-01-01T00:05:00.000Z");
+  const DECLINE_CELL = { ...CELL, bucket: DECLINE_BUCKET, declineCode: "TEST-05" };
+
+  afterEach(async () => {
+    await db.delete(rollupDeclinesMinute).where(
+      and(
+        eq(rollupDeclinesMinute.bucket, DECLINE_CELL.bucket),
+        eq(rollupDeclinesMinute.merchantId, DECLINE_CELL.merchantId),
+        eq(rollupDeclinesMinute.providerId, DECLINE_CELL.providerId),
+        eq(rollupDeclinesMinute.country, DECLINE_CELL.country),
+        eq(rollupDeclinesMinute.paymentMethod, DECLINE_CELL.paymentMethod),
+        eq(rollupDeclinesMinute.issuerId, DECLINE_CELL.issuerId),
+        eq(rollupDeclinesMinute.declineCode, DECLINE_CELL.declineCode),
+      ),
+    );
+  });
+
+  it("returns the seeded cell as a DeclineRollupRow with an ISO bucket", async () => {
+    await db.insert(rollupDeclinesMinute).values({ ...DECLINE_CELL, count: 7 });
+
+    const rows = await createDeclineSource().getWindowDeclines("1970-01-01T00:05:00.000Z");
+    const row = rows.find((candidate) => candidate.declineCode === "TEST-05");
+
+    expect(row).toBeDefined();
+    expect(row!.bucket).toBe("1970-01-01T00:05:00.000Z");
+    expect(row!.count).toBe(7);
+    expect(row!.country).toBe("BR");
+  });
+
+  it("getHistory returns rows in [from, to) and excludes the upper bound", async () => {
+    await db.insert(rollupDeclinesMinute).values({ ...DECLINE_CELL, count: 3 });
+
+    const included = await createDeclineSource().getHistory(
+      "1970-01-01T00:04:30.000Z",
+      "1970-01-01T00:06:00.000Z",
+    );
+    const excluded = await createDeclineSource().getHistory(
+      "1970-01-01T00:04:30.000Z",
+      "1970-01-01T00:05:00.000Z",
+    );
+
+    expect(included.some((row) => row.declineCode === "TEST-05")).toBe(true);
+    expect(excluded.some((row) => row.declineCode === "TEST-05")).toBe(false);
   });
 });

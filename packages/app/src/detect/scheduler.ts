@@ -1,10 +1,14 @@
-import type { ConfirmedDrop, EvidenceGap } from "@control-tower/contracts";
+import type { ConfirmedDrop, EvidenceGap, EvidenceObject } from "@control-tower/contracts";
 import pino from "pino";
-import type { RollupSource } from "../db/queries.js";
+import type { DeclineSource, RollupSource } from "../db/queries.js";
+import { DECLINE_CURRENT_LOOKBACK_MIN, DECLINE_HISTORY_LOOKBACK_MIN } from "../diagnose/constants.js";
+import { buildEvidence } from "../diagnose/evidence.js";
+import { runDiagnosis } from "../diagnose/run.js";
+import type { DeclineCode } from "../diagnose/types.js";
 import { ONSET_LOOKBACK_MIN } from "./constants.js";
 import { runDetectionTick } from "./tick.js";
 import type { PersistenceState } from "./persistence.js";
-import type { MerchantConfig, RoutingCoverage } from "./types.js";
+import type { MerchantConfig, RollupRow, RoutingCoverage } from "./types.js";
 
 const logger = pino({ name: "detector-scheduler", level: process.env.VITEST ? "silent" : "info" });
 
@@ -18,9 +22,16 @@ const TICK_INTERVAL_MS = 60_000;
 
 export type SchedulerDeps = {
   source: RollupSource;
+  declineSource: DeclineSource;
   loadMerchants: () => Promise<MerchantConfig[]>;
   loadCoverage: () => Promise<RoutingCoverage>;
-  onResult: (result: { bucket: string; signals: ConfirmedDrop[]; evidenceGaps: EvidenceGap[] }) => void;
+  loadDeclineCatalog: () => Promise<DeclineCode[]>;
+  onResult: (result: {
+    bucket: string;
+    signals: ConfirmedDrop[];
+    evidenceGaps: EvidenceGap[];
+    evidence: EvidenceObject[];
+  }) => void;
   now?: () => Date;
 };
 
@@ -64,6 +75,50 @@ export function bucketsToProcess(lastProcessed: string | null, target: string, c
   return buckets.slice(-cap);
 }
 
+// The deterministic path: a confirmed signal is diagnosed and turned into
+// evidence in the same tick, with no agent involved (diagnosisSource always
+// "beam_search"). Skipped when nothing confirmed, so a quiet minute costs
+// no extra decline queries.
+async function diagnose(
+  deps: SchedulerDeps,
+  bucket: string,
+  signals: ConfirmedDrop[],
+  rollups: RollupRow[],
+  merchants: MerchantConfig[],
+  coverage: RoutingCoverage,
+  catalog: DeclineCode[],
+): Promise<EvidenceObject[]> {
+  if (signals.length === 0) return [];
+
+  // Current window: wide enough for declineMixShift's own widest window.
+  // Reference window: immediately before that, never overlapping it — a
+  // reference contaminated by the anomaly it measures against would not be
+  // a baseline (diagnose/constants.ts).
+  const currentFrom = shift(bucket, -(DECLINE_CURRENT_LOOKBACK_MIN - 1));
+  const currentTo = shift(bucket, 1);
+  const referenceFrom = shift(currentFrom, -DECLINE_HISTORY_LOOKBACK_MIN);
+
+  const [declines, declineHistory] = await Promise.all([
+    deps.declineSource.getHistory(currentFrom, currentTo),
+    deps.declineSource.getHistory(referenceFrom, currentFrom),
+  ]);
+
+  const diagnoses = runDiagnosis({
+    signals,
+    windowBucket: bucket,
+    rollups,
+    declines,
+    declineHistory,
+    merchants,
+    coverage,
+    catalog,
+  });
+
+  return diagnoses.map((diagnosis) =>
+    buildEvidence({ diagnosis, rows: rollups, diagnosisSource: "beam_search" }),
+  );
+}
+
 export function createScheduler(deps: SchedulerDeps): SchedulerHandle {
   const now = deps.now ?? (() => new Date());
   let persistence: PersistenceState = new Map();
@@ -78,7 +133,11 @@ export function createScheduler(deps: SchedulerDeps): SchedulerHandle {
       const target = targetBucket(at);
 
       try {
-        const [merchants, coverage] = await Promise.all([deps.loadMerchants(), deps.loadCoverage()]);
+        const [merchants, coverage, catalog] = await Promise.all([
+          deps.loadMerchants(),
+          deps.loadCoverage(),
+          deps.loadDeclineCatalog(),
+        ]);
 
         for (const bucket of bucketsToProcess(lastProcessedBucket, target)) {
           const [windowRows, history] = await Promise.all([
@@ -89,7 +148,9 @@ export function createScheduler(deps: SchedulerDeps): SchedulerHandle {
           const output = runDetectionTick({ bucket, windowRows, history, merchants, coverage, prevState: persistence });
           persistence = output.nextState;
           lastProcessedBucket = bucket;
-          deps.onResult({ bucket, signals: output.signals, evidenceGaps: output.evidenceGaps });
+
+          const evidence = await diagnose(deps, bucket, output.signals, [...history, ...windowRows], merchants, coverage, catalog);
+          deps.onResult({ bucket, signals: output.signals, evidenceGaps: output.evidenceGaps, evidence });
         }
 
         lastError = null;

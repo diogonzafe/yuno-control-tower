@@ -26,6 +26,17 @@ export const DECLINE_WINDOWS_MIN = [1, 5, 15] as const;
 // declines to estimate a share more precisely than the published baseline.
 export const TEMPORAL_MIN_DECLINES = 100;
 
+// How far back the live wiring fetches "current" declines for declineMixShift
+// — wide enough to cover its widest own window (DECLINE_WINDOWS_MIN's 15).
+export const DECLINE_CURRENT_LOOKBACK_MIN = 15;
+
+// How far back the live wiring fetches the temporal reference, once a cell
+// carries enough declines (TEMPORAL_MIN_DECLINES) to replace the catalogue
+// baseline. Six hours is wide enough to accumulate that volume without
+// reaching into a different part of the day — the same order of magnitude as
+// the detector's own temporal fallback (schema.md §6, "últimas 2–6 horas").
+export const DECLINE_HISTORY_LOOKBACK_MIN = 360;
+
 // DD4 locks the three countries, so the local currency of a slice is a lookup,
 // never a conversion (DD9 froze the rate on the transaction itself).
 export const CURRENCY_BY_COUNTRY: Record<string, string> = { BR: "BRL", MX: "MXN", AR: "ARS" };

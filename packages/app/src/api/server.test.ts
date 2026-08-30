@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { ConfirmedDrop } from "@control-tower/contracts";
+import type { ConfirmedDrop, EvidenceObject } from "@control-tower/contracts";
 import type { RollupSource } from "../db/queries.js";
 import type { RollupRow } from "../detect/types.js";
+import { createEvidenceStore } from "./evidence-store.js";
 import { createSignalStore } from "./signal-store.js";
 import { createSseHub } from "./sse.js";
 import { buildServer } from "./server.js";
@@ -24,6 +25,7 @@ function historyRow(bucket: string, attempts: number, approved: number): RollupR
 
 function build(overrides: Partial<Parameters<typeof buildServer>[0]> = {}) {
   const store = createSignalStore();
+  const evidenceStore = createEvidenceStore();
   const hub = createSseHub();
   const source: RollupSource = {
     getWindowRollups: async () => [],
@@ -33,7 +35,7 @@ function build(overrides: Partial<Parameters<typeof buildServer>[0]> = {}) {
     ],
   };
   const app = buildServer({
-    store, hub, source,
+    store, evidenceStore, hub, source,
     getSchedulerStatus: () => ({
       lastTickAt: "2026-08-30T14:07:10.000Z",
       lastProcessedBucket: "2026-08-30T14:06:00.000Z",
@@ -43,7 +45,7 @@ function build(overrides: Partial<Parameters<typeof buildServer>[0]> = {}) {
     isIngestUp: () => true,
     ...overrides,
   });
-  return { app, store, hub };
+  return { app, store, evidenceStore, hub };
 }
 
 describe("GET /health", () => {
@@ -105,6 +107,49 @@ describe("GET /api/signals", () => {
     const response = await app.inject({ method: "GET", url: "/api/signals?limit=abc" });
 
     expect(response.statusCode).toBe(400);
+  });
+});
+
+describe("GET /api/evidence", () => {
+  it("returns the buffered evidence, newest first", async () => {
+    const { app, evidenceStore } = build();
+    const item: EvidenceObject = {
+      fingerprint: "country=BR|merchantId=BR_STORE_01|providerId=adyen#05",
+      dimensions: { merchantId: "BR_STORE_01", country: "BR", providerId: "adyen" },
+      observedRate: 0.41, expectedRate: 0.95, expectedSource: "cross_sectional", deltaPp: 3,
+      ci: { low: 0.36, high: 0.46, level: 0.95 }, attempts: 420, approved: 172,
+      windowBucket: "2026-08-30T14:06:00.000Z", windowUsed: "1m", consecutiveWindows: 3,
+      startedAt: "2026-08-30T14:03:00.000Z", startedAtExact: true,
+      declineMix: [], dominantDecline: "05", suppressedEchoes: [],
+      lostApprovals: 244, costUsdMinor: 24_400, costUsdPerMin: 8_133,
+      costLocal: { BRL: 122_000 }, priorityScore: 8_133,
+      diagnosisSource: "beam_search", investigationTrail: [],
+    };
+    evidenceStore.add([item]);
+
+    const response = await app.inject({ method: "GET", url: "/api/evidence" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toHaveLength(1);
+    expect(response.json()[0].fingerprint).toBe(item.fingerprint);
+  });
+
+  it("honours ?limit=", async () => {
+    const { app, evidenceStore } = build();
+    const item: EvidenceObject = {
+      fingerprint: "a", dimensions: {}, observedRate: 0.4, expectedRate: 0.9,
+      expectedSource: "absolute", deltaPp: 3, ci: { low: 0.3, high: 0.5, level: 0.95 },
+      attempts: 10, approved: 4, windowBucket: "2026-08-30T14:06:00.000Z", windowUsed: "1m",
+      consecutiveWindows: 3, startedAt: "2026-08-30T14:03:00.000Z", startedAtExact: true,
+      declineMix: [], dominantDecline: null, suppressedEchoes: [], lostApprovals: 1,
+      costUsdMinor: 1, costUsdPerMin: 1, costLocal: {}, priorityScore: 1,
+      diagnosisSource: "beam_search", investigationTrail: [],
+    };
+    evidenceStore.add([item, { ...item, fingerprint: "b" }]);
+
+    const response = await app.inject({ method: "GET", url: "/api/evidence?limit=1" });
+
+    expect(response.json()).toHaveLength(1);
   });
 });
 
