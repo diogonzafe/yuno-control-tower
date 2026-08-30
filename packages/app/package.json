@@ -5,7 +5,8 @@
   "version": "0.0.1",
   "scripts": {
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "ingest:dev": "tsx watch src/ingest/run.ts"
   },
   "dependencies": {
     "@control-tower/contracts": "workspace:^",
@@ -17,6 +18,7 @@
   "devDependencies": {
     "@types/node": "^26.4.0",
     "dotenv": "^16.4.7",
+    "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
   }
