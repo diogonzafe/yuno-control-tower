@@ -6,9 +6,10 @@ doc_related:
   - "context/spec.md"
   - "context/schema.md"
   - "context/roadmap.md"
+  - "flight_logs/README.md"
 domain: "engineering-governance"
 dimension_schema: []
-time: "2026-08-29T22:47:03Z"
+time: "2026-08-30T01:00:00Z"
 ---
 
 # AGENTS.md
@@ -118,7 +119,8 @@ Portanto:
 
 Todo arquivo `.md` criado no repositório deve começar com YAML front matter,
 antes de qualquer título ou conteúdo, delimitado por `---` e contendo exatamente
-estes campos obrigatórios:
+estes campos obrigatórios (exceção: os arquivos de `flight_logs/` — ver a seção
+*Flight logs*):
 
 ```yaml
 ---
@@ -151,6 +153,40 @@ Não crie um Markdown com campo ausente, chave duplicada, `doc_id` já usado ou
 horário local sem offset. Antes de concluir uma tarefa que crie documentação,
 valide o front matter e procure o `doc_id` no repositório para confirmar unicidade.
 
+## Flight logs — registro de decisões importantes
+
+Toda decisão **importante** vira um arquivo em `flight_logs/`, escrito no momento
+em que a decisão é tomada — nunca reconstruído no fim. É o *decision log* exigido
+pelo briefing (`context/spec.md` §6) e a munição da defesa técnica: a resposta
+pronta para "por que não fizeram de outro jeito".
+
+Conta como importante e **exige** flight log a decisão que:
+
+- trava uma nova `DD` ou supersede uma `DD` existente;
+- resolve uma pendência `P1`-`P4`;
+- fixa um contrato de dados público, uma fronteira arquitetural, a stack ou uma
+  dependência de produção;
+- descarta uma alternativa que um juiz provavelmente levantaria na sabatina;
+- assume uma simplificação consciente que se afasta do comportamento real do
+  domínio (ex.: PIX tratado como síncrono).
+
+**Não** exige flight log:
+
+- refactor, renomeação ou escolha de implementação local e reversível;
+- detalhe já coberto por teste e sem alternativa relevante em jogo;
+- mudança apenas de formatação, comentário ou texto de documentação.
+
+Na dúvida entre os dois casos, pergunte ao usuário antes de resolver sozinho.
+
+Formato: um arquivo por decisão, nome em `snake_case`, conteúdo em português.
+São markdown simples, **sem** o front matter YAML exigido dos outros `.md` — vão
+publicados na plataforma da hackathon apenas com as quatro seções, nesta ordem:
+**título** (a decisão em uma linha), **opções consideradas**, **o que escolhemos**
+e **por quê** — e o "por quê" inclui o que a escolha custa, não só o benefício. Ao
+criar o arquivo, acrescente a linha correspondente no índice em
+`flight_logs/README.md`; se a decisão também trava uma `DD` ou fecha uma `P`,
+atualize `context/schema.md` no mesmo passo, os dois não podem divergir.
+
 ## Expectativas de testes
 
 Descubra os comandos exatos nos manifestos e na configuração de ferramentas do
@@ -182,8 +218,9 @@ Antes de devolver o trabalho:
   insuficiente quando relevante.
 - Confirme que nenhuma das três fronteiras arquiteturais foi atravessada.
 - Confirme que nenhuma DD1-DD11 foi contradita e nenhuma P1-P4 foi presumida.
-- Atualize contexto, README, diagrama de arquitetura ou decision log quando um
-  contrato público ou uma escolha arquitetural mudar.
+- Atualize contexto, README, diagrama de arquitetura ou o decision log em
+  `flight_logs/` quando um contrato público ou uma escolha arquitetural mudar;
+  toda decisão importante tem o seu flight log antes de o trabalho ser devolvido.
 - Resuma arquivos alterados, verificações executadas e riscos ou decisões ainda
   abertas. Nunca diga que um teste passou sem tê-lo executado.
 
@@ -201,3 +238,4 @@ Marque como bloqueador:
 - Valores históricos em USD recalculados com câmbio atual.
 - Regra de negócio coberta apenas por teste dependente de LLM.
 - Contradição não documentada de DD1-DD11 ou suposição sobre P1-P4.
+- Decisão importante tomada sem o flight log correspondente em `flight_logs/`.
