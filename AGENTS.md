@@ -8,7 +8,7 @@ doc_related:
   - "context/roadmap.md"
 domain: "engineering-governance"
 dimension_schema: []
-time: "2026-08-29T22:47:03Z"
+time: "2026-08-30T00:34:43Z"
 ---
 
 # AGENTS.md
@@ -41,11 +41,10 @@ caso de conflito. Não decida silenciosamente uma pendência P1-P4. Pergunte ao
 usuário e registre o resultado no decision log antes de implementar trabalho
 que dependa dela.
 
-Conflito conhecido na documentação: DD11 em `context/schema.md` especifica um
-teste beta-binomial, enquanto partes de `context/roadmap.md` e
-`context/rules.md` citam intervalo de Wilson. Não implemente nem altere a
-estatística do detector até o usuário confirmar a escolha autoritativa e os
-arquivos de contexto afetados ficarem consistentes.
+DD11 estabelece o **intervalo de Wilson com persistência de três janelas** como
+teste autoritativo do detector. O beta-binomial foi considerado e descartado.
+Qualquer referência remanescente ao beta-binomial deve ser tratada como texto
+legado e corrigida antes de orientar uma implementação.
 
 ## Fronteiras arquiteturais inegociáveis
 

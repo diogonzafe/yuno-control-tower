@@ -8,7 +8,7 @@ doc_related:
   - "context/roadmap.md"
 domain: "engineering-governance"
 dimension_schema: []
-time: "2026-08-29T23:30:00Z"
+time: "2026-08-30T00:34:43Z"
 ---
 
 # The Control Tower — Regras de engenharia
@@ -19,7 +19,7 @@ Como o time escreve código neste projeto. Não repete o que já está em `spec.
 
 ## 1. Os quatro princípios, aplicados a este projeto
 
-**DRY.** As três leituras do rollup (`query_slice`, teste residual, varredura retroativa) usam a mesma função de agregação com parâmetros diferentes — não três implementações. Se a lógica de conversão (`approved / attempts`) aparece em mais de um lugar, é bug esperando acontecer: os dois lugares vão divergir na primeira mudança de regra (ex.: DD11, teste beta-binomial).
+**DRY.** As três leituras do rollup (`query_slice`, teste residual, varredura retroativa) usam a mesma função de agregação com parâmetros diferentes — não três implementações. Se a lógica de conversão (`approved / attempts`) aparece em mais de um lugar, é bug esperando acontecer: os dois lugares vão divergir na primeira mudança de regra (ex.: DD11, intervalo de Wilson).
 
 **YAGNI.** O escopo já está travado nas decisões DD1–DD11 e nas pendências P1–P4. Não implementar:
 - baseline sazonal aprendido (matado por DD7)
@@ -300,7 +300,7 @@ import { pgTable, pgEnum, text, integer, bigint, numeric, timestamp,
 export const country = pgEnum('country', ['BR', 'MX', 'AR']);
 export const method  = pgEnum('payment_method', ['CARD', 'PIX']);
 export const family  = pgEnum('decline_family',
-  ['issuer', 'technical', 'auth', 'fraud', 'funds', 'instrument']);   // DD21
+  ['issuer', 'funds', 'fraud', 'credential', 'network', 'auth', 'merchant']); // DD21
 export const scope   = pgEnum('decline_scope', ['card', 'pix']);
 
 export const rollupMinute = pgTable('rollup_minute', {

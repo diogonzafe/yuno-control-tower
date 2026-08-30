@@ -182,7 +182,7 @@ flowchart TD
 | DD18 | Peeling para incidentes simultâneos; parcimônia como desempate |
 | DD19 | Profundidade máxima da busca: 3 dimensões |
 | DD20 | Harness de avaliação com 30 incidentes gerados |
-| DD21 | 18 decline codes internos em 6 famílias; código de rede fora do cubo |
+| DD21 | 18 decline codes internos em 7 famílias; `diagnostic` por código é o gate; código de rede fica fora do cubo |
 
 ### Fechadas nesta rodada, com a justificativa
 

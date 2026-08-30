@@ -185,4 +185,6 @@ Já aplicado em `schema.md`:
 - `raw_decline_code` vive em `transactions`, fora do cubo (DD12).
 - Código `63` e `PICKUP_CARD` migraram para `fraud`; `PIX_RECEIVER_REJECTED` para `merchant`.
 
-⚠️ A linha **DD21** do `schema.md` ainda diz "18 decline codes em **6 famílias** · `funds` e `instrument` nunca alertam sozinhas". É texto defasado do próprio schema — o DDL (§7) e o catálogo (§8) são a referência. Corrigir DD21 para: "7 famílias · `funds` e `credential` nunca alertam sozinhas · a flag `diagnostic` por código é o gate".
+DD21 está consolidada em `schema.md`: são **7 famílias**, `funds` e
+`credential` são integralmente não diagnósticas e a flag `diagnostic` por código
+é o gate de alerta.

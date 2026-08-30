@@ -1,4 +1,4 @@
-# The Control Tower — Schema de dados (v3)
+# The Control Tower — Schema de dados (v4)
 
 > **v4:** cubo fechado nas 6 dimensões do enunciado (DD12), dimensionamento do mundo simulado (DD13–DD14), pgvector mantido (DD15), só UI (DD16). Prazo do desafio: **24 horas**.
 > **v3:** sai o CUSUM (DD8), sai o beta-binomial em favor do intervalo de Wilson (DD11), entram as colunas de câmbio no padrão de mercado (DD9).
@@ -27,7 +27,7 @@
 | DD17 | **Gatilho em merchant × país** | Sem isso, emissor caindo para um único merchant pode não mover o agregado e o critério #5 falha. |
 | DD18 | **Peeling** para incidentes simultâneos, **parcimônia** como desempate | Peeling termina quando o déficit residual deixa de ser material. Parcimônia é obrigatória por causa de `PIX ⇒ BR`. |
 | DD19 | **Profundidade máxima 3** · sem Benjamini-Hochberg | A poda hierárquica já reduz os testes em ordens de grandeza. |
-| DD21 | **18 decline codes internos em 6 famílias** · código de rede fora do cubo | Fecha P2. Ver `control-tower-decline-codes.md`. Famílias `funds` e `instrument` nunca alertam sozinhas. |
+| DD21 | **18 decline codes internos em 7 famílias** · código de rede fora do cubo | Fecha P2. Ver `declineCodes.md`. A flag `diagnostic` por código é o gate de alerta; `funds` e `credential` são integralmente não diagnósticas. |
 | DD20 | **Máquina de estados enxuta** · 4 playbooks · harness de 30 incidentes | Estado "em recuperação" cortado por escopo de 24h. |
 
 **Sobre a normalização em USD:** a taxa e a data usadas ficam gravadas **na própria transação**, não só na tabela de câmbio. É o padrão contábil e resolve o problema de auditoria: o custo de um incidente de ontem é sempre medido com o dólar de ontem, independentemente do que a tabela de câmbio contenha hoje. Nunca recalcular USD histórico. Isso importa mais com ARS do que com BRL ou MXN.
