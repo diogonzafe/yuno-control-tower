@@ -1,5 +1,5 @@
 ---
-title: "The Control Tower — Motor de diagnóstico de causa raiz"
+title: "The Control Tower — Root-cause diagnosis engine"
 doc_id: "YCT-DIAG-001"
 doc_related:
   - "YCT-DETECT-001"
@@ -21,45 +21,48 @@ dimension_schema:
 time: "2026-08-30T06:40:00Z"
 ---
 
-# The Control Tower — Motor de diagnóstico de causa raiz
+# The Control Tower — Root-cause diagnosis engine
 
-Frente F2 (`context/roadmap.md` §5, janela H+7→H+13), recortada para uma branch:
-**só o diagnóstico determinístico, sem banco e sem camada agêntica.** Consome o
-que `runDetectionTick` produz e devolve incidentes diagnosticados e priorizados.
+Track F2 (`context/roadmap.md` §5, H+7→H+13 window), scoped to a branch:
+**deterministic diagnosis only, no database and no agentic layer.** Consumes
+what `runDetectionTick` produces and returns diagnosed, prioritized
+incidents.
 
 ---
 
-## 1. Escopo
+## 1. Scope
 
-### 1.1 Dentro
+### 1.1 In
 
-- `packages/app/src/diagnose/`: teste residual, beam search, parcimônia,
-  peeling, deslocamento da mistura de recusas, custo e prioridade.
-- `runDiagnosis`, que compõe tudo acima para um bucket de 1 minuto.
-- Extensão de `RollupRow` com `amountMinorSum`, sem a qual não há custo local.
+- `packages/app/src/diagnose/`: residual test, beam search, parsimony,
+  peeling, decline-mix shift, cost, and priority.
+- `runDiagnosis`, which composes all of the above for a 1-minute bucket.
+- Extending `RollupRow` with `amountMinorSum`, without which there is no
+  local cost.
 
-### 1.2 Fora
+### 1.2 Out
 
-| Item | Onde vive |
+| Item | Where it lives |
 |---|---|
-| SQL do cubo, implementação de `RollupSource` | branch de camada SQL |
-| Escrita em `incidents`, fingerprint, ciclo de vida, memória / pgvector | `orchestrate/` |
-| Objeto de evidência, contrato de handoff, as 6 ferramentas, Mastra, narrador | `agent/` |
-| Casamento de playbook e aprovação humana | branch de playbooks |
-| Scheduler, API, SSE | branch de API |
+| Cube SQL, `RollupSource` implementation | SQL-layer branch |
+| Writing to `incidents`, fingerprint, lifecycle, memory / pgvector | `orchestrate/` |
+| Evidence object, handoff contract, the 6 tools, Mastra, narrator | `agent/` |
+| Playbook matching and human approval | playbooks branch |
+| Scheduler, API, SSE | API branch |
 
-### 1.3 Premissa herdada
+### 1.3 Inherited premise
 
-O detector emite sinais de profundidade 0 e 1 e, pela lacuna G1 de
-`context/detector.md`, muitos deles são eco do mesmo problema. O diagnóstico
-**não confia nesses sinais como candidatos**: usa apenas as raízes
-merchant × país que eles nomeiam e re-deriva tudo do rollup. É o que mantém a
-busca genérica sobre o cubo, exigência do trial by fire, e o que faz do beam
-search um fallback honesto para a terceira fronteira de `context/rules.md` §3.
+The detector emits depth-0 and depth-1 signals, and per gap G1 in
+`context/detector.md`, many of them are echoes of the same problem. Diagnosis
+**does not trust these signals as candidates**: it only uses the merchant ×
+country roots they name and re-derives everything from the rollup. That is
+what keeps the search generic over the cube, a requirement of the trial by
+fire, and what makes beam search an honest fallback for the third boundary
+in `context/rules.md` §3.
 
 ---
 
-## 2. Layout de módulos
+## 2. Module layout
 
 ```
 packages/app/src/diagnose/
@@ -68,115 +71,118 @@ packages/app/src/diagnose/
 │                    #   DECLINE_WINDOWS_MIN, TEMPORAL_MIN_DECLINES,
 │                    #   CURRENCY_BY_COUNTRY
 ├── types.ts         # DeclineRollupRow, DeclineCode, DeclineFamily
-├── residual.ts      # residualDeficit()  — o primitivo único
-├── beam-search.ts   # beamSearch() + cellKey()  — profundidade <= 3 (DD19)
-├── parsimony.ts     # selectCausal()  — densidade, magnitude, parcimônia
-├── peeling.ts       # peel()  — laço externo (DD18) + supressão de eco
+├── residual.ts      # residualDeficit()  — the single primitive
+├── beam-search.ts   # beamSearch() + cellKey()  — depth <= 3 (DD19)
+├── parsimony.ts     # selectCausal()  — density, magnitude, parsimony
+├── peeling.ts       # peel()  — outer loop (DD18) + echo suppression
 ├── decline-mix.ts   # declineMixShift() + disambiguateOutage()
-├── cost.ts          # estimateImpact()  — ponta conservadora (DD11)
-├── fixtures.ts      # cenários calculados à mão
-└── run.ts           # runDiagnosis()  — a função de topo
+├── cost.ts          # estimateImpact()  — conservative edge (DD11)
+├── fixtures.ts      # hand-computed scenarios
+└── run.ts           # runDiagnosis()  — the top-level function
 ```
 
 ---
 
-## 3. O primitivo e seus três consumidores
+## 3. The primitive and its three consumers
 
-`residualDeficit(rows, filter, expected, deltaPp, excluded)` relê uma fatia com
-um conjunto de células recortado fora, devolvendo agregado, intervalo de Wilson,
-estado e déficit em aprovações perdidas. Reusa `aggregate` e `evaluate` de
-`detect/`; a lógica `approved / attempts` não é reescrita (`context/rules.md` §1).
+`residualDeficit(rows, filter, expected, deltaPp, excluded)` re-reads a slice
+with a set of cells carved out, returning the aggregate, the Wilson interval,
+the state, and the deficit in lost approvals. It reuses `aggregate` and
+`evaluate` from `detect/`; the `approved / attempts` logic is not rewritten
+(`context/rules.md` §1).
 
-| Consumidor | Uso |
+| Consumer | Use |
 |---|---|
-| `beamSearch` | pontua cada candidato pelo déficit da raiz que some ao excluí-lo |
-| `peel` | condição de parada: o resíduo da raiz deixou de ser material |
-| supressão de eco | testa os demais candidatos com a causa recortada |
+| `beamSearch` | scores each candidate by the root's deficit that disappears when it is excluded |
+| `peel` | stop condition: the root's residual is no longer material |
+| echo suppression | tests the remaining candidates with the cause carved out |
 
-O teste residual não é um passo tardio: é a função de pontuação. Um nó eco tem
-déficit explicado próximo de zero assim que a causa real sai da conta.
+The residual test is not a late step: it is the scoring function. An echo
+node has an explained deficit near zero as soon as the real cause is removed
+from the count.
 
 ---
 
-## 4. Algoritmo
+## 4. Algorithm
 
-### 4.1 Busca
+### 4.1 Search
 
-Raiz fixa merchant × país (DD17). Dimensões livres: provider, método, emissor.
-O esperado de cada filho é o **corte transversal contra os irmãos**
-(`crossSectionalExpected`), nunca a constante do merchant — a regra de
-`context/schema.md` §6. A cobertura de roteamento é respeitada, e o emissor só é
-dividido quando a fatia já não carrega tráfego PIX, porque linhas de PIX levam
-emissor `NA`.
+Fixed root of merchant × country (DD17). Free dimensions: provider, method,
+issuer. Each child's expected value is the **cross-sectional cut against its
+siblings** (`crossSectionalExpected`), never the merchant constant — the rule
+from `context/schema.md` §6. Routing coverage is respected, and the issuer is
+only split once the slice no longer carries PIX traffic, because PIX rows
+carry issuer `NA`.
 
-Um candidato é admissível quando tem queda material pelo intervalo de Wilson e
-excluí-lo reduz estritamente o déficit da raiz. Não há limiar de fração
-explicada: quem termina a busca é o resíduo.
+A candidate is admissible when it has a material drop by the Wilson interval
+and excluding it strictly reduces the root's deficit. There is no explained-
+fraction threshold: the residual is what ends the search.
 
-### 4.2 Seleção
+### 4.2 Selection
 
-Densidade primeiro, magnitude depois, parcimônia por último. A justificativa e as
-alternativas descartadas estão em
+Density first, then magnitude, then parsimony last. The rationale and the
+discarded alternatives are in
 `flight_logs/diagnosis_by_deficit_density.md`.
 
 ### 4.3 Peeling
 
-A cada volta: busca sobre o déficit ainda inexplicado, escolhe a causa, grava os
-ecos suprimidos e acrescenta a célula ao conjunto de exclusão. Termina quando o
-resíduo deixa de ser material (DD18).
+Each round: search over the still-unexplained deficit, pick the cause,
+record the suppressed echoes, and add the cell to the exclusion set. Stops
+when the residual is no longer material (DD18).
 
-### 4.4 Mistura de recusas
+### 4.4 Decline mix
 
-Deslocamento do share por código contra `decline_codes.baseline_share`, com o mix
-da própria célula assumindo quando ela tem histórico suficiente. A janela alarga
-de 1 para 5 e 15 minutos até somar recusas suficientes para ler. `91` e `AB03`
-são desambiguados pela dispersão. Ver
+Per-code share shift against `decline_codes.baseline_share`, with the cell's
+own mix taking over once it has enough history. The window widens from 1 to
+5 and 15 minutes until enough declines accumulate to read. `91` and `AB03`
+are disambiguated by dispersion. See
 `flight_logs/decline_mix_catalogue_reference.md`.
 
-### 4.5 Custo e prioridade
+### 4.5 Cost and priority
 
-Acumulado de `started_at` — varredura retroativa reusada de
-`detect/onset-scan.ts` (DD8) — até a janela de detecção. Aprovações perdidas com
-`ci_high`, custo em USD e na moeda local, e `priority_score` igual ao custo por
-minuto. Ver `flight_logs/priority_by_conservative_cost.md`.
+Accumulated from `started_at` — retroactive scan reused from
+`detect/onset-scan.ts` (DD8) — up to the detection window. Lost approvals
+using `ci_high`, cost in USD and in local currency, and `priority_score`
+equal to the cost per minute. See
+`flight_logs/priority_by_conservative_cost.md`.
 
-### 4.6 Evidência insuficiente
+### 4.6 Insufficient evidence
 
-Raiz materialmente caída e nenhum filho destoando dos irmãos produz um
-diagnóstico com `confidence: "INCONCLUSIVE"` sobre a própria raiz, em vez de
-promover a célula menos inocente. É o bônus de `context/spec.md` §5, e é o que
-acontece na degradação global e simultânea, o caso que o gatilho absoluto existe
-para pegar.
+A materially dropped root with no child standing out from its siblings
+produces a diagnosis with `confidence: "INCONCLUSIVE"` on the root itself,
+instead of promoting the least-innocent cell. This is the bonus from
+`context/spec.md` §5, and it's what happens under a global, simultaneous
+degradation — the case the absolute trigger exists to catch.
 
 ---
 
-## 5. Testes
+## 5. Tests
 
-Todos determinísticos, com fixtures calculadas à mão (`context/rules.md` §4).
-21 testes em 7 arquivos.
+All deterministic, with hand-computed fixtures (`context/rules.md` §4).
+21 tests across 7 files.
 
-| Arquivo | Cobre |
+| File | Covers |
 |---|---|
-| `residual.test.ts` | uma causa mais ecos: o resíduo limpa para os ecos, não para a causa |
-| `beam-search.test.ts` | célula causal em profundidade 3; guarda semântica do PIX; raiz saudável |
-| `parsimony.test.ts` | densidade vence diluição; empate estrutural PIX implica BR; emissor mexicano |
-| `peeling.test.ts` | dois incidentes simultâneos sob a mesma raiz; parada; eco suprimido |
-| `decline-mix.test.ts` | `05` de 32% para 78%; alargamento no PIX; referência temporal; as três leituras do `91` |
-| `cost.test.ts` | ponta conservadora e não a taxa observada; acumulado e por minuto |
-| `run.test.ts` | os dois cenários obrigatórios juntos, ordenados por dinheiro; evidência insuficiente |
+| `residual.test.ts` | one cause plus echoes: the residual clears for the echoes, not the cause |
+| `beam-search.test.ts` | causal cell at depth 3; PIX semantic guard; healthy root |
+| `parsimony.test.ts` | density beats dilution; structural PIX tie implies BR; Mexican issuer |
+| `peeling.test.ts` | two simultaneous incidents under the same root; stop condition; suppressed echo |
+| `decline-mix.test.ts` | `05` from 32% to 78%; PIX widening; temporal reference; the three readings of `91` |
+| `cost.test.ts` | conservative edge, not the observed rate; accumulated and per-minute |
+| `run.test.ts` | both mandatory scenarios together, ordered by money; insufficient evidence |
 
 ---
 
-## 6. Decisões e lacunas conhecidas
+## 6. Decisions and known gaps
 
-Registradas aqui para não serem descobertas na sabatina.
+Recorded here so they aren't discovered during Q&A.
 
-| # | Lacuna | Consequência / mitigação |
+| # | Gap | Consequence / mitigation |
 |---|---|---|
-| D1 | Sem banco: `diagnose/` é puro sobre arrays | Mesmo recorte do detector. A branch de camada SQL implementa `RollupSource` e alimenta `runDiagnosis`. |
-| D2 | Sem objeto de evidência nem contrato de handoff | Adiado por decisão do usuário. `Diagnosis` vive em `diagnose/run.ts`, não em `contracts`. Promovê-lo é o primeiro passo da branch do agente. |
-| D3 | Célula alcançável por dois caminhos guarda a primeira leitura de esperado | O esperado transversal depende do conjunto de irmãos, que depende do caminho percorrido. A deduplicação por célula mantém a primeira leitura, logo a ordem de expansão do beam influencia o resultado em tese. Não foi possível construir um caso em que isso troque a resposta: para um provider superar o emissor no ranking ele precisa estar amplamente ruim, e nesse caso o emissor deixa de destoar dentro dele. Declarado em vez de corrigido com máquina não testável (`context/rules.md` §1, YAGNI). |
-| D4 | `TEMPORAL_MIN_DECLINES = 100` sem derivação formal | Escolha de prudência. `MIN_DECLINES = 20` tem justificativa direta: abaixo disso uma única recusa move o share em mais de 5pp. |
-| D5 | Ticket médio é a média da célula na janela, não a distribuição | O custo não discrimina a cauda de valor dentro da fatia. |
-| D6 | Sem casamento de playbook | `causalDimension` e a família do código dominante já saem prontos para o matcher da branch seguinte. |
-| D7 | `MAX_INCIDENTS_PER_ROOT = 3` | Guarda contra laço patológico; a parada real é o resíduo. Uma raiz com mais de três causas simultâneas reportaria só as três mais densas. |
+| D1 | No database: `diagnose/` is pure over arrays | Same cut as the detector. The SQL-layer branch implements `RollupSource` and feeds `runDiagnosis`. |
+| D2 | No evidence object or handoff contract | Deferred by the user's decision. `Diagnosis` lives in `diagnose/run.ts`, not in `contracts`. Promoting it is the first step of the agent branch. |
+| D3 | A cell reachable by two paths keeps the first expected reading | The cross-sectional expected value depends on the sibling set, which depends on the path taken. Per-cell deduplication keeps the first reading, so beam expansion order theoretically influences the result. It wasn't possible to construct a case where this flips the answer: for a provider to outrank the issuer it must be broadly bad, and in that case the issuer stops standing out within it. Declared rather than fixed with untestable machinery (`context/rules.md` §1, YAGNI). |
+| D4 | `TEMPORAL_MIN_DECLINES = 100` with no formal derivation | A judgment call made out of caution. `MIN_DECLINES = 20` has a direct justification: below it a single decline moves the share by more than 5pp. |
+| D5 | Average ticket is the cell's mean over the window, not the distribution | Cost doesn't discriminate the value tail within the slice. |
+| D6 | No playbook matching | `causalDimension` and the dominant code's family already come out ready for the next branch's matcher. |
+| D7 | `MAX_INCIDENTS_PER_ROOT = 3` | Guard against a pathological loop; the real stop condition is the residual. A root with more than three simultaneous causes would report only the three densest ones. |

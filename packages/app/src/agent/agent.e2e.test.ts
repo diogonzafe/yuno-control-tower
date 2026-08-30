@@ -18,8 +18,8 @@ import {
 } from "../diagnose/fixtures.js";
 import type { RoutingCoverage } from "../detect/types.js";
 
-// rules.md §4, last row: the agent end-to-end test "usa LLM real ou gravado
-// (cassette), não mockado camada por camada", and runs separately from the rest
+// rules.md §4, last row: the agent end-to-end test "uses a real or recorded
+// (cassette) LLM, not mocked layer by layer", and runs separately from the rest
 // because it is slow. Every other agent test mocks `generate`, so nothing else
 // in the suite proves that Mastra's structuredOutput + tools wiring actually
 // works, that the model can satisfy DecisionContext, or that the model routing
