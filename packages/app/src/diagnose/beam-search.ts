@@ -8,7 +8,10 @@ import { residualDeficit } from "./residual.js";
 
 // The root already fixes merchant and country (DD17), so only three dimensions
 // are left to divide by.
-const FREE_DIMENSIONS: Dimension[] = ["providerId", "paymentMethod", "issuerId"];
+// Exported because the fallback trail (trail.ts) has to replay this same
+// drill-down order: a trail that walked the dimensions differently would be
+// describing a search the system never ran.
+export const FREE_DIMENSIONS: Dimension[] = ["providerId", "paymentMethod", "issuerId"];
 
 export type Candidate = {
   cell: SliceFilter;

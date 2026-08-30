@@ -49,9 +49,45 @@ describe("runDiagnosis", () => {
     });
 
     expect(diagnoses).toHaveLength(1);
-    expect(diagnoses[0]!.suppressedEchoes.map(cellKey)).toContain(
+    expect(diagnoses[0]!.suppressedEchoes.map((echo) => cellKey(echo.cell))).toContain(
       "country=BR|merchantId=BR_STORE_01|providerId=adyen",
     );
+  });
+
+  test("carries the detection context the evidence object has to report", () => {
+    const [diagnosis] = runDiagnosis({
+      ...base,
+      signals: [confirmedDrop(BR_ROOT)],
+      rollups: brFullGrid(),
+    });
+
+    expect(diagnosis!.expectedSource).toBe("cross_sectional");
+    expect(diagnosis!.deltaPp).toBe(3);
+    expect(diagnosis!.windowUsed).toBe("1m");
+    expect(diagnosis!.consecutiveWindows).toBe(3);
+  });
+
+  test("reports the absolute trigger as the source when no child stands out", () => {
+    const [diagnosis] = runDiagnosis({
+      ...base,
+      signals: [confirmedDrop(BR_ROOT)],
+      rollups: brFlatDropGrid(),
+    });
+
+    expect(diagnosis!.expectedSource).toBe("absolute");
+  });
+
+  test("takes the longest-running confirmation when several signals share a root", () => {
+    const [diagnosis] = runDiagnosis({
+      ...base,
+      signals: [
+        { ...confirmedDrop(BR_ROOT), consecutiveWindows: 3 },
+        { ...confirmedDrop({ ...BR_ROOT, providerId: "adyen" }), consecutiveWindows: 7 },
+      ],
+      rollups: brFullGrid(),
+    });
+
+    expect(diagnosis!.consecutiveWindows).toBe(7);
   });
 
   test("admits insufficient evidence when the root is down but no child stands out", () => {

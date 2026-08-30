@@ -32,3 +32,4 @@ Files:
 12. `diagnostico_por_densidade_de_deficit.md` — Deficit density over absolute deficit; peeling around a beam search
 13. `mix_de_recusas_referencia_catalogo.md` — Catalogue baseline as decline-mix reference; deterministic 91 disambiguation
 14. `prioridade_pelo_custo_conservador.md` — Priority as conservative cost per minute, with no separate confidence weight
+15. `trilha_deterministica_e_fingerprint.md` — The fallback also produces an investigation trail; fingerprint carries the dominant decline
