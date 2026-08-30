@@ -32,3 +32,4 @@ venv/
 
 # Misc
 .cache/
+.superpowers/

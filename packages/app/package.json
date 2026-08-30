@@ -5,16 +5,20 @@
   "version": "0.0.1",
   "scripts": {
     "test": "vitest run",
-    "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "ingest:dev": "tsx watch src/ingest/run.ts"
   },
   "dependencies": {
-    "@control-tower/contracts": "workspace:*",
+    "@control-tower/contracts": "workspace:^",
     "drizzle-orm": "^0.36.4",
+    "ioredis": "^5.4.1",
+    "pino": "^9.5.0",
     "postgres": "^3.4.5"
   },
   "devDependencies": {
-    "@types/node": "^22.10.2",
+    "@types/node": "^26.4.0",
+    "dotenv": "^16.4.7",
+    "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
   }

@@ -182,7 +182,7 @@ flowchart TD
 | DD18 | Peeling para incidentes simultâneos; parcimônia como desempate |
 | DD19 | Profundidade máxima da busca: 3 dimensões |
 | DD20 | Harness de avaliação com 30 incidentes gerados |
-| DD21 | 18 decline codes internos em 6 famílias; código de rede fora do cubo |
+| DD21 | 18 decline codes internos em 7 famílias; `diagnostic` por código é o gate; código de rede fica fora do cubo |
 
 ### Fechadas nesta rodada, com a justificativa
 
@@ -193,7 +193,7 @@ flowchart TD
 | — | **Parcimônia** como desempate | Entre células que explicam igualmente bem, reportar a que fixa menos dimensões. Necessário porque PIX ⇒ BR cria empates estruturais |
 | DD19 | Profundidade máxima **3** | Fixar as 5 dimensões dá célula única, quase sempre específica demais e com amostra minúscula |
 | — | **Sem Benjamini-Hochberg** | A poda hierárquica já reduz os testes em ordens de grandeza. Ter a resposta pronta para a sabatina vale mais que o código |
-| — | Máquina de estados **enxuta**: `candidato → confirmado → em curso → resolvido` | O estado "em recuperação" foi cortado por escopo. `em curso` atualiza sem re-alertar, que é o que evita 36 alertas num incidente de 3h |
+| — | Máquina de estados **enxuta**: `'open' -> 'monitoring' -> 'resolved' -> 'inconclusive'` | O estado "em recuperação" foi cortado por escopo. `em curso` atualiza sem re-alertar, que é o que evita 36 alertas num incidente de 3h |
 | — | **Um modelo de LLM, rápido**, com cache por fingerprint + estado | Latência na narrativa é percebida como sistema lento, e sem cache o texto é regerado a cada atualização |
 | — | **4 playbooks**, um por dimensão causal | provider · emissor · método × país · merchant |
 | DD20 | **Harness de 30 incidentes**, não 200 | Vocês injetam, logo têm ground truth. 30 cabe em 24h e já dá número para o slide |
@@ -251,7 +251,7 @@ As trilhas rodam em paralelo. As horas são de relógio, não de pessoa.
 
 ### H+13 → H+17 · Camada agêntica
 - Ferramentas envolvendo o que a etapa anterior já faz
-- Investigador em LangGraph, budget de 12 passos, timeout
+- Investigador em Mastra, budget de 12 passos, timeout
 - Fallback automático para o beam search
 - `investigation_steps` gravando cada pergunta e cada número
 - Narrador com saída de operações e executiva, com template determinístico de reserva
@@ -297,7 +297,7 @@ F4 depende de F0 e F2, mas não de F3. Pode andar em paralelo com a camada agên
 | Dados | Gerador, injeção, console do júri, catálogos | contrato (F0) |
 | Estatística | Rollups, gatilhos, intervalo de Wilson, varredura retroativa, custo | contrato |
 | Diagnóstico | Beam search, teste residual, priorização | rollups |
-| Agente e UI | Ferramentas, LangGraph, narrador, front SSE | interface das ferramentas, pode mockar |
+| Agente e UI | Ferramentas, Mastra, narrador, front SSE | interface das ferramentas, pode mockar |
 
 Quem cuida da frente de Dados **não deve** ler a implementação do detector. É isso que mantém o ensaio adversarial da F5 honesto.
 
