@@ -17,7 +17,7 @@ export function countryOf(merchantId: string): "BR" | "MX" | "AR" {
   throw new Error(`unknown merchant country for ${merchantId}`);
 }
 export function rollupRow(overrides: Partial<RollupRow> = {}): RollupRow {
-  return { bucket: "2026-08-30T14:00:00.000Z", merchantId: "BR_STORE_01", providerId: "adyen", country: "BR", paymentMethod: "CARD", issuerId: "itau", attempts: 100, approved: 95, amountUsdSum: 1_000_000, approvedUsdSum: 950_000, ...overrides };
+  return { bucket: "2026-08-30T14:00:00.000Z", merchantId: "BR_STORE_01", providerId: "adyen", country: "BR", paymentMethod: "CARD", issuerId: "itau", attempts: 100, approved: 95, amountMinorSum: 5_000_000, amountUsdSum: 1_000_000, approvedUsdSum: 950_000, ...overrides };
 }
 export function merchant(overrides: Partial<MerchantConfig> = {}): MerchantConfig {
   return { merchantId: "BR_STORE_01", expectedConversion: 0.9, minMaterialDropPp: 3.0, ...overrides };

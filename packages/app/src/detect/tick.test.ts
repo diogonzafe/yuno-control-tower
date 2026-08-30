@@ -5,7 +5,7 @@ import type { MerchantConfig, RollupRow, RoutingCoverage } from "./types.js";
 const merchant: MerchantConfig = { merchantId: "BR_STORE_01", expectedConversion: .9, minMaterialDropPp: 3 };
 const coverage: RoutingCoverage = ["adyen", "stripe", "mercado_pago"].map((providerId) => ({ providerId, country: "BR", paymentMethod: "CARD" }));
 function window(bucket: string, adyenApproved = 20): RollupRow[] {
-  return ["adyen", "stripe", "mercado_pago"].map((providerId) => ({ bucket, merchantId: "BR_STORE_01", providerId, country: "BR" as const, paymentMethod: "CARD" as const, issuerId: "itau", attempts: 100, approved: providerId === "adyen" ? adyenApproved : 95, amountUsdSum: 1000, approvedUsdSum: 950 }));
+  return ["adyen", "stripe", "mercado_pago"].map((providerId) => ({ bucket, merchantId: "BR_STORE_01", providerId, country: "BR" as const, paymentMethod: "CARD" as const, issuerId: "itau", attempts: 100, approved: providerId === "adyen" ? adyenApproved : 95, amountMinorSum: 5000, amountUsdSum: 1000, approvedUsdSum: 950 }));
 }
 describe("runDetectionTick", () => {
   it("confirms a cross-sectional provider drop once after three consecutive windows", () => {

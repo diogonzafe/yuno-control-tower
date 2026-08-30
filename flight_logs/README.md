@@ -6,7 +6,7 @@ doc_related:
   - "YCT-RULES-001"
 domain: "decision-log"
 dimension_schema: []
-time: "2026-08-30T02:14:36Z"
+time: "2026-08-30T06:35:00Z"
 ---
 
 # Flight Logs
@@ -27,3 +27,6 @@ Files:
 7. `contrato_do_evento_de_transacao.md` — Transaction event contract on the Redis Stream
 8. `ingestao_em_micro_batch_com_dedup.md` — Micro-batch ingestion with deduplication via RETURNING
 9. `deteccao_wilson.md` — Wilson detector and `ConfirmedDrop` output contract
+10. `diagnostico_por_densidade_de_deficit.md` — Deficit density over absolute deficit; peeling around a beam search
+11. `mix_de_recusas_referencia_catalogo.md` — Catalogue baseline as decline-mix reference; deterministic 91 disambiguation
+12. `prioridade_pelo_custo_conservador.md` — Priority as conservative cost per minute, with no separate confidence weight
