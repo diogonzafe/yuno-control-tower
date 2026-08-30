@@ -1,0 +1,8 @@
+import { formatPercent } from "../../lib/format";
+import type { Incident } from "../../types/dashboard";
+
+export function EvidencePanel({ incident }: { incident: Incident | null }) {
+  if (!incident) return <section className="panel evidence-panel"><div className="panel__heading"><div><h2>Evidence trail</h2><p>Deterministic diagnosis · selected incident</p></div></div><p className="incident-feed__empty">Select an incident to see its evidence trail.</p></section>;
+  const e = incident.evidence;
+  return <section className="panel evidence-panel"><div className="panel__heading"><div><h2>Evidence trail</h2><p>Deterministic diagnosis · selected incident</p></div><span className="evidence-badge">RF3</span></div><div className="evidence-body"><div className="wilson"><div><span>Observed</span><strong>{formatPercent(e.observedRate)}</strong></div><div className="wilson-track"><i style={{ left: `${e.ciLow}%`, width: `${Math.max(2, e.ciHigh - e.ciLow)}%` }} /><b style={{ left: `${e.expectedRate}%` }} /></div><small>Wilson 95% CI {formatPercent(e.ciLow)}–{formatPercent(e.ciHigh)} · expected {formatPercent(e.expectedRate)}</small></div><div className="evidence-section"><span>Drill-down tested</span><ol>{e.testedDimensions.map((d) => <li key={d}>{d}</li>)}</ol></div><div className="root-cause"><span>Concentrated deficit</span><strong>{e.rootCause}</strong></div>{e.suppressedEchoes.length > 0 && <div className="echoes"><span>Suppressed as correlated echoes</span><p>{e.suppressedEchoes.join(" · ")}</p></div>}{e.evidenceGap && <div className="evidence-gap"><strong>Insufficient evidence</strong><p>{e.evidenceGap}</p></div>}</div></section>;
+}
