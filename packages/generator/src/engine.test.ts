@@ -103,4 +103,101 @@ describe("startGenerator", () => {
     expect(succeeded.length).toBe(callCount - 1);
     expect(unhandled).toEqual([]);
   });
+
+  it("emits a tick's batch concurrently, so a slow sink does not cap throughput at 1/latency", async () => {
+    vi.useFakeTimers();
+    const generator = createGenerator({
+      catalog: buildGeneratorCatalog(),
+      trafficWeights: equalTrafficWeights,
+      random: createSeededRandom(5),
+    });
+
+    let inFlight = 0;
+    let peakInFlight = 0;
+    const sink = async () => {
+      inFlight += 1;
+      peakInFlight = Math.max(peakInFlight, inFlight);
+      // Every sink call is a network round trip in production; awaiting them
+      // one at a time is exactly the regression this test pins down.
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      inFlight -= 1;
+    };
+
+    const runtime = startGenerator(generator, sink, {
+      baseTps: 30,
+      tickMilliseconds: 1_000,
+      now: () => new Date("2026-08-30T12:00:00.000Z"),
+    });
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    runtime.stop();
+
+    // Sequential awaiting would never exceed one in-flight call.
+    expect(peakInFlight).toBeGreaterThan(1);
+  });
+
+  it("caps the carried backlog instead of queueing unboundedly behind a stalled sink", async () => {
+    vi.useFakeTimers();
+    const generator = createGenerator({
+      catalog: buildGeneratorCatalog(),
+      trafficWeights: equalTrafficWeights,
+      random: createSeededRandom(7),
+    });
+
+    let emitted = 0;
+    let release: (() => void) | undefined;
+    const stalled = new Promise<void>((resolve) => { release = resolve; });
+    const sink = async () => {
+      emitted += 1;
+      await stalled;
+    };
+
+    const runtime = startGenerator(generator, sink, {
+      baseTps: 60,
+      tickMilliseconds: 100,
+      now: () => new Date("2026-08-30T12:00:00.000Z"),
+    });
+
+    // Five minutes of ticks against a sink that never settles. Uncapped, carry
+    // would accumulate ~18,000 events; the cap holds it to MAX_CARRY_EVENTS.
+    await vi.advanceTimersByTimeAsync(300_000);
+    release!();
+    await vi.advanceTimersByTimeAsync(100);
+    runtime.stop();
+
+    // Five minutes at 60 TPS is ~18,000 events; uncapped, every one of them
+    // would still be queued. What actually lands is the cap (600) plus the
+    // first tick's own batch, which drained before the sink stalled — bounded
+    // by MAX_CARRY_EVENTS, not by elapsed time.
+    expect(emitted).toBeLessThan(700);
+  });
+
+  it("timestamps each event as it is emitted, not once per tick", async () => {
+    vi.useFakeTimers();
+    const generator = createGenerator({
+      catalog: buildGeneratorCatalog(),
+      trafficWeights: equalTrafficWeights,
+      random: createSeededRandom(11),
+    });
+
+    let clock = new Date("2026-08-30T12:00:00.000Z").getTime();
+    const seen: string[] = [];
+    const sink = async (event: { createdAt: string }) => {
+      seen.push(event.createdAt);
+      // Time moves while the batch drains, as it does against a real sink.
+      clock += 1_000;
+    };
+
+    const runtime = startGenerator(generator, sink, {
+      baseTps: 30,
+      tickMilliseconds: 1_000,
+      now: () => new Date(clock),
+    });
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    runtime.stop();
+
+    // A single `at` captured at tick start would make every event identical.
+    expect(new Set(seen).size).toBeGreaterThan(1);
+  });
 });

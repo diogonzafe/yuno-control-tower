@@ -6,7 +6,7 @@ doc_related:
   - "YCT-RULES-001"
 domain: "decision-log"
 dimension_schema: []
-time: "2026-08-30T08:12:59Z"
+time: "2026-08-30T08:19:32Z"
 ---
 
 # Flight Logs
@@ -33,3 +33,5 @@ Files:
 13. `mix_de_recusas_referencia_catalogo.md` — Catalogue baseline as decline-mix reference; deterministic 91 disambiguation
 14. `prioridade_pelo_custo_conservador.md` — Priority as conservative cost per minute, with no separate confidence weight
 15. `resumos_auditaveis_do_agente.md` — Structured public decision summaries instead of chain-of-thought
+16. `trilha_deterministica_e_fingerprint.md` — The fallback also produces an investigation trail; fingerprint carries the dominant decline
+17. `estado_do_detector_fica_em_memoria.md` — Confirmed signals and `PersistenceState` live only in process memory (ring buffer + SSE), never in `incidents`; the tick is timer-driven, not ingest-driven

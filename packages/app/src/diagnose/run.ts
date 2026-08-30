@@ -1,11 +1,11 @@
-import type { ConfirmedDrop } from "@control-tower/contracts";
+import type { ConfirmedDrop, ExpectedSource } from "@control-tower/contracts";
 import type { MerchantConfig, RollupRow, RoutingCoverage, SliceFilter } from "../detect/types.js";
 import type { Interval } from "../detect/wilson.js";
 import { DELTA_PP_DEFAULT } from "../detect/constants.js";
 import { onsetScan } from "../detect/onset-scan.js";
 import { estimateImpact, type Impact } from "./cost.js";
 import { declineMixShift, disambiguateOutage, type DeclineMix, type OutageAttribution } from "./decline-mix.js";
-import { peel } from "./peeling.js";
+import { peel, type Echo } from "./peeling.js";
 import { residualDeficit } from "./residual.js";
 import type { DeclineCode, DeclineRollupRow } from "./types.js";
 
@@ -34,25 +34,45 @@ export type Diagnosis = {
   approved: number;
   observedRate: number;
   expectedRate: number;
+  // Where `expectedRate` came from: a peeled cell is measured against its
+  // siblings in the same window, while the root that never split is measured
+  // against the merchant's configured constant (DD7).
+  expectedSource: ExpectedSource;
+  deltaPp: number;
   ci: Interval;
   ciLevel: number;
+  // Diagnosis only ever reads the closed one-minute window; the detector's 5m
+  // widening for thin cells (THIN_CELL_WINDOW_MIN) happens before this stage.
+  windowUsed: "1m" | "5m";
+  consecutiveWindows: number;
   explainedDeficit: number;
   declineMix: DeclineMix | null;
   outageAttribution: OutageAttribution | null;
   impact: Impact;
-  suppressedEchoes: SliceFilter[];
+  suppressedEchoes: Echo[];
 };
 
 // 91 and AB03 are the two codes whose spread, not whose presence, names the
 // culprit (schema.md §8).
 const OUTAGE_CODES = new Set(["91", "AB03"]);
 
-function rootsOf(signals: ConfirmedDrop[]): SliceFilter[] {
-  const roots = new Map<string, SliceFilter>();
+type Root = { root: SliceFilter; consecutiveWindows: number };
+
+// Several signals collapse onto one merchant x country root (DD17): the
+// provider that tripped the cross-sectional cut and the root that tripped the
+// absolute one are the same incident. The oldest confirmation among them is
+// the one that answers "how long has this been going on".
+function rootsOf(signals: ConfirmedDrop[]): Root[] {
+  const roots = new Map<string, Root>();
   for (const signal of signals) {
     const { merchantId, country } = signal.dimensions;
     if (merchantId === undefined || country === undefined) continue;
-    roots.set(`${merchantId}|${country}`, { merchantId, country });
+    const key = `${merchantId}|${country}`;
+    const previous = roots.get(key);
+    roots.set(key, {
+      root: { merchantId, country },
+      consecutiveWindows: Math.max(previous?.consecutiveWindows ?? 0, signal.consecutiveWindows),
+    });
   }
   return [...roots.values()];
 }
@@ -95,7 +115,7 @@ export function runDiagnosis(input: DiagnoseInput): Diagnosis[] {
   const windowRows = input.rollups.filter((row) => row.bucket === input.windowBucket);
   const diagnoses: Diagnosis[] = [];
 
-  for (const root of rootsOf(input.signals)) {
+  for (const { root, consecutiveWindows } of rootsOf(input.signals)) {
     const merchant = input.merchants.find((entry) => entry.merchantId === root.merchantId);
     if (merchant === undefined) continue;
     const expected = merchant.expectedConversion;
@@ -120,8 +140,12 @@ export function runDiagnosis(input: DiagnoseInput): Diagnosis[] {
         approved: residual.approved,
         observedRate: residual.rate ?? 0,
         expectedRate: expected,
+        expectedSource: "absolute",
+        deltaPp,
         ci: residual.ci,
         ciLevel: 0.95,
+        windowUsed: "1m",
+        consecutiveWindows,
         explainedDeficit: residual.deficit,
         declineMix: null,
         outageAttribution: null,
@@ -145,8 +169,12 @@ export function runDiagnosis(input: DiagnoseInput): Diagnosis[] {
         approved: causal.approved,
         observedRate: causal.observedRate,
         expectedRate: causal.expectedRate,
+        expectedSource: "cross_sectional",
+        deltaPp,
         ci: causal.ci,
         ciLevel: 0.95,
+        windowUsed: "1m",
+        consecutiveWindows,
         explainedDeficit: causal.explainedDeficit,
         declineMix,
         outageAttribution,

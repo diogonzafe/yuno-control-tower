@@ -21,8 +21,19 @@ describe("peel", () => {
   test("suppresses the provider node as an echo of the causal cell", () => {
     const [first] = peel(brFullGrid(), BR_ROOT, 0.9, 3, fullCoverage());
 
-    expect(first!.suppressedEchoes.map(cellKey)).toContain(
+    expect(first!.suppressedEchoes.map((echo) => cellKey(echo.cell))).toContain(
       "country=BR|merchantId=BR_STORE_01|providerId=adyen",
     );
+  });
+
+  test("carries the two rates that clear an echo: down now, healthy once the cause is carved out", () => {
+    const [first] = peel(brFullGrid(), BR_ROOT, 0.9, 3, fullCoverage());
+
+    const adyen = first!.suppressedEchoes.find(
+      (echo) => cellKey(echo.cell) === "country=BR|merchantId=BR_STORE_01|providerId=adyen",
+    );
+
+    expect(adyen!.observedRate).toBeCloseTo(316 / 600, 5);
+    expect(adyen!.residualRate).toBeCloseTo(286 / 300, 5);
   });
 });
