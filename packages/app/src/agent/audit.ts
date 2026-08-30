@@ -1,29 +1,38 @@
 import {
-  InvestigationAuditStepV0,
-  InvestigationAuditTrailV0,
-  type InvestigationAuditStepV0 as InvestigationAuditStepV0Type,
-  type InvestigationAuditTrailV0 as InvestigationAuditTrailV0Type,
+  InvestigationAuditStep,
+  InvestigationAuditTrail,
+  type InvestigationAuditStep as InvestigationAuditStepType,
+  type InvestigationAuditTrail as InvestigationAuditTrailType,
 } from "@control-tower/contracts";
 
+export type InvestigationActor = "agent" | "fallback";
+
 export interface InvestigationAuditStore {
-  recordStep(step: InvestigationAuditStepV0Type): Promise<void>;
-  getTrail(): Promise<InvestigationAuditTrailV0Type>;
+  recordStep(step: InvestigationAuditStepType): Promise<void>;
+  getTrail(): Promise<InvestigationAuditTrailType>;
 }
 
 export class InMemoryInvestigationAuditStore implements InvestigationAuditStore {
-  private readonly steps: InvestigationAuditStepV0Type[] = [];
+  private readonly steps: InvestigationAuditStepType[] = [];
 
   constructor(
     private readonly runId: string,
-    private readonly actor: "agent" | "fallback",
+    private readonly actor: InvestigationActor,
   ) {}
 
-  async recordStep(step: InvestigationAuditStepV0Type): Promise<void> {
-    this.steps.push(InvestigationAuditStepV0.parse(step));
+  async recordStep(step: InvestigationAuditStepType): Promise<void> {
+    const parsed = InvestigationAuditStep.parse(step);
+    const index = this.steps.findIndex((entry) => entry.toolCallId === parsed.toolCallId);
+    if (index >= 0) {
+      this.steps[index] = parsed;
+      return;
+    }
+    this.steps.push(parsed);
+    this.steps.sort((left, right) => left.stepNo - right.stepNo);
   }
 
-  async getTrail(): Promise<InvestigationAuditTrailV0Type> {
-    return InvestigationAuditTrailV0.parse({
+  async getTrail(): Promise<InvestigationAuditTrailType> {
+    return InvestigationAuditTrail.parse({
       runId: this.runId,
       actor: this.actor,
       steps: this.steps,

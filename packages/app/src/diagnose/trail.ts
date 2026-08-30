@@ -1,4 +1,4 @@
-import type { InvestigationStep } from "@control-tower/contracts";
+import type { InvestigationAuditStep } from "@control-tower/contracts";
 import { aggregate, matchesFilter } from "../detect/aggregate.js";
 import type { Dimension, RollupRow, SliceFilter } from "../detect/types.js";
 import { FREE_DIMENSIONS } from "./beam-search.js";
@@ -16,9 +16,10 @@ import type { Diagnosis } from "./run.js";
  * Every step is recomputed from `rows`, so no number here can disagree with
  * the diagnosis it accompanies.
  */
-export function buildTrail(rows: RollupRow[], diagnosis: Diagnosis): InvestigationStep[] {
-  const steps: InvestigationStep[] = [];
+export function buildTrail(rows: RollupRow[], diagnosis: Diagnosis): InvestigationAuditStep[] {
+  const steps: InvestigationAuditStep[] = [];
   const parent: SliceFilter = { ...diagnosis.root };
+  const now = diagnosis.windowBucket;
 
   const fixed = FREE_DIMENSIONS.filter((dimension) => diagnosis.cell[dimension] !== undefined);
   // An inconclusive diagnosis fixed nothing, and the sweep that came up empty
@@ -33,33 +34,50 @@ export function buildTrail(rows: RollupRow[], diagnosis: Diagnosis): Investigati
     const value = diagnosis.cell[dimension];
     steps.push({
       stepNo: steps.length + 1,
-      actor: "fallback",
-      toolName: "query_slice",
+      toolCallId: `fallback:${diagnosis.windowBucket}:${steps.length + 1}:query_conversion_slice`,
+      toolName: "query_conversion_slice",
       toolArgs: { filter: { ...parent }, splitBy: dimension },
       toolResult: value === undefined ? { rates } : { rates, fixed: value },
-      reasoning: null,
+      status: "completed",
+      errorCode: null,
+      decisionTag: "DRILL_DOWN",
+      decisionSummary:
+        value === undefined
+          ? `Compared siblings for ${dimension} under the current root.`
+          : `Fixed ${dimension}=${value} after comparing sibling conversion rates.`,
+      hypothesis: value === undefined ? null : { dimension: mapDimension(dimension), value },
+      evidenceStepNos: steps.length === 0 ? [] : [steps.length],
+      createdAt: now,
+      completedAt: now,
     });
     if (value !== undefined) parent[dimension] = value;
   }
 
   steps.push({
     stepNo: steps.length + 1,
-    actor: "fallback",
-    toolName: "residual_test",
+    toolCallId: `fallback:${diagnosis.windowBucket}:${steps.length + 1}:run_residual_test`,
+    toolName: "run_residual_test",
     toolArgs: { cell: diagnosis.cell },
     toolResult: {
       suppressed: diagnosis.suppressedEchoes,
       explainedDeficit: diagnosis.explainedDeficit,
     },
-    reasoning: null,
+    status: "completed",
+    errorCode: null,
+    decisionTag: "VALIDATE_RESIDUAL",
+    decisionSummary: "Validated that the selected cell explains the residual deficit.",
+    hypothesis: null,
+    evidenceStepNos: steps.length === 0 ? [] : [steps.length],
+    createdAt: now,
+    completedAt: now,
   });
 
   const mix = diagnosis.declineMix;
   if (mix !== null) {
     steps.push({
       stepNo: steps.length + 1,
-      actor: "fallback",
-      toolName: "decline_mix",
+      toolCallId: `fallback:${diagnosis.windowBucket}:${steps.length + 1}:query_decline_mix`,
+      toolName: "query_decline_mix",
       toolArgs: { cell: diagnosis.cell, windowMin: mix.windowUsed },
       toolResult: {
         dominantCode: mix.dominantCode,
@@ -67,11 +85,33 @@ export function buildTrail(rows: RollupRow[], diagnosis: Diagnosis): Investigati
         totalDeclines: mix.totalDeclines,
         shifts: mix.shifts,
       },
-      reasoning: null,
+      status: "completed",
+      errorCode: null,
+      decisionTag: "CHECK_DECLINE_MIX",
+      decisionSummary: "Checked the decline-code mix shift for diagnostic evidence.",
+      hypothesis: null,
+      evidenceStepNos: [steps.length],
+      createdAt: now,
+      completedAt: now,
     });
   }
 
   return steps;
+}
+
+function mapDimension(dimension: Dimension): "merchant" | "provider" | "country" | "payment_method" | "issuer" {
+  switch (dimension) {
+    case "merchantId":
+      return "merchant";
+    case "providerId":
+      return "provider";
+    case "country":
+      return "country";
+    case "paymentMethod":
+      return "payment_method";
+    case "issuerId":
+      return "issuer";
+  }
 }
 
 // The sibling comparison behind every drill-down step: one rate per value the

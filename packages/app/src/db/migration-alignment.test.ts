@@ -17,4 +17,19 @@ describe("agent audit migration", () => {
     expect(sql).toContain('DROP INDEX IF EXISTS "ix_incident_embedding"');
     expect(sql).toContain('ALTER TABLE "incidents" DROP COLUMN IF EXISTS "embedding"');
   });
+
+  it("extends run and step audit columns for the complete agentic module", () => {
+    const sql = readFileSync(
+      resolve(import.meta.dirname, "../../../..", "drizzle/0003_agentic_module_completion.sql"),
+      "utf8",
+    );
+
+    expect(sql).toContain('ALTER TABLE "investigation_runs"');
+    expect(sql).toContain('"request_snapshot" jsonb');
+    expect(sql).toContain('"conclusion_tag" text');
+    expect(sql).toContain('"supporting_step_nos" smallint[]');
+    expect(sql).toContain('"decision_tag" text');
+    expect(sql).toContain('"hypothesis" jsonb');
+    expect(sql).toContain('"evidence_step_nos" smallint[]');
+  });
 });

@@ -1,14 +1,12 @@
 import { Agent } from "@mastra/core/agent";
-import { ZodError } from "zod";
 import {
-  AgentRunResultV0,
-  DiagnosisResultV0,
-  ProvisionalEvidenceObjectV0,
-  type AgentRunResultV0 as AgentRunResultV0Type,
-  type DiagnosisResultV0 as DiagnosisResultV0Type,
-  type InvestigationRequestV0,
+  AgentDiagnosis,
+  AgentRunResult,
+  type AgentDiagnosis as AgentDiagnosisType,
+  type AgentRunResult as AgentRunResultType,
+  type InvestigationRequestV1,
 } from "@control-tower/contracts";
-import type { EvidenceProvider } from "./evidence-provider.js";
+import { ZodError } from "zod";
 import type { InvestigationAuditStore } from "./audit.js";
 import type { AgentConfig } from "./config.js";
 import { InMemoryInvestigationAuditStore } from "./audit.js";
@@ -23,11 +21,9 @@ export interface InvestigatorAgentLike {
 }
 
 export interface RunInvestigationOptions {
-  request: InvestigationRequestV0;
-  runId: string;
+  request: InvestigationRequestV1;
   config: AgentConfig;
   dataSource: InvestigationDataSource;
-  evidenceProvider: EvidenceProvider;
   agent?: InvestigatorAgentLike;
   auditStore?: InvestigationAuditStore;
   now?: () => Date;
@@ -39,15 +35,20 @@ const REQUIRED_CONCLUSIVE_TOOLS = new Set([
   "estimate_incident_impact",
 ]);
 
-export function buildInvestigationPrompt(request: InvestigationRequestV0): string {
+export function buildInvestigationPrompt(request: InvestigationRequestV1): string {
   return [
     "Investigate the payment conversion incident using only the provided tools.",
-    "Never invent numbers, never infer raw transactions, and only return CONCLUSIVE when the audit includes residual, onset, and impact evidence.",
-    `Incident fingerprint: ${request.incident.fingerprint}`,
-    `Merchant: ${request.incident.merchantId}`,
-    `Detected at: ${request.incident.detectedAt}`,
+    "Never invent numbers, never infer raw transactions, and never emit <thinking>.",
+    "Each tool call must include a decisionContext with tag, summary, optional hypothesis, and basedOnStepNos.",
+    "The decision summary must be public, short, evidence-based, and under 500 characters.",
+    "Return CONCLUSIVE only when the audit trail includes completed residual, onset, and impact evidence.",
+    `Run id: ${request.runId}`,
+    `Merchant: ${request.context.merchantId}`,
+    `Detected at: ${request.context.detectedAt}`,
     `Observed conversion: ${request.trigger.observedRate}`,
     `Expected conversion: ${request.trigger.expectedRate}`,
+    `Root dimensions: ${JSON.stringify(request.context.rootDimensions)}`,
+    `Similar incidents: ${JSON.stringify(request.context.similarIncidents)}`,
   ].join("\n");
 }
 
@@ -59,25 +60,29 @@ export function createInvestigatorAgent(
     id: "investigator-agent",
     name: "Investigator Agent",
     instructions:
-      "You investigate payment conversion incidents. Use only the available tools, stay within the tool budget, and return a structured diagnosis.",
+      "You investigate payment conversion incidents. Use only the available tools, stay within the tool budget, always include a public decisionContext for each tool call, and return a structured diagnosis without hidden reasoning.",
     model: config.investigatorModel,
     tools,
   });
 }
 
 export function validateConclusiveDiagnosis(
-  diagnosis: DiagnosisResultV0Type,
+  diagnosis: AgentDiagnosisType,
   audit: Awaited<ReturnType<InvestigationAuditStore["getTrail"]>>,
 ): void {
-  if (diagnosis.status !== "CONCLUSIVE") {
-    return;
-  }
-
   const byStep = new Map(audit.steps.map((step) => [step.stepNo, step]));
   for (const stepNo of diagnosis.supportingStepNos) {
-    if (!byStep.has(stepNo)) {
+    const step = byStep.get(stepNo);
+    if (!step) {
       throw new Error(`Diagnosis references missing supporting step ${stepNo}`);
     }
+    if (step.status !== "completed") {
+      throw new Error(`Diagnosis references incomplete supporting step ${stepNo}`);
+    }
+  }
+
+  if (diagnosis.status !== "CONCLUSIVE") {
+    return;
   }
 
   const completedToolNames = new Set(
@@ -95,23 +100,25 @@ export function validateConclusiveDiagnosis(
   }
 }
 
-function classifyFailure(error: unknown): { failureCode: "TIMEOUT" | "STEP_BUDGET_EXHAUSTED" | "MODEL_ERROR" | "INVALID_OUTPUT"; message: string } {
+function classifyFailure(
+  error: unknown,
+): {
+  failureCode: "TIMEOUT" | "STEP_BUDGET_EXHAUSTED" | "MODEL_ERROR" | "INVALID_OUTPUT" | "MISSING_REQUIRED_EVIDENCE";
+  message: string;
+} {
   if (error instanceof StepBudgetExceededError) {
     return { failureCode: "STEP_BUDGET_EXHAUSTED", message: error.message };
   }
   if (error instanceof Error && error.name === "TimeoutError") {
     return { failureCode: "TIMEOUT", message: error.message };
   }
-  if (error instanceof ZodError) {
-    return { failureCode: "INVALID_OUTPUT", message: error.message };
-  }
-  if (error instanceof Error && error.message.includes("structured")) {
-    return { failureCode: "INVALID_OUTPUT", message: error.message };
+  if (error instanceof Error && error.message.includes("required evidence")) {
+    return { failureCode: "MISSING_REQUIRED_EVIDENCE", message: error.message };
   }
   if (error instanceof Error && error.message.includes("supporting step")) {
     return { failureCode: "INVALID_OUTPUT", message: error.message };
   }
-  if (error instanceof Error && error.message.includes("required evidence")) {
+  if (error instanceof ZodError) {
     return { failureCode: "INVALID_OUTPUT", message: error.message };
   }
   return {
@@ -143,26 +150,25 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
 
 export async function runInvestigation(
   options: RunInvestigationOptions,
-): Promise<AgentRunResultV0Type> {
+): Promise<AgentRunResultType> {
   const now = options.now ?? (() => new Date());
   const startedAt = now().toISOString();
   const auditStore =
-    options.auditStore ?? new InMemoryInvestigationAuditStore(options.runId, "agent");
+    options.auditStore ?? new InMemoryInvestigationAuditStore(options.request.runId, "agent");
   const tools = createInvestigationToolset({
-    runId: options.runId,
+    runId: options.request.runId,
     maxToolCalls: options.config.maxToolCalls,
     auditStore,
     dataSource: options.dataSource,
     now,
   });
-  const agent =
-    options.agent ?? createInvestigatorAgent(options.config, tools);
+  const agent = options.agent ?? createInvestigatorAgent(options.config, tools);
 
   try {
     const response = await withTimeout(
       agent.generate(buildInvestigationPrompt(options.request), {
         structuredOutput: {
-          schema: DiagnosisResultV0,
+          schema: AgentDiagnosis,
           errorStrategy: "strict",
           jsonPromptInjection: true,
         },
@@ -173,32 +179,27 @@ export async function runInvestigation(
       }),
       options.config.timeoutMs,
     );
-    const diagnosis = DiagnosisResultV0.parse(response.object);
+    const diagnosis = AgentDiagnosis.parse(response.object);
     const audit = await auditStore.getTrail();
     validateConclusiveDiagnosis(diagnosis, audit);
-    const baseEvidence = await options.evidenceProvider.getEvidence(options.request);
-    const evidence = ProvisionalEvidenceObjectV0.parse({
-      ...baseEvidence,
-      request: options.request,
+    return AgentRunResult.parse({
+      outcome: "COMPLETED",
+      runId: options.request.runId,
       diagnosis,
       audit,
-    });
-    return AgentRunResultV0.parse({
-      outcome: "COMPLETED",
-      runId: options.runId,
-      diagnosis,
-      evidence,
       toolCallsUsed: audit.steps.length,
       startedAt,
       completedAt: now().toISOString(),
     });
   } catch (error) {
     const failure = classifyFailure(error);
-    return AgentRunResultV0.parse({
+    const audit = await auditStore.getTrail();
+    return AgentRunResult.parse({
       outcome: "FAILED",
-      runId: options.runId,
+      runId: options.request.runId,
       failureCode: failure.failureCode,
       message: failure.message,
+      audit,
       startedAt,
       completedAt: now().toISOString(),
     });

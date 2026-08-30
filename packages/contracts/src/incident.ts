@@ -1,20 +1,8 @@
 import { z } from "zod";
+import { ConfirmedDrop, Dimensions, EvidenceGap, ExpectedSource, Interval } from "./detection.js";
+import { InvestigationAuditStep } from "./investigation.js";
 
-export const CellState = z.enum(["MATERIAL_DROP", "HEALTHY", "MONITORING", "INSUFFICIENT_EVIDENCE"]);
-export type CellState = z.infer<typeof CellState>;
-export const Dimensions = z.object({ merchantId: z.string(), providerId: z.string(), country: z.enum(["BR", "MX", "AR"]), paymentMethod: z.enum(["CARD", "PIX"]), issuerId: z.string() }).partial();
-export type Dimensions = z.infer<typeof Dimensions>;
-export const ExpectedSource = z.enum(["cross_sectional", "temporal", "absolute"]);
-export type ExpectedSource = z.infer<typeof ExpectedSource>;
-export const ConfirmedDrop = z.object({
-  dimensions: Dimensions, windowBucket: z.string().datetime(), observedRate: z.number(), expectedRate: z.number(), expectedSource: ExpectedSource, deltaPp: z.number(), ciLow: z.number(), ciHigh: z.number(), ciLevel: z.number(), attempts: z.number().int(), approved: z.number().int(), windowUsed: z.enum(["1m", "5m"]), startedAt: z.string().datetime(), startedAtExact: z.boolean(), consecutiveWindows: z.number().int(),
-});
-export type ConfirmedDrop = z.infer<typeof ConfirmedDrop>;
-export const EvidenceGap = z.object({ dimensions: Dimensions, windowBucket: z.string().datetime(), attempts: z.number().int(), reason: z.literal("INSUFFICIENT_EVIDENCE") });
-export type EvidenceGap = z.infer<typeof EvidenceGap>;
-
-export const Interval = z.object({ low: z.number(), high: z.number(), level: z.number() });
-export type Interval = z.infer<typeof Interval>;
+export { CellState, ConfirmedDrop, Dimensions, EvidenceGap, ExpectedSource, Interval } from "./detection.js";
 
 // One decline code's share of the cell's declines, now vs. its baseline share.
 // The signal is the SHIFT, never the presence (context/schema.md §8).
@@ -25,9 +13,6 @@ export type DeclineMixEntry = z.infer<typeof DeclineMixEntry>;
 // cell was excluded — the residual test's echo suppression (roadmap §2).
 export const SuppressedEcho = z.object({ dimensions: Dimensions, observedRate: z.number(), residualRate: z.number() });
 export type SuppressedEcho = z.infer<typeof SuppressedEcho>;
-
-export const InvestigationStep = z.object({ stepNo: z.number().int(), actor: z.enum(["agent", "fallback"]), toolName: z.string(), toolArgs: z.record(z.unknown()), toolResult: z.record(z.unknown()), reasoning: z.string().nullable() });
-export type InvestigationStep = z.infer<typeof InvestigationStep>;
 
 /**
  * The closed evidence object: every number the narrator is allowed to say.
@@ -55,6 +40,6 @@ export const EvidenceObject = z.object({
   costLocal: z.record(z.number().int()), priorityScore: z.number(),
   // How it was reached — proves the deterministic fallback actually ran when the agent didn't.
   diagnosisSource: z.enum(["agent", "beam_search"]),
-  investigationTrail: z.array(InvestigationStep),
+  investigationTrail: z.array(InvestigationAuditStep),
 });
 export type EvidenceObject = z.infer<typeof EvidenceObject>;

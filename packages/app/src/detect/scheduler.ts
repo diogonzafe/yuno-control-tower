@@ -26,6 +26,7 @@ export type SchedulerDeps = {
   loadMerchants: () => Promise<MerchantConfig[]>;
   loadCoverage: () => Promise<RoutingCoverage>;
   loadDeclineCatalog: () => Promise<DeclineCode[]>;
+  emitDeterministicEvidence?: boolean;
   onResult: (result: {
     bucket: string;
     signals: ConfirmedDrop[];
@@ -149,7 +150,17 @@ export function createScheduler(deps: SchedulerDeps): SchedulerHandle {
           persistence = output.nextState;
           lastProcessedBucket = bucket;
 
-          const evidence = await diagnose(deps, bucket, output.signals, [...history, ...windowRows], merchants, coverage, catalog);
+          const evidence = deps.emitDeterministicEvidence === false
+            ? []
+            : await diagnose(
+              deps,
+              bucket,
+              output.signals,
+              [...history, ...windowRows],
+              merchants,
+              coverage,
+              catalog,
+            );
           deps.onResult({ bucket, signals: output.signals, evidenceGaps: output.evidenceGaps, evidence });
         }
 

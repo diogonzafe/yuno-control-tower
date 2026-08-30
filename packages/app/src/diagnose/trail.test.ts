@@ -40,25 +40,27 @@ describe("buildTrail", () => {
     const trail = buildTrail(brFullGrid(), diagnose());
 
     expect(trail.map((step) => step.toolName)).toEqual([
-      "query_slice",
-      "query_slice",
-      "query_slice",
-      "residual_test",
+      "query_conversion_slice",
+      "query_conversion_slice",
+      "query_conversion_slice",
+      "run_residual_test",
     ]);
     expect(trail.map((step) => step.stepNo)).toEqual([1, 2, 3, 4]);
-    expect(trail.every((step) => step.actor === "fallback")).toBe(true);
+    expect(trail.every((step) => step.toolCallId.startsWith("fallback:"))).toBe(true);
   });
 
   test("each drill-down step names the dimension it split and the value it fixed", () => {
     const trail = buildTrail(brFullGrid(), diagnose());
 
-    expect(trail.map((step) => step.toolArgs.splitBy)).toEqual([
+    expect(trail.map((step) => (step.toolArgs as { splitBy?: string }).splitBy)).toEqual([
       "providerId",
       "paymentMethod",
       "issuerId",
       undefined,
     ]);
-    expect(trail.map((step) => step.toolResult.fixed)).toEqual([
+    expect(
+      trail.map((step) => (step.toolResult as { fixed?: string } | null)?.fixed),
+    ).toEqual([
       "adyen",
       "CARD",
       "itau",
@@ -71,7 +73,7 @@ describe("buildTrail", () => {
 
     // adyen carries 300/30 against two healthy card cells and a healthy PIX
     // cell: 316 of 600. Its siblings sit at 381 of 400.
-    expect(first!.toolResult.rates).toEqual({
+    expect((first!.toolResult as { rates: Record<string, number> }).rates).toEqual({
       adyen: 316 / 600,
       stripe: 381 / 400,
       mercado_pago: 381 / 400,
@@ -80,9 +82,9 @@ describe("buildTrail", () => {
 
   test("records what the residual test cleared", () => {
     const trail = buildTrail(brFullGrid(), diagnose());
-    const residual = trail.find((step) => step.toolName === "residual_test");
+    const residual = trail.find((step) => step.toolName === "run_residual_test");
 
-    expect(residual!.toolResult.suppressed).toContainEqual({
+    expect((residual!.toolResult as { suppressed: unknown[] }).suppressed).toContainEqual({
       cell: { merchantId: "BR_STORE_01", country: "BR", providerId: "adyen" },
       observedRate: 316 / 600,
       residualRate: 286 / 300,
@@ -98,19 +100,21 @@ describe("buildTrail", () => {
     const trail = buildTrail(brFullGrid(), diagnose(brFullGrid(), declines));
 
     const mix = trail.at(-1);
-    expect(mix!.toolName).toBe("decline_mix");
-    expect(mix!.toolResult.dominantCode).toBe("05");
+    expect(mix!.toolName).toBe("query_decline_mix");
+    expect((mix!.toolResult as { dominantCode: string }).dominantCode).toBe("05");
   });
 
   test("sweeps every free dimension when nothing stood out, fixing none of them", () => {
     const trail = buildTrail(brFlatDropGrid(), diagnose(brFlatDropGrid()));
 
-    expect(trail.map((step) => step.toolArgs.splitBy)).toEqual([
+    expect(trail.map((step) => (step.toolArgs as { splitBy?: string }).splitBy)).toEqual([
       "providerId",
       "paymentMethod",
       "issuerId",
       undefined,
     ]);
-    expect(trail.every((step) => step.toolResult.fixed === undefined)).toBe(true);
+    expect(
+      trail.every((step) => (step.toolResult as { fixed?: string } | null)?.fixed === undefined),
+    ).toBe(true);
   });
 });

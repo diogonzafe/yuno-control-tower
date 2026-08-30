@@ -17,6 +17,7 @@
     "ioredis": "^5.4.1",
     "pino": "^9.5.0",
     "postgres": "^3.4.5",
+    "yaml": "^2.8.1",
     "zod": "^3.25.76"
   },
   "devDependencies": {

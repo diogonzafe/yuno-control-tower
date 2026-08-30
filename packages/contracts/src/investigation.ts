@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { COUNTRIES, PAYMENT_METHODS } from "./transaction.js";
-import { ConfirmedDrop, Dimensions } from "./incident.js";
+import { ConfirmedDrop, Dimensions } from "./detection.js";
 
 export const ROOT_CAUSE_DIMENSIONS = [
   "merchant",
@@ -22,198 +22,28 @@ export const InvestigationToolName = z.enum([
 ]);
 export type InvestigationToolName = z.infer<typeof InvestigationToolName>;
 
+export const DecisionTag = z.enum([
+  "HYPOTHESIS",
+  "DRILL_DOWN",
+  "COMPARE_HISTORY",
+  "CHECK_DECLINE_MIX",
+  "VALIDATE_RESIDUAL",
+  "CONFIRM_ONSET",
+  "ESTIMATE_IMPACT",
+]);
+export type DecisionTag = z.infer<typeof DecisionTag>;
+
+export const ConclusionTag = z.enum(["STOP_CONCLUSIVE", "STOP_INCONCLUSIVE"]);
+export type ConclusionTag = z.infer<typeof ConclusionTag>;
+
 export const InvestigationRunFailureCode = z.enum([
   "TIMEOUT",
   "STEP_BUDGET_EXHAUSTED",
   "MODEL_ERROR",
   "INVALID_OUTPUT",
+  "MISSING_REQUIRED_EVIDENCE",
 ]);
 export type InvestigationRunFailureCode = z.infer<typeof InvestigationRunFailureCode>;
-
-export const InvestigationAuditStepV0 = z.object({
-  stepNo: z.number().int().positive(),
-  toolCallId: z.string().min(1),
-  toolName: InvestigationToolName,
-  toolArgs: z.record(z.string(), z.unknown()),
-  toolResult: z.record(z.string(), z.unknown()).nullable(),
-  status: z.enum(["completed", "failed"]),
-  errorCode: z.string().min(1).nullable(),
-  decisionSummary: z.string().min(1).nullable(),
-  createdAt: z.string().datetime({ offset: true }),
-  completedAt: z.string().datetime({ offset: true }),
-});
-export type InvestigationAuditStepV0 = z.infer<typeof InvestigationAuditStepV0>;
-
-export const InvestigationAuditTrailV0 = z.object({
-  runId: z.string().uuid(),
-  actor: z.enum(["agent", "fallback"]),
-  steps: z.array(InvestigationAuditStepV0),
-});
-export type InvestigationAuditTrailV0 = z.infer<typeof InvestigationAuditTrailV0>;
-
-export const SimilarIncidentV0 = z.object({
-  incidentId: z.string().uuid(),
-  fingerprint: z.string().min(1),
-  rootCauseDimension: z.enum(ROOT_CAUSE_DIMENSIONS).nullable(),
-  dominantDecline: z.string().min(1).nullable(),
-  summary: z.string().min(1),
-});
-export type SimilarIncidentV0 = z.infer<typeof SimilarIncidentV0>;
-
-export const InvestigationIncidentV0 = z.object({
-  incidentId: z.string().uuid(),
-  fingerprint: z.string().min(1),
-  merchantId: z.string().min(1),
-  dimensions: Dimensions,
-  dominantDecline: z.string().min(1).nullable(),
-  detectedAt: z.string().datetime({ offset: true }),
-  startedAt: z.string().datetime({ offset: true }),
-  startedAtExact: z.boolean(),
-  baselineRate: z.number().min(0).max(1),
-  currentRate: z.number().min(0).max(1),
-  ciLow: z.number().min(0).max(1),
-  ciHigh: z.number().min(0).max(1),
-  ciLevel: z.number().positive().max(1),
-});
-export type InvestigationIncidentV0 = z.infer<typeof InvestigationIncidentV0>;
-
-export const InvestigationRequestV0 = z.object({
-  schemaVersion: z.literal("0"),
-  source: z.enum(["mock", "detector_orchestrator"]),
-  incident: InvestigationIncidentV0,
-  trigger: ConfirmedDrop,
-  similarIncidents: z.array(SimilarIncidentV0),
-}).superRefine((value, ctx) => {
-  const incidentRoute = value.incident.dimensions;
-  if (incidentRoute.country && incidentRoute.paymentMethod) {
-    const result = validRoutingCombination.safeParse({
-      country: incidentRoute.country,
-      paymentMethod: incidentRoute.paymentMethod,
-    });
-    if (!result.success) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["incident", "dimensions", "paymentMethod"],
-        message: result.error.issues[0]?.message ?? "invalid routing combination",
-      });
-    }
-  }
-
-  const triggerRoute = value.trigger.dimensions;
-  if (triggerRoute.country && triggerRoute.paymentMethod) {
-    const result = validRoutingCombination.safeParse({
-      country: triggerRoute.country,
-      paymentMethod: triggerRoute.paymentMethod,
-    });
-    if (!result.success) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["trigger", "dimensions", "paymentMethod"],
-        message: result.error.issues[0]?.message ?? "invalid routing combination",
-      });
-    }
-  }
-});
-export type InvestigationRequestV0 = z.infer<typeof InvestigationRequestV0>;
-
-export const RootCauseV0 = z.object({
-  dimension: z.enum(ROOT_CAUSE_DIMENSIONS),
-  value: z.string().min(1),
-  declineFamily: z.string().min(1).nullable(),
-  explanation: z.string().min(1),
-});
-export type RootCauseV0 = z.infer<typeof RootCauseV0>;
-
-export const ConclusiveDiagnosisV0 = z.object({
-  status: z.literal("CONCLUSIVE"),
-  rootCause: RootCauseV0,
-  summary: z.string().min(1),
-  supportingStepNos: z.array(z.number().int().positive()).min(1),
-});
-export type ConclusiveDiagnosisV0 = z.infer<typeof ConclusiveDiagnosisV0>;
-
-export const InconclusiveDiagnosisV0 = z.object({
-  status: z.literal("INCONCLUSIVE"),
-  reason: z.enum(["INSUFFICIENT_EVIDENCE", "NO_ROOT_CAUSE", "CONFLICTING_SIGNALS"]),
-  summary: z.string().min(1),
-  supportingStepNos: z.array(z.number().int().positive()),
-});
-export type InconclusiveDiagnosisV0 = z.infer<typeof InconclusiveDiagnosisV0>;
-
-export const DiagnosisResultV0 = z.union([ConclusiveDiagnosisV0, InconclusiveDiagnosisV0]);
-export type DiagnosisResultV0 = z.infer<typeof DiagnosisResultV0>;
-
-export const IncidentOnsetV0 = z.object({
-  startedAt: z.string().datetime({ offset: true }),
-  startedAtExact: z.boolean(),
-  evidenceBuckets: z.array(z.string().datetime({ offset: true })).min(1),
-});
-export type IncidentOnsetV0 = z.infer<typeof IncidentOnsetV0>;
-
-export const IncidentImpactV0 = z.object({
-  lostApprovals: z.number().int().nonnegative(),
-  costUsdMinor: z.number().int().nonnegative(),
-  costUsdPerMin: z.number().int().nonnegative(),
-  priorityScore: z.number().nonnegative(),
-  costLocal: z.record(z.string().regex(/^[A-Z]{3}$/), z.number().int().nonnegative()),
-});
-export type IncidentImpactV0 = z.infer<typeof IncidentImpactV0>;
-
-export const RecommendationV0 = z.object({
-  owner: z.string().min(1),
-  action: z.string().min(1),
-  humanApprovalRequired: z.literal(true),
-});
-export type RecommendationV0 = z.infer<typeof RecommendationV0>;
-
-export const RepetitionEvidenceV0 = z.object({
-  fingerprint: z.string().min(1),
-  count: z.number().int().nonnegative(),
-  priorIncidentIds: z.array(z.string().uuid()),
-});
-export type RepetitionEvidenceV0 = z.infer<typeof RepetitionEvidenceV0>;
-
-export const ProvisionalEvidenceObjectV0 = z.object({
-  schemaVersion: z.literal("0"),
-  request: InvestigationRequestV0,
-  diagnosis: DiagnosisResultV0,
-  onset: IncidentOnsetV0,
-  impact: IncidentImpactV0,
-  recommendation: RecommendationV0,
-  repetitions: RepetitionEvidenceV0,
-  audit: InvestigationAuditTrailV0,
-});
-export type ProvisionalEvidenceObjectV0 = z.infer<typeof ProvisionalEvidenceObjectV0>;
-
-export const NarrativeOutputV0 = z.object({
-  operations: z.string().min(1),
-  executive: z.string().min(1),
-});
-export type NarrativeOutputV0 = z.infer<typeof NarrativeOutputV0>;
-
-export const AgentRunCompletedV0 = z.object({
-  outcome: z.literal("COMPLETED"),
-  runId: z.string().uuid(),
-  diagnosis: DiagnosisResultV0,
-  evidence: ProvisionalEvidenceObjectV0,
-  toolCallsUsed: z.number().int().nonnegative(),
-  startedAt: z.string().datetime({ offset: true }),
-  completedAt: z.string().datetime({ offset: true }),
-});
-export type AgentRunCompletedV0 = z.infer<typeof AgentRunCompletedV0>;
-
-export const AgentRunFailedV0 = z.object({
-  outcome: z.literal("FAILED"),
-  runId: z.string().uuid(),
-  failureCode: InvestigationRunFailureCode,
-  message: z.string().min(1),
-  startedAt: z.string().datetime({ offset: true }),
-  completedAt: z.string().datetime({ offset: true }),
-});
-export type AgentRunFailedV0 = z.infer<typeof AgentRunFailedV0>;
-
-export const AgentRunResultV0 = z.union([AgentRunCompletedV0, AgentRunFailedV0]);
-export type AgentRunResultV0 = z.infer<typeof AgentRunResultV0>;
 
 export const validRoutingCombination = z
   .object({
@@ -225,3 +55,172 @@ export const validRoutingCombination = z
     path: ["paymentMethod"],
   });
 export type ValidRoutingCombination = z.infer<typeof validRoutingCombination>;
+
+export const investigationDimensionsSchema = Dimensions.superRefine((value, ctx) => {
+  if (value.country && value.paymentMethod) {
+    const route = validRoutingCombination.safeParse({
+      country: value.country,
+      paymentMethod: value.paymentMethod,
+    });
+    if (!route.success) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["paymentMethod"],
+        message: route.error.issues[0]?.message ?? "invalid routing combination",
+      });
+    }
+  }
+
+  if (value.paymentMethod === "PIX" && value.issuerId && value.issuerId !== "NA") {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["issuerId"],
+      message: "PIX slices must not carry an issuer other than NA",
+    });
+  }
+});
+
+export const SimilarIncident = z.object({
+  incidentId: z.string().uuid(),
+  fingerprint: z.string().min(1),
+  rootCauseDimension: z.enum(ROOT_CAUSE_DIMENSIONS).nullable(),
+  dominantDecline: z.string().min(1).nullable(),
+  summary: z.string().min(1),
+});
+export type SimilarIncident = z.infer<typeof SimilarIncident>;
+
+export const InvestigationRequestV1 = z.object({
+  schemaVersion: z.literal("1"),
+  runId: z.string().uuid(),
+  source: z.enum(["mock", "detector_orchestrator"]),
+  trigger: ConfirmedDrop,
+  context: z.object({
+    merchantId: z.string().min(1),
+    detectedAt: z.string().datetime({ offset: true }),
+    rootDimensions: investigationDimensionsSchema,
+    similarIncidents: z.array(SimilarIncident),
+  }),
+}).superRefine((value, ctx) => {
+  const triggerRoute = investigationDimensionsSchema.safeParse(value.trigger.dimensions);
+  if (!triggerRoute.success) {
+    for (const issue of triggerRoute.error.issues) {
+      ctx.addIssue({
+        ...issue,
+        path: ["trigger", "dimensions", ...issue.path],
+      });
+    }
+  }
+});
+export type InvestigationRequestV1 = z.infer<typeof InvestigationRequestV1>;
+
+export const Hypothesis = z.object({
+  dimension: z.enum(ROOT_CAUSE_DIMENSIONS),
+  value: z.string().min(1),
+});
+export type Hypothesis = z.infer<typeof Hypothesis>;
+
+export const DecisionContext = z.object({
+  tag: DecisionTag,
+  summary: z
+    .string()
+    .min(1)
+    .max(500)
+    .refine((value) => !/<thinking>/i.test(value), "summary must not include <thinking>"),
+  hypothesis: Hypothesis.nullable(),
+  basedOnStepNos: z.array(z.number().int().positive()),
+});
+export type DecisionContext = z.infer<typeof DecisionContext>;
+
+export const InvestigationAuditStep = z.object({
+  stepNo: z.number().int().positive(),
+  toolCallId: z.string().min(1),
+  toolName: InvestigationToolName,
+  toolArgs: z.record(z.string(), z.unknown()),
+  toolResult: z.record(z.string(), z.unknown()).nullable(),
+  status: z.enum(["completed", "failed"]),
+  errorCode: z.string().min(1).nullable(),
+  decisionTag: DecisionTag,
+  decisionSummary: z
+    .string()
+    .min(1)
+    .max(500)
+    .refine((value) => !/<thinking>/i.test(value), "decisionSummary must not include <thinking>"),
+  hypothesis: Hypothesis.nullable(),
+  evidenceStepNos: z.array(z.number().int().positive()),
+  createdAt: z.string().datetime({ offset: true }),
+  completedAt: z.string().datetime({ offset: true }),
+});
+export type InvestigationAuditStep = z.infer<typeof InvestigationAuditStep>;
+
+export const InvestigationAuditTrail = z.object({
+  runId: z.string().uuid(),
+  actor: z.enum(["agent", "fallback"]),
+  steps: z.array(InvestigationAuditStep),
+});
+export type InvestigationAuditTrail = z.infer<typeof InvestigationAuditTrail>;
+
+const agentDiagnosisBase = z.object({
+  selectedCell: investigationDimensionsSchema,
+  summary: z.string().min(1),
+  supportingStepNos: z.array(z.number().int().positive()),
+});
+
+export const ConclusiveAgentDiagnosis = agentDiagnosisBase.extend({
+  status: z.literal("CONCLUSIVE"),
+  conclusionTag: z.literal("STOP_CONCLUSIVE"),
+  causalDimension: z.enum(ROOT_CAUSE_DIMENSIONS),
+  declineFamily: z.string().min(1).nullable(),
+});
+export type ConclusiveAgentDiagnosis = z.infer<typeof ConclusiveAgentDiagnosis>;
+
+export const InconclusiveAgentDiagnosis = agentDiagnosisBase.extend({
+  status: z.literal("INCONCLUSIVE"),
+  conclusionTag: z.literal("STOP_INCONCLUSIVE"),
+  causalDimension: z.null(),
+  declineFamily: z.null(),
+  reason: z.enum(["INSUFFICIENT_EVIDENCE", "NO_ROOT_CAUSE", "CONFLICTING_SIGNALS"]),
+});
+export type InconclusiveAgentDiagnosis = z.infer<typeof InconclusiveAgentDiagnosis>;
+
+export const AgentDiagnosis = z.union([ConclusiveAgentDiagnosis, InconclusiveAgentDiagnosis]);
+export type AgentDiagnosis = z.infer<typeof AgentDiagnosis>;
+
+export const MatchedRecommendation = z.object({
+  playbookId: z.string().min(1),
+  owner: z.string().min(1),
+  title: z.string().min(1),
+  summary: z.string().min(1),
+  actions: z.array(z.string().min(1)).min(1),
+  humanApprovalRequired: z.literal(true),
+});
+export type MatchedRecommendation = z.infer<typeof MatchedRecommendation>;
+
+export const NarrativeOutput = z.object({
+  operations: z.string().min(1),
+  executive: z.string().min(1),
+});
+export type NarrativeOutput = z.infer<typeof NarrativeOutput>;
+
+const runResultBase = z.object({
+  runId: z.string().uuid(),
+  startedAt: z.string().datetime({ offset: true }),
+  completedAt: z.string().datetime({ offset: true }),
+  audit: InvestigationAuditTrail,
+});
+
+export const AgentRunCompleted = runResultBase.extend({
+  outcome: z.literal("COMPLETED"),
+  diagnosis: AgentDiagnosis,
+  toolCallsUsed: z.number().int().nonnegative(),
+});
+export type AgentRunCompleted = z.infer<typeof AgentRunCompleted>;
+
+export const AgentRunFailed = runResultBase.extend({
+  outcome: z.literal("FAILED"),
+  failureCode: InvestigationRunFailureCode,
+  message: z.string().min(1),
+});
+export type AgentRunFailed = z.infer<typeof AgentRunFailed>;
+
+export const AgentRunResult = z.union([AgentRunCompleted, AgentRunFailed]);
+export type AgentRunResult = z.infer<typeof AgentRunResult>;

@@ -269,22 +269,28 @@ export const investigationRuns = pgTable(
   "investigation_runs",
   {
     runId: uuid("run_id").primaryKey(),
-    incidentId: uuid("incident_id")
-      .notNull()
-      .references(() => incidents.incidentId),
+    incidentId: uuid("incident_id").references(() => incidents.incidentId),
     actor: text("actor").notNull(),
     status: text("status").notNull(),
     modelId: text("model_id"),
     promptVersion: text("prompt_version"),
+    requestSnapshot: jsonb("request_snapshot").notNull(),
     startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
     completedAt: timestamp("completed_at", { withTimezone: true }),
     failureCode: text("failure_code"),
+    conclusionTag: text("conclusion_tag"),
+    conclusionSummary: text("conclusion_summary"),
+    supportingStepNos: smallint("supporting_step_nos").array().notNull().default(sql`'{}'::smallint[]`),
   },
   (t) => [
     check("investigation_runs_actor_check", sql`${t.actor} IN ('agent','fallback')`),
     check(
       "investigation_runs_status_check",
       sql`${t.status} IN ('running','completed','failed','timed_out','exhausted')`,
+    ),
+    check(
+      "investigation_runs_conclusion_tag_check",
+      sql`${t.conclusionTag} IS NULL OR ${t.conclusionTag} IN ('STOP_CONCLUSIVE','STOP_INCONCLUSIVE')`,
     ),
     index("ix_investigation_runs_incident_started").on(t.incidentId, t.startedAt),
   ],
@@ -304,7 +310,10 @@ export const investigationSteps = pgTable(
     toolResult: jsonb("tool_result"),
     status: text("status").notNull(),
     errorCode: text("error_code"),
+    decisionTag: text("decision_tag"),
     decisionSummary: text("decision_summary"),
+    hypothesis: jsonb("hypothesis"),
+    evidenceStepNos: smallint("evidence_step_nos").array().notNull().default(sql`'{}'::smallint[]`),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
     completedAt: timestamp("completed_at", { withTimezone: true }).notNull(),
   },
@@ -314,6 +323,13 @@ export const investigationSteps = pgTable(
     check(
       "investigation_steps_status_check",
       sql`${t.status} IN ('completed','failed')`,
+    ),
+    check(
+      "investigation_steps_decision_tag_check",
+      sql`${t.decisionTag} IS NULL OR ${t.decisionTag} IN (
+        'HYPOTHESIS','DRILL_DOWN','COMPARE_HISTORY','CHECK_DECLINE_MIX',
+        'VALIDATE_RESIDUAL','CONFIRM_ONSET','ESTIMATE_IMPACT'
+      )`,
     ),
     check(
       "investigation_steps_outcome_check",

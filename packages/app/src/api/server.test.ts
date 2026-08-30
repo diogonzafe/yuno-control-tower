@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ConfirmedDrop, EvidenceObject } from "@control-tower/contracts";
 import type { RollupSource } from "../db/queries.js";
+import { InMemoryInvestigationRunRepository } from "../agent/persistence.js";
 import type { RollupRow } from "../detect/types.js";
 import { createEvidenceStore } from "./evidence-store.js";
 import { createSignalStore } from "./signal-store.js";
@@ -34,8 +35,9 @@ function build(overrides: Partial<Parameters<typeof buildServer>[0]> = {}) {
       historyRow("2026-08-30T14:06:00.000Z", 100, 40),
     ],
   };
+  const repository = new InMemoryInvestigationRunRepository();
   const app = buildServer({
-    store, evidenceStore, hub, source,
+    store, evidenceStore, hub, source, repository,
     getSchedulerStatus: () => ({
       lastTickAt: "2026-08-30T14:07:10.000Z",
       lastProcessedBucket: "2026-08-30T14:06:00.000Z",
@@ -45,7 +47,7 @@ function build(overrides: Partial<Parameters<typeof buildServer>[0]> = {}) {
     isIngestUp: () => true,
     ...overrides,
   });
-  return { app, store, evidenceStore, hub };
+  return { app, store, evidenceStore, hub, repository };
 }
 
 describe("GET /health", () => {
@@ -150,6 +152,133 @@ describe("GET /api/evidence", () => {
     const response = await app.inject({ method: "GET", url: "/api/evidence?limit=1" });
 
     expect(response.json()).toHaveLength(1);
+  });
+});
+
+describe("agentic REST endpoints", () => {
+  it("returns persisted incidents", async () => {
+    const { app, repository } = build();
+    await repository.upsertIncidentFromEvidence({
+      evidence: {
+        fingerprint: "country=BR|merchantId=BR_STORE_01|providerId=adyen#05",
+        dimensions: { merchantId: "BR_STORE_01", country: "BR", providerId: "adyen" },
+        observedRate: 0.41,
+        expectedRate: 0.95,
+        expectedSource: "cross_sectional",
+        deltaPp: 3,
+        ci: { low: 0.36, high: 0.46, level: 0.95 },
+        attempts: 420,
+        approved: 172,
+        windowBucket: "2026-08-30T14:06:00.000Z",
+        windowUsed: "1m",
+        consecutiveWindows: 3,
+        startedAt: "2026-08-30T14:03:00.000Z",
+        startedAtExact: true,
+        declineMix: [],
+        dominantDecline: "05",
+        suppressedEchoes: [],
+        lostApprovals: 244,
+        costUsdMinor: 24_400,
+        costUsdPerMin: 8_133,
+        costLocal: { BRL: 122_000 },
+        priorityScore: 8_133,
+        diagnosisSource: "beam_search",
+        investigationTrail: [],
+      },
+      narrativeOps: "ops",
+      narrativeExec: "exec",
+      playbookId: "provider-default",
+    });
+
+    const response = await app.inject({ method: "GET", url: "/api/incidents" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toHaveLength(1);
+    expect(response.json()[0].playbookId).toBe("provider-default");
+  });
+
+  it("returns runs and steps for an incident", async () => {
+    const { app, repository } = build();
+    await repository.createRun({
+      runId: "4dfbc6f5-70dd-47da-8cb1-b18b241647bf",
+      actor: "agent",
+      modelId: "openai/gpt-5.4",
+      promptVersion: "agentic-v1",
+      requestSnapshot: {
+        schemaVersion: "1",
+        runId: "4dfbc6f5-70dd-47da-8cb1-b18b241647bf",
+        source: "mock",
+        trigger: signal,
+        context: {
+          merchantId: "BR_STORE_01",
+          detectedAt: "2026-08-30T14:06:00.000Z",
+          rootDimensions: { merchantId: "BR_STORE_01", country: "BR" },
+          similarIncidents: [],
+        },
+      },
+      startedAt: "2026-08-30T14:06:00.000Z",
+    });
+    await repository.recordStep({
+      stepNo: 1,
+      toolCallId: "4dfbc6f5-70dd-47da-8cb1-b18b241647bf:1:query_conversion_slice",
+      toolName: "query_conversion_slice",
+      toolArgs: { providerId: "adyen" },
+      toolResult: { conversionRate: 0.41 },
+      status: "completed",
+      errorCode: null,
+      decisionTag: "DRILL_DOWN",
+      decisionSummary: "Checking provider slice.",
+      hypothesis: { dimension: "provider", value: "adyen" },
+      evidenceStepNos: [],
+      createdAt: "2026-08-30T14:06:00.000Z",
+      completedAt: "2026-08-30T14:06:01.000Z",
+    });
+    const incidentId = await repository.upsertIncidentFromEvidence({
+      evidence: {
+        fingerprint: "country=BR|merchantId=BR_STORE_01|providerId=adyen#05",
+        dimensions: { merchantId: "BR_STORE_01", country: "BR", providerId: "adyen" },
+        observedRate: 0.41,
+        expectedRate: 0.95,
+        expectedSource: "cross_sectional",
+        deltaPp: 3,
+        ci: { low: 0.36, high: 0.46, level: 0.95 },
+        attempts: 420,
+        approved: 172,
+        windowBucket: "2026-08-30T14:06:00.000Z",
+        windowUsed: "1m",
+        consecutiveWindows: 3,
+        startedAt: "2026-08-30T14:03:00.000Z",
+        startedAtExact: true,
+        declineMix: [],
+        dominantDecline: "05",
+        suppressedEchoes: [],
+        lostApprovals: 244,
+        costUsdMinor: 24_400,
+        costUsdPerMin: 8_133,
+        costLocal: { BRL: 122_000 },
+        priorityScore: 8_133,
+        diagnosisSource: "agent",
+        investigationTrail: [],
+      },
+      narrativeOps: "ops",
+      narrativeExec: "exec",
+      playbookId: "provider-default",
+    });
+    await repository.linkRunToIncident("4dfbc6f5-70dd-47da-8cb1-b18b241647bf", incidentId);
+
+    const runsResponse = await app.inject({
+      method: "GET",
+      url: `/api/investigation-runs?incidentId=${incidentId}`,
+    });
+    const stepsResponse = await app.inject({
+      method: "GET",
+      url: "/api/investigation-runs/4dfbc6f5-70dd-47da-8cb1-b18b241647bf/steps",
+    });
+
+    expect(runsResponse.statusCode).toBe(200);
+    expect(runsResponse.json()).toHaveLength(1);
+    expect(stepsResponse.statusCode).toBe(200);
+    expect(stepsResponse.json()[0].toolName).toBe("query_conversion_slice");
   });
 });
 

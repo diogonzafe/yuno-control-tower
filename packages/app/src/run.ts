@@ -12,6 +12,7 @@ const [
   { startConsumer },
   queries,
   { startScheduler },
+  agent,
   { createSignalStore },
   { createEvidenceStore },
   { createSseHub },
@@ -21,6 +22,7 @@ const [
   import("./ingest/consumer.js"),
   import("./db/queries.js"),
   import("./detect/scheduler.js"),
+  import("./agent/index.js"),
   import("./api/signal-store.js"),
   import("./api/evidence-store.js"),
   import("./api/sse.js"),
@@ -33,6 +35,25 @@ const port = Number(process.env.APP_PORT ?? 4000);
 const store = createSignalStore();
 const evidenceStore = createEvidenceStore();
 const hub = createSseHub();
+const repository = new agent.PostgresInvestigationRunRepository(undefined, {
+  onRun: (run) => hub.broadcast("investigation-run", run),
+  onStep: (step) => hub.broadcast("investigation-step", step),
+});
+const coordinator = agent.createAgentCoordinator({
+  source: queries.createRollupSource(),
+  declineSource: queries.createDeclineSource(),
+  loadMerchants: queries.loadMerchantConfigs,
+  loadCoverage: queries.loadRoutingCoverage,
+  loadDeclineCatalog: queries.loadDeclineCatalog,
+  repository,
+  config: agent.loadAgentConfig(),
+  onEvidence: (evidence: import("@control-tower/contracts").EvidenceObject) => {
+    evidenceStore.add([evidence]);
+    hub.broadcast("evidence", evidence);
+  },
+  onNarrative: (payload: { incidentId: string; narrative: import("@control-tower/contracts").NarrativeOutput }) =>
+    hub.broadcast("narrative", payload),
+});
 let ingestUp = true;
 
 // rules.md §6.2: the app process consumes the stream, runs the detector, and
@@ -50,13 +71,17 @@ const scheduler = startScheduler({
   loadMerchants: queries.loadMerchantConfigs,
   loadCoverage: queries.loadRoutingCoverage,
   loadDeclineCatalog: queries.loadDeclineCatalog,
+  emitDeterministicEvidence: false,
   onResult: ({ bucket, signals, evidenceGaps, evidence }) => {
     store.addSignals(signals);
     store.addGaps(evidenceGaps);
-    evidenceStore.add(evidence);
     for (const signal of signals) hub.broadcast("signal", signal);
     for (const gap of evidenceGaps) hub.broadcast("evidence-gap", gap);
-    for (const item of evidence) hub.broadcast("evidence", item);
+    for (const signal of signals) {
+      void coordinator.handleSignal(signal).catch((error: unknown) => {
+        logger.error({ error, bucket, signal }, "agent coordinator failed");
+      });
+    }
     if (signals.length > 0 || evidenceGaps.length > 0) {
       logger.info(
         { bucket, signals: signals.length, evidenceGaps: evidenceGaps.length, evidence: evidence.length },
@@ -68,11 +93,13 @@ const scheduler = startScheduler({
 
 const app = buildServer({
   store, evidenceStore, hub,
+  repository,
   source: queries.createRollupSource(),
   getSchedulerStatus: scheduler.getStatus,
   isIngestUp: () => ingestUp,
 });
 
+await coordinator.recoverOrphanRuns();
 await app.listen({ port, host: "0.0.0.0" });
 logger.info({ port }, "app started: ingest + detector + API");
 

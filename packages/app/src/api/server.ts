@@ -5,6 +5,7 @@ import type { RollupSource } from "../db/queries.js";
 import { aggregateByBucket } from "../detect/aggregate.js";
 import type { SchedulerStatus } from "../detect/scheduler.js";
 import type { SliceFilter } from "../detect/types.js";
+import type { InvestigationRunRepository } from "../agent/persistence.js";
 import type { EvidenceStore } from "./evidence-store.js";
 import type { SignalStore } from "./signal-store.js";
 import type { SseConnection, SseHub } from "./sse.js";
@@ -14,6 +15,7 @@ export type ServerDeps = {
   evidenceStore: EvidenceStore;
   hub: SseHub;
   source: RollupSource;
+  repository: InvestigationRunRepository;
   getSchedulerStatus: () => SchedulerStatus;
   isIngestUp: () => boolean;
 };
@@ -28,6 +30,10 @@ const conversionQuery = z.object({
   country: z.enum(["BR", "MX", "AR"]).optional(),
   paymentMethod: z.enum(["CARD", "PIX"]).optional(),
   issuerId: z.string().optional(),
+});
+
+const incidentRunsQuery = z.object({
+  incidentId: z.string().uuid(),
 });
 
 export function buildServer(deps: ServerDeps): FastifyInstance {
@@ -80,6 +86,33 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
       return;
     }
     return deps.store.recentGaps(query.data.limit);
+  });
+
+  app.get("/api/incidents", async (request, reply) => {
+    const query = limitQuery.safeParse(request.query);
+    if (!query.success) {
+      await reply.status(400).send({ error: "invalid query", issues: query.error.issues });
+      return;
+    }
+    return deps.repository.listIncidents(query.data.limit);
+  });
+
+  app.get("/api/investigation-runs", async (request, reply) => {
+    const query = incidentRunsQuery.safeParse(request.query);
+    if (!query.success) {
+      await reply.status(400).send({ error: "invalid query", issues: query.error.issues });
+      return;
+    }
+    return deps.repository.listRunsByIncident(query.data.incidentId);
+  });
+
+  app.get("/api/investigation-runs/:runId/steps", async (request, reply) => {
+    const params = z.object({ runId: z.string().uuid() }).safeParse(request.params);
+    if (!params.success) {
+      await reply.status(400).send({ error: "invalid params", issues: params.error.issues });
+      return;
+    }
+    return deps.repository.listSteps(params.data.runId);
   });
 
   app.get("/api/conversion", async (request, reply) => {

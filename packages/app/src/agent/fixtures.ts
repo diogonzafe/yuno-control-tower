@@ -1,9 +1,10 @@
-import {
-  type AgentRunResultV0,
-  type DiagnosisResultV0,
-  type InvestigationRequestV0,
-  type NarrativeOutputV0,
-  type ProvisionalEvidenceObjectV0,
+import type {
+  AgentDiagnosis,
+  AgentRunResult,
+  InvestigationAuditTrail,
+  InvestigationRequestV1,
+  MatchedRecommendation,
+  NarrativeOutput,
 } from "@control-tower/contracts";
 import type {
   EstimateIncidentImpactInput,
@@ -21,10 +22,10 @@ import type {
 } from "./tools.js";
 
 export interface MockScenario {
-  request: InvestigationRequestV0;
-  evidence: ProvisionalEvidenceObjectV0;
-  investigatorDiagnosis: DiagnosisResultV0;
-  narratorOutput: NarrativeOutputV0;
+  request: InvestigationRequestV1;
+  diagnosis: AgentDiagnosis;
+  recommendation: MatchedRecommendation;
+  narratorOutput: NarrativeOutput;
   toolResults: {
     queryConversionSlice: Record<string, QueryConversionSliceResult>;
     queryConversionHistory: Record<string, QueryConversionHistoryResult>;
@@ -50,61 +51,46 @@ export function stableScenarioKey(input: unknown): string {
   return JSON.stringify(input);
 }
 
-export function conversionSliceKey(input: QueryConversionSliceInput): string {
+export function conversionSliceKey(input: Omit<QueryConversionSliceInput, "decisionContext">): string {
   return stableScenarioKey(input);
 }
 
-export function conversionHistoryKey(input: QueryConversionHistoryInput): string {
+export function conversionHistoryKey(input: Omit<QueryConversionHistoryInput, "decisionContext">): string {
   return stableScenarioKey(input);
 }
 
-export function declineMixKey(input: QueryDeclineMixInput): string {
+export function declineMixKey(input: Omit<QueryDeclineMixInput, "decisionContext">): string {
   return stableScenarioKey(input);
 }
 
-export function residualTestKey(input: RunResidualTestInput): string {
+export function residualTestKey(input: Omit<RunResidualTestInput, "decisionContext">): string {
   return stableScenarioKey(input);
 }
 
-export function onsetScanKey(input: ScanIncidentOnsetInput): string {
+export function onsetScanKey(input: Omit<ScanIncidentOnsetInput, "decisionContext">): string {
   return stableScenarioKey(input);
 }
 
-export function impactEstimateKey(input: EstimateIncidentImpactInput): string {
+export function impactEstimateKey(input: Omit<EstimateIncidentImpactInput, "decisionContext">): string {
   return stableScenarioKey(input);
 }
 
-const request: InvestigationRequestV0 = {
-  schemaVersion: "0",
+const rootDimensions = {
+  merchantId: "merchant-1",
+  country: "BR",
+} as const;
+
+const request: InvestigationRequestV1 = {
+  schemaVersion: "1",
+  runId: "4dfbc6f5-70dd-47da-8cb1-b18b241647bf",
   source: "mock",
-  incident: {
-    incidentId: "62f4aa31-a6d6-4b60-bf31-95037bb6b5f2",
-    fingerprint: "merchant-1|adyen|BR|CARD|NA|issuer_timeout",
-    merchantId: "merchant-1",
-    dimensions: {
-      merchantId: "merchant-1",
-      providerId: "adyen",
-      country: "BR",
-      paymentMethod: "CARD",
-      issuerId: "NA",
-    },
-    dominantDecline: "issuer_timeout",
-    detectedAt: "2026-08-30T14:06:00.000Z",
-    startedAt: "2026-08-30T14:03:00.000Z",
-    startedAtExact: true,
-    baselineRate: 0.92,
-    currentRate: 0.51,
-    ciLow: 0.47,
-    ciHigh: 0.55,
-    ciLevel: 0.95,
-  },
   trigger: {
     dimensions: {
       merchantId: "merchant-1",
       providerId: "adyen",
       country: "BR",
       paymentMethod: "CARD",
-      issuerId: "NA",
+      issuerId: "itau",
     },
     windowBucket: "2026-08-30T14:06:00.000Z",
     observedRate: 0.51,
@@ -121,124 +107,93 @@ const request: InvestigationRequestV0 = {
     startedAtExact: true,
     consecutiveWindows: 3,
   },
-  similarIncidents: [
-    {
-      incidentId: "0db2f1b2-c643-4a6d-bbfb-18bf4c7daafe",
-      fingerprint: "merchant-1|adyen|BR|CARD|NA|issuer_timeout",
-      rootCauseDimension: "provider",
-      dominantDecline: "issuer_timeout",
-      summary: "Previous provider-side incident with similar decline mix.",
-    },
-  ],
-};
-
-const diagnosis: DiagnosisResultV0 = {
-  status: "CONCLUSIVE",
-  rootCause: {
-    dimension: "provider",
-    value: "adyen",
-    declineFamily: "network",
-    explanation: "Residual evidence isolates the provider slice while issuer echoes are suppressed.",
-  },
-  summary: "Provider degradation in BR card traffic explains the conversion drop.",
-  supportingStepNos: [1, 2, 3, 4, 5, 6],
-};
-
-const evidence: ProvisionalEvidenceObjectV0 = {
-  schemaVersion: "0",
-  request,
-  diagnosis,
-  onset: {
-    startedAt: "2026-08-30T14:03:00.000Z",
-    startedAtExact: true,
-    evidenceBuckets: [
-      "2026-08-30T14:03:00.000Z",
-      "2026-08-30T14:04:00.000Z",
-      "2026-08-30T14:05:00.000Z",
+  context: {
+    merchantId: "merchant-1",
+    detectedAt: "2026-08-30T14:06:00.000Z",
+    rootDimensions,
+    similarIncidents: [
+      {
+        incidentId: "0db2f1b2-c643-4a6d-bbfb-18bf4c7daafe",
+        fingerprint: "country=BR|merchantId=merchant-1|providerId=adyen#91",
+        rootCauseDimension: "provider",
+        dominantDecline: "91",
+        summary: "Previous provider-side incident with similar decline mix.",
+      },
     ],
   },
-  impact: {
-    lostApprovals: 173,
-    costUsdMinor: 481200,
-    costUsdPerMin: 160400,
-    priorityScore: 88.2,
-    costLocal: { BRL: 2500000 },
-  },
-  recommendation: {
-    owner: "payments-ops",
-    action: "Escalate Adyen BR card degradation through the human support channel.",
-    humanApprovalRequired: true,
-  },
-  repetitions: {
-    fingerprint: request.incident.fingerprint,
-    count: 1,
-    priorIncidentIds: ["0db2f1b2-c643-4a6d-bbfb-18bf4c7daafe"],
-  },
-  audit: {
-    runId: "4dfbc6f5-70dd-47da-8cb1-b18b241647bf",
-    actor: "agent",
-    steps: [],
-  },
 };
 
-const narratorOutput: NarrativeOutputV0 = {
+const selectedCell = {
+  merchantId: "merchant-1",
+  providerId: "adyen",
+  country: "BR",
+  paymentMethod: "CARD",
+  issuerId: "itau",
+} as const;
+
+const diagnosis: AgentDiagnosis = {
+  status: "CONCLUSIVE",
+  conclusionTag: "STOP_CONCLUSIVE",
+  selectedCell,
+  causalDimension: "provider",
+  declineFamily: "network",
+  summary: "Provider degradation in BR card traffic explains the conversion drop.",
+  supportingStepNos: [1, 2, 3],
+};
+
+const recommendation: MatchedRecommendation = {
+  playbookId: "provider-default",
+  owner: "provider-ops",
+  title: "Provider degradation escalation",
+  summary: "Escalate the provider owner and prepare a human-reviewed rerouting proposal.",
+  actions: [
+    "Open an escalation with the affected provider including the impacted slice and decline evidence.",
+    "Prepare a rerouting proposal for human approval before changing traffic.",
+  ],
+  humanApprovalRequired: true,
+};
+
+const narratorOutput: NarrativeOutput = {
   operations:
-    "Provider-level degradation on Adyen BR CARD traffic started at 2026-08-30T14:03:00.000Z and is costing 481200 USD minor units with 173 lost approvals.",
+    "Provider-level degradation on Adyen BR CARD traffic started at 2026-08-30T14:03:00.000Z and is costing 160400 USD minor units per minute.",
   executive:
-    "The incident is isolated to provider Adyen on BR card traffic, with 481200 USD minor units at risk and human approval required for remediation.",
+    "Provider Adyen on BR card traffic is costing 160400 USD minor units per minute and needs human approval for action.",
 };
 
 export const providerIncidentScenario: MockScenario = {
   request,
-  evidence,
-  investigatorDiagnosis: diagnosis,
+  diagnosis,
+  recommendation,
   narratorOutput,
   toolResults: {
     queryConversionSlice: {
       [conversionSliceKey({
-        dimensions: {
-          merchantId: "merchant-1",
-          providerId: "adyen",
-          country: "BR",
-          paymentMethod: "CARD",
-          issuerId: "NA",
-        },
-        windowBucket: "2026-08-30T14:06:00.000Z",
+        dimensions: selectedCell,
+        windowBucket: request.trigger.windowBucket,
       })]: {
-        dimensions: {
-          merchantId: "merchant-1",
-          providerId: "adyen",
-          country: "BR",
-          paymentMethod: "CARD",
-          issuerId: "NA",
-        },
-        windowBucket: "2026-08-30T14:06:00.000Z",
+        dimensions: selectedCell,
+        windowBucket: request.trigger.windowBucket,
         attempts: 420,
         approved: 214,
         conversionRate: 0.51,
         expectedConversion: 0.92,
+        expectedSource: "cross_sectional",
         deltaPp: 41,
+        ciLow: 0.47,
+        ciHigh: 0.55,
+        ciLevel: 0.95,
+        state: "MATERIAL_DROP",
       },
     },
     queryConversionHistory: {
       [conversionHistoryKey({
-        dimensions: {
-          merchantId: "merchant-1",
-          providerId: "adyen",
-          country: "BR",
-          paymentMethod: "CARD",
-          issuerId: "NA",
-        },
+        dimensions: selectedCell,
         fromBucket: "2026-08-30T14:03:00.000Z",
         toBucket: "2026-08-30T14:06:00.000Z",
       })]: {
-        dimensions: {
-          merchantId: "merchant-1",
-          providerId: "adyen",
-          country: "BR",
-          paymentMethod: "CARD",
-          issuerId: "NA",
-        },
+        dimensions: selectedCell,
+        fromBucket: "2026-08-30T14:03:00.000Z",
+        toBucket: "2026-08-30T14:06:00.000Z",
         buckets: [
           { bucket: "2026-08-30T14:03:00.000Z", attempts: 140, approved: 72, conversionRate: 0.5143 },
           { bucket: "2026-08-30T14:04:00.000Z", attempts: 138, approved: 70, conversionRate: 0.5072 },
@@ -248,20 +203,25 @@ export const providerIncidentScenario: MockScenario = {
     },
     queryDeclineMix: {
       [declineMixKey({
-        dimensions: {
-          merchantId: "merchant-1",
-          providerId: "adyen",
-          country: "BR",
-          paymentMethod: "CARD",
-          issuerId: "NA",
-        },
-        windowBucket: "2026-08-30T14:06:00.000Z",
+        dimensions: selectedCell,
+        windowBucket: request.trigger.windowBucket,
       })]: {
-        windowBucket: "2026-08-30T14:06:00.000Z",
-        dominantDecline: "issuer_timeout",
-        families: [
-          { declineCode: "issuer_timeout", family: "network", count: 118, share: 0.57 },
-          { declineCode: "do_not_honor", family: "issuer", count: 54, share: 0.26 },
+        dimensions: selectedCell,
+        windowBucket: request.trigger.windowBucket,
+        windowMinutes: 5,
+        totalDeclines: 207,
+        referenceSource: "catalog",
+        dominantDecline: "91",
+        shifts: [
+          {
+            declineCode: "91",
+            family: "network",
+            diagnostic: true,
+            count: 118,
+            observedShare: 0.57,
+            referenceShare: 0.02,
+            deltaPp: 55,
+          },
         ],
       },
     },
@@ -269,32 +229,37 @@ export const providerIncidentScenario: MockScenario = {
       [residualTestKey({
         candidateDimension: "provider",
         candidateValue: "adyen",
-        comparisonDimensions: {
+        rootDimensions,
+        windowBucket: request.trigger.windowBucket,
+      })]: {
+        rootDimensions,
+        candidateDimensions: {
           merchantId: "merchant-1",
           country: "BR",
-          paymentMethod: "CARD",
+          providerId: "adyen",
         },
-      })]: {
-        candidateDimension: "provider",
-        candidateValue: "adyen",
         verdict: "ROOT_CAUSE",
+        explainedDeficit: 38.5,
         residualDeltaPp: 38.5,
         suppressedEchoes: [
-          { dimension: "issuer", value: "itau" },
-          { dimension: "issuer", value: "bradesco" },
+          {
+            dimensions: {
+              merchantId: "merchant-1",
+              country: "BR",
+              paymentMethod: "CARD",
+            },
+            observedRate: 0.51,
+            residualRate: 0.92,
+          },
         ],
       },
     },
     scanIncidentOnset: {
       [onsetScanKey({
-        dimensions: {
-          merchantId: "merchant-1",
-          providerId: "adyen",
-          country: "BR",
-          paymentMethod: "CARD",
-          issuerId: "NA",
-        },
-        detectedAt: "2026-08-30T14:06:00.000Z",
+        dimensions: selectedCell,
+        detectedAt: request.context.detectedAt,
+        expectedConversion: 0.92,
+        deltaPp: 41,
       })]: {
         startedAt: "2026-08-30T14:03:00.000Z",
         startedAtExact: true,
@@ -307,17 +272,14 @@ export const providerIncidentScenario: MockScenario = {
     },
     estimateIncidentImpact: {
       [impactEstimateKey({
-        dimensions: {
-          merchantId: "merchant-1",
-          providerId: "adyen",
-          country: "BR",
-          paymentMethod: "CARD",
-          issuerId: "NA",
-        },
+        dimensions: selectedCell,
         startedAt: "2026-08-30T14:03:00.000Z",
-        detectedAt: "2026-08-30T14:06:00.000Z",
+        detectedAt: request.context.detectedAt,
+        expectedConversion: 0.92,
       })]: {
+        durationMin: 4,
         lostApprovals: 173,
+        avgTicketUsdMinor: 2782,
         costUsdMinor: 481200,
         costUsdPerMin: 160400,
         priorityScore: 88.2,
@@ -331,21 +293,15 @@ export const defaultMockScenario = providerIncidentScenario;
 
 export function buildExpectedCompletedRun(
   runId: string,
-  audit: ProvisionalEvidenceObjectV0["audit"],
-): AgentRunResultV0 {
-  const mergedEvidence: ProvisionalEvidenceObjectV0 = {
-    ...defaultMockScenario.evidence,
-    diagnosis: defaultMockScenario.investigatorDiagnosis,
-    audit,
-  };
-
+  audit: InvestigationAuditTrail,
+): AgentRunResult {
   return {
     outcome: "COMPLETED",
     runId,
-    diagnosis: defaultMockScenario.investigatorDiagnosis,
-    evidence: mergedEvidence,
+    diagnosis: defaultMockScenario.diagnosis,
+    audit,
     toolCallsUsed: audit.steps.length,
-    startedAt: audit.steps[0]?.createdAt ?? defaultMockScenario.request.incident.detectedAt,
-    completedAt: audit.steps.at(-1)?.completedAt ?? defaultMockScenario.request.incident.detectedAt,
+    startedAt: audit.steps[0]?.createdAt ?? defaultMockScenario.request.context.detectedAt,
+    completedAt: audit.steps.at(-1)?.completedAt ?? defaultMockScenario.request.context.detectedAt,
   };
 }
