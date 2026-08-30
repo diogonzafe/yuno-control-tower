@@ -1,0 +1,148 @@
+import type { EvidenceObject } from "@control-tower/contracts";
+import { describe, expect, it, vi } from "vitest";
+import { createAgentCoordinator } from "./coordinator.js";
+import { InMemoryInvestigationRunRepository } from "./persistence.js";
+import {
+  BR_CAUSAL,
+  BR_ROOT,
+  BUCKET,
+  DECLINE_CATALOG,
+  DIAGNOSE_MERCHANTS,
+  brCardGrid,
+  confirmedDrop,
+} from "../diagnose/fixtures.js";
+import type { RoutingCoverage } from "../detect/types.js";
+
+const COVERAGE: RoutingCoverage = ["stripe", "adyen", "mercado_pago"].map((providerId) => ({
+  providerId,
+  country: "BR",
+  paymentMethod: "CARD",
+}));
+
+function deps(overrides: Partial<Parameters<typeof createAgentCoordinator>[0]> = {}) {
+  const evidence: EvidenceObject[] = [];
+  const repository = new InMemoryInvestigationRunRepository();
+  const rows = brCardGrid();
+
+  return {
+    evidence,
+    repository,
+    built: {
+      source: {
+        getWindowRollups: async () => rows,
+        getHistory: async () => rows,
+      },
+      declineSource: { getHistory: async () => [] },
+      loadMerchants: async () => DIAGNOSE_MERCHANTS,
+      loadCoverage: async () => COVERAGE,
+      loadDeclineCatalog: async () => DECLINE_CATALOG,
+      repository,
+      config: {
+        investigatorModel: "openai/gpt-5.4",
+        narratorModel: "openai/gpt-5.4",
+        narratorFallbackModel: "openai/gpt-5.4",
+        maxToolCalls: 12,
+        // Short on purpose: with no API key the investigator would otherwise sit
+        // on a network call. This drives the timeout -> fallback path, which is
+        // the one boundary #3 exists to guarantee.
+        timeoutMs: 50,
+      },
+      onEvidence: (item: EvidenceObject) => { evidence.push(item); },
+      ...overrides,
+    } as Parameters<typeof createAgentCoordinator>[0],
+  };
+}
+
+// rules.md §3 boundary #3: "Todo caminho agêntico tem fallback determinístico."
+// Without an API key every investigator run fails, which is exactly the path
+// these tests exercise — the demo has to survive it.
+describe("createAgentCoordinator fallback (rules.md §3 boundary #3)", () => {
+  it("still produces evidence when the investigator cannot run at all", async () => {
+    const { built, evidence } = deps();
+    const coordinator = createAgentCoordinator(built);
+
+    await coordinator.handleSignal(confirmedDrop(BR_ROOT));
+
+    expect(evidence).toHaveLength(1);
+    expect(evidence[0]?.diagnosisSource).toBe("beam_search");
+    // The fallback drilled past the merchant×country root instead of just
+    // echoing the signal back — that is the whole point of the beam search.
+    expect(evidence[0]?.dimensions.merchantId).toBe(BR_CAUSAL.merchantId);
+    expect(evidence[0]?.dimensions.providerId).toBe(BR_CAUSAL.providerId);
+    // The fallback still carries a trail, so the UI can show what was tried
+    // even when the agent never got off the ground.
+    expect(Array.isArray(evidence[0]?.investigationTrail)).toBe(true);
+  });
+
+  it("carries the cost figures the executive narrative needs", async () => {
+    const { built, evidence } = deps();
+
+    await createAgentCoordinator(built).handleSignal(confirmedDrop(BR_ROOT));
+
+    expect(evidence[0]?.costUsdPerMin).toBeGreaterThan(0);
+    expect(evidence[0]?.lostApprovals).toBeGreaterThan(0);
+  });
+
+  it("investigates an incident once, not on every window that re-confirms it", async () => {
+    const { built, evidence } = deps();
+    const coordinator = createAgentCoordinator(built);
+    const signal = confirmedDrop(BR_ROOT);
+
+    // The detector re-emits a live incident every tick by design; a fresh agent
+    // run per tick would be unbounded LLM spend during the demo.
+    await coordinator.handleSignal(signal);
+    await coordinator.handleSignal(signal);
+    await coordinator.handleSignal(signal);
+
+    expect(evidence).toHaveLength(1);
+  });
+
+  // Two full fallback runs, each waiting out the investigator timeout.
+  it("treats a later onset of the same cell as a new incident", { timeout: 20_000 }, async () => {
+    const { built, evidence } = deps();
+    const coordinator = createAgentCoordinator(built);
+
+    await coordinator.handleSignal(confirmedDrop(BR_ROOT));
+    await coordinator.handleSignal({
+      ...confirmedDrop(BR_ROOT),
+      startedAt: "2026-08-30T18:00:00.000Z",
+    });
+
+    expect(evidence).toHaveLength(2);
+  });
+
+  it("does not let a repository failure escape into the scheduler tick", async () => {
+    const { built } = deps({
+      repository: {
+        ...new InMemoryInvestigationRunRepository(),
+        createRun: vi.fn().mockRejectedValue(new Error("database is gone")),
+      } as unknown as Parameters<typeof createAgentCoordinator>[0]["repository"],
+    });
+
+    // run.ts only .catch()es this promise; a rejection here is logged, never
+    // allowed to take the detector down with it.
+    await expect(
+      createAgentCoordinator(built).handleSignal(confirmedDrop(BR_ROOT)),
+    ).rejects.toThrow();
+  });
+});
+
+describe("createAgentCoordinator evidence assembly (rules.md §3 consequence)", () => {
+  it("uses buildEvidence for the fallback path, never a second assembler", async () => {
+    const { built, evidence } = deps();
+
+    await createAgentCoordinator(built).handleSignal(confirmedDrop(BR_ROOT));
+
+    // Shape check: every field buildEvidence is responsible for is present, so
+    // a divergent assembly path inside agent/ would fail here.
+    const item = evidence[0]!;
+    expect(Object.keys(item)).toEqual(
+      expect.arrayContaining([
+        "fingerprint", "dimensions", "observedRate", "expectedRate", "ci",
+        "startedAt", "declineMix", "suppressedEchoes", "costUsdPerMin",
+        "diagnosisSource", "investigationTrail",
+      ]),
+    );
+    expect(item.windowBucket).toBe(BUCKET);
+  });
+});

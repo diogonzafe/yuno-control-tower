@@ -16,12 +16,11 @@ import {
   timestamp,
   unique,
   uuid,
-  vector,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 // ══════════════ CATALOGS ══════════════
-// Mirrors context/schema.md §7. DD1-DD21 are the decision references in
+// Mirrors context/schema.md §7. DD1-DD22 are the decision references in
 // column comments below; do not diverge from them without updating that doc.
 
 export const merchants = pgTable("merchants", {
@@ -255,8 +254,6 @@ export const incidents = pgTable(
     narrativeOps: text("narrative_ops"),
     narrativeExec: text("narrative_exec"),
     playbookId: text("playbook_id"),
-    // DD15: pgvector for the approximate-match path; exact fingerprint stays primary.
-    embedding: vector("embedding", { dimensions: 1536 }),
   },
   (t) => [
     check(
@@ -264,29 +261,81 @@ export const incidents = pgTable(
       sql`${t.status} IN ('open','monitoring','resolved','inconclusive')`,
     ),
     index("ix_incident_fingerprint").on(t.fingerprint),
-    index("ix_incident_embedding")
-      .using("hnsw", t.embedding.op("vector_cosine_ops")),
   ],
 );
 
-// investigation trail: feeds the UI and the technical defense
+// DD22: one incident can have multiple isolated agent/fallback attempts.
+export const investigationRuns = pgTable(
+  "investigation_runs",
+  {
+    runId: uuid("run_id").primaryKey(),
+    incidentId: uuid("incident_id").references(() => incidents.incidentId),
+    actor: text("actor").notNull(),
+    status: text("status").notNull(),
+    modelId: text("model_id"),
+    promptVersion: text("prompt_version"),
+    requestSnapshot: jsonb("request_snapshot").notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    failureCode: text("failure_code"),
+    conclusionTag: text("conclusion_tag"),
+    conclusionSummary: text("conclusion_summary"),
+    supportingStepNos: smallint("supporting_step_nos").array().notNull().default(sql`'{}'::smallint[]`),
+  },
+  (t) => [
+    check("investigation_runs_actor_check", sql`${t.actor} IN ('agent','fallback')`),
+    check(
+      "investigation_runs_status_check",
+      sql`${t.status} IN ('running','completed','failed','timed_out','exhausted')`,
+    ),
+    check(
+      "investigation_runs_conclusion_tag_check",
+      sql`${t.conclusionTag} IS NULL OR ${t.conclusionTag} IN ('STOP_CONCLUSIVE','STOP_INCONCLUSIVE')`,
+    ),
+    index("ix_investigation_runs_incident_started").on(t.incidentId, t.startedAt),
+  ],
+);
+
+// Auditable tool trail: feeds the UI and the technical defense.
 export const investigationSteps = pgTable(
   "investigation_steps",
   {
-    incidentId: uuid("incident_id")
+    runId: uuid("run_id")
       .notNull()
-      .references(() => incidents.incidentId),
+      .references(() => investigationRuns.runId),
     stepNo: smallint("step_no").notNull(),
-    actor: text("actor").notNull(),
+    toolCallId: text("tool_call_id").notNull(),
     toolName: text("tool_name").notNull(),
     toolArgs: jsonb("tool_args").notNull(),
-    toolResult: jsonb("tool_result").notNull(),
-    reasoning: text("reasoning"),
+    toolResult: jsonb("tool_result"),
+    status: text("status").notNull(),
+    errorCode: text("error_code"),
+    decisionTag: text("decision_tag"),
+    decisionSummary: text("decision_summary"),
+    hypothesis: jsonb("hypothesis"),
+    evidenceStepNos: smallint("evidence_step_nos").array().notNull().default(sql`'{}'::smallint[]`),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }).notNull(),
   },
   (t) => [
-    primaryKey({ columns: [t.incidentId, t.stepNo] }),
-    check("investigation_steps_actor_check", sql`${t.actor} IN ('agent','fallback')`),
+    primaryKey({ columns: [t.runId, t.stepNo] }),
+    unique("uq_investigation_steps_tool_call").on(t.toolCallId),
+    check(
+      "investigation_steps_status_check",
+      sql`${t.status} IN ('completed','failed')`,
+    ),
+    check(
+      "investigation_steps_decision_tag_check",
+      sql`${t.decisionTag} IS NULL OR ${t.decisionTag} IN (
+        'HYPOTHESIS','DRILL_DOWN','COMPARE_HISTORY','CHECK_DECLINE_MIX',
+        'VALIDATE_RESIDUAL','CONFIRM_ONSET','ESTIMATE_IMPACT'
+      )`,
+    ),
+    check(
+      "investigation_steps_outcome_check",
+      sql`(${t.status} = 'completed' AND ${t.toolResult} IS NOT NULL AND ${t.errorCode} IS NULL)
+          OR (${t.status} = 'failed' AND ${t.errorCode} IS NOT NULL)`,
+    ),
   ],
 );
 

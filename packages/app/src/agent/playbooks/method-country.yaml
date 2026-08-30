@@ -1,0 +1,10 @@
+playbookId: method-country-default
+causalDimension: payment_method
+title: Rail or method-country escalation
+owner: rail-ops
+summary: Escalate the rail owner and prepare an operational alternative for review.
+declineFamily: network
+humanApprovalRequired: true
+actions:
+  - Escalate the payment rail owner with the provider, country, and method evidence.
+  - Prepare an operational alternative for human approval.

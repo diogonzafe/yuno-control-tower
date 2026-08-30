@@ -1,0 +1,10 @@
+playbookId: merchant-default
+causalDimension: merchant
+title: Merchant integration review
+owner: merchant-success
+summary: Review merchant configuration, integration, and recent changes before any remediation.
+declineFamily: merchant
+humanApprovalRequired: true
+actions:
+  - Review recent merchant configuration and integration changes in the affected slice.
+  - Contact the merchant owner with the evidence and request manual validation.

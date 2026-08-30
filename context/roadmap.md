@@ -1,6 +1,6 @@
-# The Control Tower — Roadmap (v3)
+# The Control Tower — Roadmap (v4)
 
-Atualizado após DD1–DD20. Prazo do desafio: **24 horas**. Substitui a seção de roadmap do documento de arquitetura.
+Atualizado após DD22. Prazo do desafio: **24 horas**. Substitui a seção de roadmap do documento de arquitetura.
 
 Esta versão foi reescrita para **entendimento do time**: antes das fases vem uma explicação de como o sistema funciona de ponta a ponta, com um incidente inteiro percorrido passo a passo. Quem for implementar qualquer frente deveria conseguir ler as seções 1 a 3 e saber onde seu pedaço encaixa.
 
@@ -125,7 +125,7 @@ flowchart TD
         UI["Painel web · SSE"]
     end
 
-    MEM[("Memória de incidentes<br/><small>fingerprint + pgvector</small>")]
+    MEM[("Memória de incidentes<br/><small>fingerprint exato</small>")]
 
     J --> G --> S --> R
     S --> TX
@@ -176,13 +176,14 @@ flowchart TD
 | DD12 | Cubo = as 6 dimensões do enunciado. `card_brand` e `card_type` ficam fora |
 | DD13 | 3 emissores por país, malha completa de provider × país, PIX só BR. 90 células |
 | DD14 | Bucket de 1 min · `min_volume` 30 · `δ` 3pp · gerador a ~60 TPS desigual |
-| DD15 | pgvector mantido; fingerprint exato é o caminho primário |
+| DD15 | Fingerprint exato na entrega; pgvector adiado para uma extensão avaliada |
 | DD16 | Só UI web, transporte SSE. Sem bot |
 | DD17 | Gatilho em merchant × país |
 | DD18 | Peeling para incidentes simultâneos; parcimônia como desempate |
 | DD19 | Profundidade máxima da busca: 3 dimensões |
 | DD20 | Harness de avaliação com 30 incidentes gerados |
 | DD21 | 18 decline codes internos em 7 famílias; `diagnostic` por código é o gate; código de rede fica fora do cubo |
+| DD22 | Memória agêntica isolada por run; auditoria separada em `investigation_runs` e `investigation_steps` |
 
 ### Fechadas nesta rodada, com a justificativa
 
@@ -251,9 +252,10 @@ As trilhas rodam em paralelo. As horas são de relógio, não de pessoa.
 
 ### H+13 → H+17 · Camada agêntica
 - Ferramentas envolvendo o que a etapa anterior já faz
-- Investigador em Mastra, budget de 12 passos, timeout
-- Fallback automático para o beam search
-- `investigation_steps` gravando cada pergunta e cada número
+- Investigador em Mastra, budget de 12 tools e timeout total de 45 segundos
+- Sem retry interno de LLM; orquestrador determinístico inicia o beam search após falha tipada
+- `investigation_runs` separando tentativas do agente e do fallback
+- `investigation_steps` gravando cada pergunta, número e resumo auditável
 - Narrador com saída de operações e executiva, com template determinístico de reserva
 
 **Porta de saída:** o agente resolve os mesmos casos que o beam search resolve, e a trilha aparece na tela.
@@ -261,7 +263,8 @@ As trilhas rodam em paralelo. As horas são de relógio, não de pessoa.
 
 ### H+17 → H+20 · Memória, ação e console
 - Fingerprint e reconhecimento de repetição
-- pgvector para o caso aproximado
+- DD7 preservada: tempo não altera a identidade causal; contexto temporal fica como metadado de uma futura busca
+- pgvector adiado; nenhum índice HNSW nesta entrega
 - 4 playbooks em YAML
 - Console de injeção do júri
 - **Harness de 30 incidentes**, rodando em lote

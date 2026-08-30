@@ -1,0 +1,10 @@
+playbookId: provider-default
+causalDimension: provider
+title: Provider degradation escalation
+owner: provider-ops
+summary: Escalate the provider owner and prepare a human-reviewed rerouting proposal.
+declineFamily: null
+humanApprovalRequired: true
+actions:
+  - Open an escalation with the affected provider including the impacted slice and decline evidence.
+  - Prepare a rerouting proposal for human approval before changing traffic.
