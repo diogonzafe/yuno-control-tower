@@ -1,0 +1,10 @@
+playbookId: issuer-default
+causalDimension: issuer
+title: Issuer escalation
+owner: issuer-ops
+summary: Escalate the issuer or acquirer contact and monitor the affected slice.
+declineFamily: issuer
+humanApprovalRequired: true
+actions:
+  - Escalate the impacted issuer or acquirer with the evidence trail and dominant decline family.
+  - Monitor the affected issuer slice until conversion stabilizes.

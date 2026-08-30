@@ -1,4 +1,4 @@
-import type { InvestigationStep } from "@control-tower/contracts";
+import type { InvestigationAuditStep } from "@control-tower/contracts";
 import { describe, expect, test } from "vitest";
 import { fullCoverage } from "../detect/fixtures.js";
 import {
@@ -153,22 +153,29 @@ describe("buildEvidence", () => {
 
     expect(evidence.diagnosisSource).toBe("beam_search");
     expect(evidence.investigationTrail.map((step) => step.toolName)).toEqual([
-      "query_slice",
-      "query_slice",
-      "query_slice",
-      "residual_test",
+      "query_conversion_slice",
+      "query_conversion_slice",
+      "query_conversion_slice",
+      "run_residual_test",
     ]);
   });
 
   test("keeps an agent's trail verbatim instead of replacing it", () => {
-    const trail: InvestigationStep[] = [
+    const trail: InvestigationAuditStep[] = [
       {
         stepNo: 1,
-        actor: "agent",
-        toolName: "query_slice",
+        toolCallId: "run-1:1:query_conversion_slice",
+        toolName: "query_conversion_slice",
         toolArgs: { filter: BR_ROOT },
         toolResult: { rate: 0.41 },
-        reasoning: "adyen looks isolated, checking its countries",
+        status: "completed",
+        errorCode: null,
+        decisionTag: "DRILL_DOWN",
+        decisionSummary: "Adyen looks isolated, checking its countries.",
+        hypothesis: { dimension: "provider", value: "adyen" },
+        evidenceStepNos: [],
+        createdAt: "2026-08-30T14:06:00.000Z",
+        completedAt: "2026-08-30T14:06:01.000Z",
       },
     ];
 

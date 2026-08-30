@@ -2,7 +2,7 @@ import {
   EvidenceObject,
   type DeclineMixEntry,
   type Dimensions,
-  type InvestigationStep,
+  type InvestigationAuditStep,
   type SuppressedEcho,
 } from "@control-tower/contracts";
 import type { RollupRow } from "../detect/types.js";
@@ -17,7 +17,7 @@ export type BuildEvidenceInput = {
   diagnosisSource: "agent" | "beam_search";
   // The agent path supplies the trail it actually walked; the deterministic
   // path leaves it out and gets the replay from trail.ts.
-  investigationTrail?: InvestigationStep[];
+  investigationTrail?: InvestigationAuditStep[];
 };
 
 /**

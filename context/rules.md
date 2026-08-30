@@ -95,7 +95,7 @@ Isso vem direto do roadmap §1 e é a regra mais importante deste documento:
 2. **O narrador nunca calcula.** Recebe um objeto de evidência fechado (já contém todos os números) e só produz texto. Nenhum `+`, `-`, `*`, `/` no código do narrador. Se um número aparece na narrativa que não veio literalmente de um campo do objeto de evidência, é alucinação por construção — e o teste que pega isso é obrigatório (§4).
 3. **Todo caminho agêntico tem fallback determinístico.** Nenhuma feature que passa pelo agente pode ser a única forma de chegar ao diagnóstico. Se o agente não existisse, o beam search da F2 ainda produz o mesmo resultado, só sem a trilha de investigação.
 
-Consequência direta da #3, fechada em `flight_logs/quem_monta_o_evidence_object.md`: **quem monta o `EvidenceObject` é `diagnose/evidence.ts`, deterministicamente — nunca o agente.** Se o agente montasse, o fallback precisaria de uma segunda implementação do mesmo objeto. O agente só contribui a trilha opcional; `orchestrate/` persiste o objeto pronto sem inspecioná-lo; o narrador o consome fechado (fronteira #2).
+Consequência direta da #3, fechada em `flight_logs/who_assembles_the_evidence_object.md`: **quem monta o `EvidenceObject` é `diagnose/evidence.ts`, deterministicamente — nunca o agente.** Se o agente montasse, o fallback precisaria de uma segunda implementação do mesmo objeto. O agente só contribui a trilha opcional; `orchestrate/` persiste o objeto pronto sem inspecioná-lo; o narrador o consome fechado (fronteira #2).
 
 Code review rejeita qualquer PR que viole uma destas três, independente de passar nos testes.
 
@@ -156,13 +156,13 @@ Um runtime só significa: um `package.json`, tipos compartilhados de ponta a pon
 | Monorepo | **pnpm workspaces** | Tipos compartilhados sem publicar pacote. Turborepo é overhead para 4 pacotes |
 | Contratos | **Zod** | Uma definição vira validação em runtime *e* tipo TS. É o "contrato congelado" da H+0 |
 | API | **Fastify** | SSE trivial, validação por schema nativa, TS de primeira classe. Express é mais lento e sem tipos; Nest é peso morto em 24h |
-| Banco | **Postgres 16 + pgvector** | DD15 |
+| Banco | **Postgres 16** | DD15 entrega fingerprint exato; extensão pgvector fica adiada |
 | Driver | **postgres.js** (`postgres`), sob o Drizzle | Continua sendo o driver. As queries do cubo são SQL cru via `db.execute(sql\`…\`)` — Drizzle não é usado como query builder ali |
 | Schema + migrations | **Drizzle** (`drizzle-orm` + `drizzle-kit`) sobre postgres.js | `push` durante a fase de fundações, `generate` quando congela. Resolve o `BIGINT` como string de graça. Ver §6.3.1 |
 | Stream | **Redis 7 + Redis Streams** via `ioredis` | Consumer groups e replay reais. **BullMQ é a ferramenta errada aqui**: é fila de job, não stream de eventos |
 | Estatística | **Nenhuma biblioteca** | Wilson é 8 linhas. `simple-statistics` se precisarem de algo mais |
 | Agente | **Mastra** | Ver §6.4 e `flight_logs/ai_agent_module.md` |
-| LLM | **`openai`** SDK com function calling | **GPT-5.6 Sol** no investigador, **GPT-5.6 Terra** no narrador. Ver §6.4.1 |
+| Acesso ao LLM | **Model routing do Mastra**, sem OpenAI SDK | Provider e modelo ficam atrás do adapter do módulo agêntico. Ver §6.4.1 |
 | Front | **Vite + React 19 + TypeScript** | Boot instantâneo, zero surpresa de build. Next é possível, mas SSR não serve para nada aqui |
 | Estado no front | **TanStack Query** + `EventSource` nativo | SSE não precisa de biblioteca |
 | Gráficos | **Recharts** | Barra de erro pronta, que é exatamente o visual do Wilson |
@@ -193,14 +193,13 @@ Motor e API no mesmo processo é deliberado: o detector precisa empurrar evento 
 
 ```
 control-tower/
-├── docker-compose.yml            # postgres+pgvector, redis
+├── docker-compose.yml            # postgres, redis
 ├── pnpm-workspace.yaml
 ├── .env.example
 ├── README.md                     # arquitetura + como rodar + decision log
 │
 ├── drizzle.config.ts
 ├── drizzle/                      # migrations geradas (versionadas)
-│   └── 0000_extensions.sql       # CREATE EXTENSION vector — manual, roda primeiro
 │
 ├── db/
 │   └── seeds/
@@ -215,7 +214,8 @@ control-tower/
 │   ├── contracts/                # ⚠️ congelado na H+0
 │   │   └── src/
 │   │       ├── transaction.ts    # Zod: evento de transação
-│   │       ├── incident.ts       # Zod: EvidenceObject, estados
+│   │       ├── investigation.ts  # Zod: request e resultado provisórios v0
+│   │       ├── incident.ts       # Zod: EvidenceObject final, estados
 │   │       ├── injection.ts      # Zod: comando do console do júri
 │   │       └── index.ts
 │   │
@@ -249,7 +249,7 @@ control-tower/
 │   │       ├── orchestrate/
 │   │       │   ├── fingerprint.ts
 │   │       │   ├── lifecycle.ts      # open->monitoring->resolved->inconclusive
-│   │       │   └── memory.ts         # exato + pgvector
+│   │       │   └── memory.ts         # fingerprint exato; vetor adiado
 │   │       ├── agent/
 │   │       │   ├── tools.ts          # 6 ferramentas sobre diagnose/
 │   │       │   ├── investigator.ts   # budget 12 passos, timeout
@@ -300,7 +300,7 @@ Os cinco itens marcados com ⭐ são os que ganham pontos. Se algo for cortado, 
 
 ```ts
 import { pgTable, pgEnum, text, integer, bigint, numeric, timestamp,
-         date, jsonb, uuid, boolean, primaryKey, index, vector } from 'drizzle-orm/pg-core';
+         date, jsonb, uuid, boolean, primaryKey, index } from 'drizzle-orm/pg-core';
 
 export const country = pgEnum('country', ['BR', 'MX', 'AR']);
 export const method  = pgEnum('payment_method', ['CARD', 'PIX']);
@@ -336,19 +336,15 @@ export const incidents = pgTable('incidents', {
   startedAtExact: boolean('started_at_exact').notNull().default(true),
   costUsdPerMin:  bigint('cost_usd_per_min', { mode: 'number' }).notNull(),
   evidence:     jsonb('evidence').notNull(),
-  embedding:    vector('embedding', { dimensions: 1536 }),                  // DD15
 }, (t) => [
   index('ix_incident_fingerprint').on(t.fingerprint),
-  index('ix_incident_embedding')
-    .using('hnsw', t.embedding.op('vector_cosine_ops')),
 ]);
 ```
 
-**⚠️ Três coisas que o Drizzle não gera sozinho**
+**⚠️ Duas coisas que o Drizzle não gera sozinho**
 
-1. **`CREATE EXTENSION vector`.** O `drizzle-kit` não emite isso. Precisa de uma migration manual **antes** de todas as outras, ou o `push` quebra na tabela de incidentes. Colocar em `drizzle/0000_extensions.sql` e garantir que roda primeiro.
-2. **Índices parciais e CHECKs compostos**, como o `CHECK` que impede código de cartão em transação PIX. Vão em migration manual acrescentada depois do `generate`.
-3. **Seeds.** São um script `tsx` separado, lendo os CSVs de `db/seeds/`.
+1. **Índices parciais e CHECKs compostos**, como o `CHECK` que impede código de cartão em transação PIX. Vão em migration manual acrescentada depois do `generate`.
+2. **Seeds.** São um script `tsx` separado, lendo os CSVs de `db/seeds/`.
 
 **Fluxo**
 
@@ -373,10 +369,25 @@ Studio e suporte a múltiplos providers. O custo aceito é uma dependência mais
 ampla e maior superfície conceitual durante o desafio de 24 horas.
 
 Mastra fica restrito à orquestração do julgamento agêntico. Regras numéricas e
-de negócio continuam determinísticas e independentes do framework, cada chamada
-é preservada em `investigation_steps`, e qualquer falha, timeout ou esgotamento
-do budget cai no beam search. O contrato completo e as alternativas estão em
+de negócio continuam determinísticas e independentes do framework. Cada
+tentativa é preservada em `investigation_runs`, cada chamada fica em
+`investigation_steps`, e qualquer falha, timeout ou esgotamento do budget abre
+um novo run de beam search pelo orquestrador determinístico de incidentes. O
+investigador Mastra retorna uma falha tipada e nunca chama o fallback
+diretamente. Working memory, semantic recall e observational memory entre
+incidentes ficam desabilitadas. O contrato completo e as alternativas estão em
 `flight_logs/ai_agent_module.md`.
+
+O provider ao vivo é a OpenAI, autenticada por `OPENAI_API_KEY`, mas acessada
+somente pelo model routing do Mastra. O módulo não importa o OpenAI SDK. IDs dos
+modelos permanecem em `INVESTIGATOR_MODEL`, `NARRATOR_MODEL` e
+`NARRATOR_FALLBACK_MODEL`.
+
+Memória histórica não corrige detecção. DD7 continua definindo conversão
+saudável estacionária e volume sazonal. Tempo não entra no fingerprint causal;
+em uma futura busca aproximada, horário local, tipo de dia e calendário
+operacional podem existir somente como metadados estruturados para filtro ou
+reordenação determinística.
 
 #### 6.4.1 Divisão dos modelos
 
@@ -403,7 +414,7 @@ do budget cai no beam search. O contrato completo e as alternativas estão em
     "ioredis": "^5",
     "zod": "^3",
     "pino": "^9",
-    "openai": "^5",
+    "@mastra/core": "^1",
     "yaml": "^2"           // playbooks
   },
   "devDependencies": { "tsx": "^4", "vitest": "^2", "typescript": "^5", "drizzle-kit": "^0.3" }
@@ -459,7 +470,7 @@ Isso é o motor de detecção inteiro. Tudo o mais é SQL e contagem.
 
 ```bash
 pnpm i
-docker compose up -d              # postgres+pgvector, redis
+docker compose up -d              # postgres, redis
 pnpm drizzle-kit migrate && pnpm db:seed
 pnpm --filter generator dev       # ~60 TPS
 pnpm --filter app dev             # motor + API
@@ -471,7 +482,7 @@ Quatro comandos depois do clone. Vale medir isso: um README em que o juiz roda o
 **Desvio registrado:** na prática o time roda contra Postgres+pgvector e Redis
 gerenciados na nuvem (Railway), não contra o `docker compose up -d` acima —
 não há `docker-compose.yml` no repositório. Ver
-`flight_logs/infra_gerenciada_na_nuvem.md` para o porquê. `pnpm i` +
+`flight_logs/managed_cloud_infra.md` para o porquê. `pnpm i` +
 `pnpm drizzle-kit migrate` (`DATABASE_URL`/`REDIS_URL` já apontando pra nuvem
 via `.env`) substituem a etapa do docker.
 
@@ -485,7 +496,7 @@ via `.env`) substituem a etapa do docker.
 
 **Chave da API e rate limit.** A demo depende deles. Três defesas: uma segunda chave de outra conta, o modelo de reserva configurável por `.env`, e o narrador com template determinístico de fallback. A UI nunca pode ficar em branco porque uma chamada falhou na frente do júri.
 
-**Modelo de raciocínio e latência.** O investigador faz até 12 chamadas de ferramenta em sequência. Se cada uma levar alguns segundos, o diagnóstico demora mais que a detecção, e isso aparece na demo. Medir cedo, e se necessário reduzir o budget para 8 passos — o beam search determinístico já entrega a célula, o agente só precisa refinar e justificar.
+**Modelo de raciocínio e latência.** O investigador tem no máximo 12 execuções de ferramenta e 45 segundos de relógio por run. Cada tool conta uma vez, inclusive em chamadas paralelas; turno apenas textual do modelo não conta. Não há retry interno de LLM nesta entrega: erro de provider, timeout ou budget esgotado retorna falha tipada ao orquestrador determinístico, que inicia o fallback.
 
 ---
 

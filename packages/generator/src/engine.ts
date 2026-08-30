@@ -13,6 +13,10 @@ import { transactionsPerSecond } from "./volume.ts";
 
 const logger = pino({ name: "generator-engine", level: process.env.VITEST ? "silent" : "info" });
 
+// Ten seconds of backlog at the default 60 TPS. Past this the generator is
+// losing to its sink and should shed load rather than queue it forever.
+const MAX_CARRY_EVENTS = 600;
+
 export type TransactionGenerator = {
   next: (at?: Date) => ReturnType<typeof generateTransaction>;
   addIncident: (incident: GeneratorIncident) => void;
@@ -73,34 +77,41 @@ export function startGenerator(
 
   const tick = async (): Promise<void> => {
     const at = now();
-    // Accumulate the period's expected volume before checking reentrancy, so
-    // an in-flight tick (e.g. still awaiting a slow XADD) never loses volume
-    // outright — it stays in `carry` and is emitted on the next free tick,
-    // keeping the generator at the configured ~60 TPS instead of silently
-    // under-delivering under any I/O latency.
-    carry += transactionsPerSecond(at, baseTps) * tickMilliseconds / 1_000;
+    // Carry the period's expected volume across ticks so an in-flight tick
+    // never loses it outright, but cap the backlog: without a ceiling a slow
+    // sink makes `carry` grow without bound and the generator spends the rest
+    // of the run draining a queue instead of tracking real time.
+    carry = Math.min(
+      carry + transactionsPerSecond(at, baseTps) * tickMilliseconds / 1_000,
+      MAX_CARRY_EVENTS,
+    );
     if (running) return;
 
     running = true;
     try {
       const eventsToEmit = Math.floor(carry);
       carry -= eventsToEmit;
-      // Fire the batch concurrently rather than awaiting each sink call in
-      // turn. Sequential awaiting made one tick's wall-clock cost scale with
-      // eventsToEmit × sink-latency: against a low-latency local Redis that
-      // stays under the 100ms tick budget, but against a higher-latency
-      // remote Redis it doesn't, so ticks start overlapping in intent (more
-      // carry accumulates while one is still draining), each batch grows,
-      // and the generator falls permanently behind real time instead of
-      // recovering. Not awaiting keeps a tick's own cost close to O(1).
-      for (let index = 0; index < eventsToEmit; index += 1) {
-        Promise.resolve(sink(generator.next(at))).catch((error: unknown) => {
-          // One bad event (e.g. an invalid injected incident) must not take
-          // down the whole tick, and must never surface as an unhandled
-          // promise rejection that crashes the process mid-demo.
-          logger.error({ error }, "dropped one transaction while emitting a tick");
-        });
-      }
+      // Emitted concurrently, not in an awaited loop: every sink call is a
+      // network round trip, so awaiting them one at a time caps throughput at
+      // 1/latency (~5 TPS against a cloud Redis) no matter what baseTps says.
+      // `generator.next` still runs synchronously in order here, so the seeded
+      // random sequence stays reproducible.
+      await Promise.all(
+        Array.from({ length: eventsToEmit }, async () => {
+          // Timestamp per event rather than once per tick: a batch that takes
+          // a while to drain must not stamp every event with the instant the
+          // tick began.
+          const event = generator.next(now());
+          try {
+            await sink(event);
+          } catch (error) {
+            // One bad event (e.g. an invalid injected incident) must not take
+            // down the whole tick, and must never surface as an unhandled
+            // promise rejection that crashes the process mid-demo.
+            logger.error({ error }, "dropped one transaction while emitting a tick");
+          }
+        }),
+      );
     } finally {
       running = false;
     }

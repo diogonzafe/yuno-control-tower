@@ -1,0 +1,1253 @@
+{
+  "id": "d08f6ab6-9e5d-48b6-b8a9-1cad555a7a60",
+  "prevId": "5ef7430c-6ff4-4fe8-8663-9bbb5bcb08e6",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.decline_codes": {
+      "name": "decline_codes",
+      "schema": "",
+      "columns": {
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "payment_method": {
+          "name": "payment_method",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "family": {
+          "name": "family",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "baseline_share": {
+          "name": "baseline_share",
+          "type": "numeric(5, 4)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "diagnostic": {
+          "name": "diagnostic",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "decline_codes_code_payment_method_pk": {
+          "name": "decline_codes_code_payment_method_pk",
+          "columns": [
+            "code",
+            "payment_method"
+          ]
+        }
+      },
+      "uniqueConstraints": {
+        "decline_codes_code_key": {
+          "name": "decline_codes_code_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "code"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "decline_codes_family_check": {
+          "name": "decline_codes_family_check",
+          "value": "\"decline_codes\".\"family\" IN ('issuer','funds','fraud','credential','network','auth','merchant')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.fx_rates": {
+      "name": "fx_rates",
+      "schema": "",
+      "columns": {
+        "currency": {
+          "name": "currency",
+          "type": "char(3)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "rate_date": {
+          "name": "rate_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "usd_per_unit": {
+          "name": "usd_per_unit",
+          "type": "numeric(18, 8)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "captured_at": {
+          "name": "captured_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "fx_rates_currency_rate_date_pk": {
+          "name": "fx_rates_currency_rate_date_pk",
+          "columns": [
+            "currency",
+            "rate_date"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.incidents": {
+      "name": "incidents",
+      "schema": "",
+      "columns": {
+        "incident_id": {
+          "name": "incident_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "fingerprint": {
+          "name": "fingerprint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "dimensions": {
+          "name": "dimensions",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "dominant_decline": {
+          "name": "dominant_decline",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ci_low": {
+          "name": "ci_low",
+          "type": "numeric(6, 5)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ci_high": {
+          "name": "ci_high",
+          "type": "numeric(6, 5)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ci_level": {
+          "name": "ci_level",
+          "type": "numeric(4, 3)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0.95'"
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "started_at_exact": {
+          "name": "started_at_exact",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "detected_at": {
+          "name": "detected_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "resolved_at": {
+          "name": "resolved_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "baseline_rate": {
+          "name": "baseline_rate",
+          "type": "numeric(6, 5)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "current_rate": {
+          "name": "current_rate",
+          "type": "numeric(6, 5)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "lost_approvals": {
+          "name": "lost_approvals",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cost_local": {
+          "name": "cost_local",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cost_usd_minor": {
+          "name": "cost_usd_minor",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cost_usd_per_min": {
+          "name": "cost_usd_per_min",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "priority_score": {
+          "name": "priority_score",
+          "type": "numeric(10, 4)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "evidence": {
+          "name": "evidence",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "narrative_ops": {
+          "name": "narrative_ops",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "narrative_exec": {
+          "name": "narrative_exec",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "playbook_id": {
+          "name": "playbook_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "ix_incident_fingerprint": {
+          "name": "ix_incident_fingerprint",
+          "columns": [
+            {
+              "expression": "fingerprint",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "incidents_status_check": {
+          "name": "incidents_status_check",
+          "value": "\"incidents\".\"status\" IN ('open','monitoring','resolved','inconclusive')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.investigation_runs": {
+      "name": "investigation_runs",
+      "schema": "",
+      "columns": {
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "incident_id": {
+          "name": "incident_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "actor": {
+          "name": "actor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "model_id": {
+          "name": "model_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "prompt_version": {
+          "name": "prompt_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "request_snapshot": {
+          "name": "request_snapshot",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "failure_code": {
+          "name": "failure_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "conclusion_tag": {
+          "name": "conclusion_tag",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "conclusion_summary": {
+          "name": "conclusion_summary",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "supporting_step_nos": {
+          "name": "supporting_step_nos",
+          "type": "smallint[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::smallint[]"
+        }
+      },
+      "indexes": {
+        "ix_investigation_runs_incident_started": {
+          "name": "ix_investigation_runs_incident_started",
+          "columns": [
+            {
+              "expression": "incident_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "started_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "investigation_runs_incident_id_incidents_incident_id_fk": {
+          "name": "investigation_runs_incident_id_incidents_incident_id_fk",
+          "tableFrom": "investigation_runs",
+          "tableTo": "incidents",
+          "columnsFrom": [
+            "incident_id"
+          ],
+          "columnsTo": [
+            "incident_id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "investigation_runs_actor_check": {
+          "name": "investigation_runs_actor_check",
+          "value": "\"investigation_runs\".\"actor\" IN ('agent','fallback')"
+        },
+        "investigation_runs_status_check": {
+          "name": "investigation_runs_status_check",
+          "value": "\"investigation_runs\".\"status\" IN ('running','completed','failed','timed_out','exhausted')"
+        },
+        "investigation_runs_conclusion_tag_check": {
+          "name": "investigation_runs_conclusion_tag_check",
+          "value": "\"investigation_runs\".\"conclusion_tag\" IS NULL OR \"investigation_runs\".\"conclusion_tag\" IN ('STOP_CONCLUSIVE','STOP_INCONCLUSIVE')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.investigation_steps": {
+      "name": "investigation_steps",
+      "schema": "",
+      "columns": {
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "step_no": {
+          "name": "step_no",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tool_call_id": {
+          "name": "tool_call_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tool_name": {
+          "name": "tool_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tool_args": {
+          "name": "tool_args",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tool_result": {
+          "name": "tool_result",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "error_code": {
+          "name": "error_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "decision_tag": {
+          "name": "decision_tag",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "decision_summary": {
+          "name": "decision_summary",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "hypothesis": {
+          "name": "hypothesis",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "evidence_step_nos": {
+          "name": "evidence_step_nos",
+          "type": "smallint[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::smallint[]"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "investigation_steps_run_id_investigation_runs_run_id_fk": {
+          "name": "investigation_steps_run_id_investigation_runs_run_id_fk",
+          "tableFrom": "investigation_steps",
+          "tableTo": "investigation_runs",
+          "columnsFrom": [
+            "run_id"
+          ],
+          "columnsTo": [
+            "run_id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "investigation_steps_run_id_step_no_pk": {
+          "name": "investigation_steps_run_id_step_no_pk",
+          "columns": [
+            "run_id",
+            "step_no"
+          ]
+        }
+      },
+      "uniqueConstraints": {
+        "uq_investigation_steps_tool_call": {
+          "name": "uq_investigation_steps_tool_call",
+          "nullsNotDistinct": false,
+          "columns": [
+            "tool_call_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "investigation_steps_status_check": {
+          "name": "investigation_steps_status_check",
+          "value": "\"investigation_steps\".\"status\" IN ('completed','failed')"
+        },
+        "investigation_steps_decision_tag_check": {
+          "name": "investigation_steps_decision_tag_check",
+          "value": "\"investigation_steps\".\"decision_tag\" IS NULL OR \"investigation_steps\".\"decision_tag\" IN (\n        'HYPOTHESIS','DRILL_DOWN','COMPARE_HISTORY','CHECK_DECLINE_MIX',\n        'VALIDATE_RESIDUAL','CONFIRM_ONSET','ESTIMATE_IMPACT'\n      )"
+        },
+        "investigation_steps_outcome_check": {
+          "name": "investigation_steps_outcome_check",
+          "value": "(\"investigation_steps\".\"status\" = 'completed' AND \"investigation_steps\".\"tool_result\" IS NOT NULL AND \"investigation_steps\".\"error_code\" IS NULL)\n          OR (\"investigation_steps\".\"status\" = 'failed' AND \"investigation_steps\".\"error_code\" IS NOT NULL)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.issuer_banks": {
+      "name": "issuer_banks",
+      "schema": "",
+      "columns": {
+        "issuer_id": {
+          "name": "issuer_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "country": {
+          "name": "country",
+          "type": "char(2)",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.merchants": {
+      "name": "merchants",
+      "schema": "",
+      "columns": {
+        "merchant_id": {
+          "name": "merchant_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expected_conversion": {
+          "name": "expected_conversion",
+          "type": "numeric(6, 5)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "min_material_drop_pp": {
+          "name": "min_material_drop_pp",
+          "type": "numeric(4, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'3.0'"
+        },
+        "avg_ticket_usd_minor": {
+          "name": "avg_ticket_usd_minor",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.playbooks": {
+      "name": "playbooks",
+      "schema": "",
+      "columns": {
+        "playbook_id": {
+          "name": "playbook_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "causal_dimension": {
+          "name": "causal_dimension",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "decline_family": {
+          "name": "decline_family",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "action_template": {
+          "name": "action_template",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.providers": {
+      "name": "providers",
+      "schema": "",
+      "columns": {
+        "provider_id": {
+          "name": "provider_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.rollup_declines_minute": {
+      "name": "rollup_declines_minute",
+      "schema": "",
+      "columns": {
+        "bucket": {
+          "name": "bucket",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "merchant_id": {
+          "name": "merchant_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "provider_id": {
+          "name": "provider_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "country": {
+          "name": "country",
+          "type": "char(2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "payment_method": {
+          "name": "payment_method",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "issuer_id": {
+          "name": "issuer_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "decline_code": {
+          "name": "decline_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "count": {
+          "name": "count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "rollup_declines_minute_bucket_merchant_id_provider_id_country_payment_method_issuer_id_decline_code_pk": {
+          "name": "rollup_declines_minute_bucket_merchant_id_provider_id_country_payment_method_issuer_id_decline_code_pk",
+          "columns": [
+            "bucket",
+            "merchant_id",
+            "provider_id",
+            "country",
+            "payment_method",
+            "issuer_id",
+            "decline_code"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.rollup_minute": {
+      "name": "rollup_minute",
+      "schema": "",
+      "columns": {
+        "bucket": {
+          "name": "bucket",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "merchant_id": {
+          "name": "merchant_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "provider_id": {
+          "name": "provider_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "country": {
+          "name": "country",
+          "type": "char(2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "payment_method": {
+          "name": "payment_method",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "issuer_id": {
+          "name": "issuer_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "attempts": {
+          "name": "attempts",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "approved": {
+          "name": "approved",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "amount_minor_sum": {
+          "name": "amount_minor_sum",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "amount_usd_sum": {
+          "name": "amount_usd_sum",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "approved_usd_sum": {
+          "name": "approved_usd_sum",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "latency_p50_ms": {
+          "name": "latency_p50_ms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "ix_rollup_bucket": {
+          "name": "ix_rollup_bucket",
+          "columns": [
+            {
+              "expression": "bucket",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "rollup_minute_bucket_merchant_id_provider_id_country_payment_method_issuer_id_pk": {
+          "name": "rollup_minute_bucket_merchant_id_provider_id_country_payment_method_issuer_id_pk",
+          "columns": [
+            "bucket",
+            "merchant_id",
+            "provider_id",
+            "country",
+            "payment_method",
+            "issuer_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.routing_coverage": {
+      "name": "routing_coverage",
+      "schema": "",
+      "columns": {
+        "provider_id": {
+          "name": "provider_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "country": {
+          "name": "country",
+          "type": "char(2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "payment_method": {
+          "name": "payment_method",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "routing_coverage_provider_id_providers_provider_id_fk": {
+          "name": "routing_coverage_provider_id_providers_provider_id_fk",
+          "tableFrom": "routing_coverage",
+          "tableTo": "providers",
+          "columnsFrom": [
+            "provider_id"
+          ],
+          "columnsTo": [
+            "provider_id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "routing_coverage_provider_id_country_payment_method_pk": {
+          "name": "routing_coverage_provider_id_country_payment_method_pk",
+          "columns": [
+            "provider_id",
+            "country",
+            "payment_method"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.transactions": {
+      "name": "transactions",
+      "schema": "",
+      "columns": {
+        "transaction_id": {
+          "name": "transaction_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "merchant_order_id": {
+          "name": "merchant_order_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "merchant_id": {
+          "name": "merchant_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "provider_id": {
+          "name": "provider_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "country": {
+          "name": "country",
+          "type": "char(2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "payment_method": {
+          "name": "payment_method",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "currency": {
+          "name": "currency",
+          "type": "char(3)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "amount_minor": {
+          "name": "amount_minor",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fx_rate": {
+          "name": "fx_rate",
+          "type": "numeric(18, 8)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fx_rate_date": {
+          "name": "fx_rate_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fx_source": {
+          "name": "fx_source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "amount_usd_minor": {
+          "name": "amount_usd_minor",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "decline_code": {
+          "name": "decline_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "raw_decline_code": {
+          "name": "raw_decline_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "card_brand": {
+          "name": "card_brand",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "card_type": {
+          "name": "card_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "card_bin": {
+          "name": "card_bin",
+          "type": "char(6)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "issuer_id": {
+          "name": "issuer_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'NA'"
+        },
+        "token": {
+          "name": "token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "latency_ms": {
+          "name": "latency_ms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "ix_transactions_created_at": {
+          "name": "ix_transactions_created_at",
+          "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ix_transactions_cube": {
+          "name": "ix_transactions_cube",
+          "columns": [
+            {
+              "expression": "merchant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "provider_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "country",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "payment_method",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "issuer_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "transactions_merchant_id_merchants_merchant_id_fk": {
+          "name": "transactions_merchant_id_merchants_merchant_id_fk",
+          "tableFrom": "transactions",
+          "tableTo": "merchants",
+          "columnsFrom": [
+            "merchant_id"
+          ],
+          "columnsTo": [
+            "merchant_id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "transactions_provider_id_providers_provider_id_fk": {
+          "name": "transactions_provider_id_providers_provider_id_fk",
+          "tableFrom": "transactions",
+          "tableTo": "providers",
+          "columnsFrom": [
+            "provider_id"
+          ],
+          "columnsTo": [
+            "provider_id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "transactions_issuer_id_issuer_banks_issuer_id_fk": {
+          "name": "transactions_issuer_id_issuer_banks_issuer_id_fk",
+          "tableFrom": "transactions",
+          "tableTo": "issuer_banks",
+          "columnsFrom": [
+            "issuer_id"
+          ],
+          "columnsTo": [
+            "issuer_id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "transactions_decline_code_fkey": {
+          "name": "transactions_decline_code_fkey",
+          "tableFrom": "transactions",
+          "tableTo": "decline_codes",
+          "columnsFrom": [
+            "decline_code"
+          ],
+          "columnsTo": [
+            "code"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "transactions_status_check": {
+          "name": "transactions_status_check",
+          "value": "\"transactions\".\"status\" IN ('SUCCESS','DECLINED')"
+        },
+        "transactions_card_type_check": {
+          "name": "transactions_card_type_check",
+          "value": "\"transactions\".\"card_type\" IN ('debit','credit')"
+        },
+        "decline_code_consistency": {
+          "name": "decline_code_consistency",
+          "value": "(\"transactions\".\"status\" = 'DECLINED') = (\"transactions\".\"decline_code\" IS NOT NULL)"
+        }
+      },
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

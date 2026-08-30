@@ -44,7 +44,21 @@ describe("contracts", () => {
   it("accepts the agent path, carrying an investigation trail", () => {
     const withTrail = {
       ...validEvidence, diagnosisSource: "agent",
-      investigationTrail: [{ stepNo: 1, actor: "agent", toolName: "query_slice", toolArgs: { splitBy: "country" }, toolResult: { BR: 0.38 }, reasoning: null }],
+      investigationTrail: [{
+        stepNo: 1,
+        toolCallId: "run-1:1:query_conversion_slice",
+        toolName: "query_conversion_slice",
+        toolArgs: { splitBy: "country" },
+        toolResult: { BR: 0.38 },
+        status: "completed",
+        errorCode: null,
+        decisionTag: "DRILL_DOWN",
+        decisionSummary: "Compared countries for the provider slice.",
+        hypothesis: { dimension: "country", value: "BR" },
+        evidenceStepNos: [],
+        createdAt: "2026-08-30T14:06:00.000Z",
+        completedAt: "2026-08-30T14:06:01.000Z",
+      }],
     };
     expect(() => EvidenceObject.parse(withTrail)).not.toThrow();
   });

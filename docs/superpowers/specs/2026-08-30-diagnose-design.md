@@ -7,9 +7,9 @@ doc_related:
   - "YCT-AGENTS-001"
   - "context/schema.md"
   - "context/roadmap.md"
-  - "flight_logs/diagnostico_por_densidade_de_deficit.md"
-  - "flight_logs/mix_de_recusas_referencia_catalogo.md"
-  - "flight_logs/prioridade_pelo_custo_conservador.md"
+  - "flight_logs/diagnosis_by_deficit_density.md"
+  - "flight_logs/decline_mix_catalogue_reference.md"
+  - "flight_logs/priority_by_conservative_cost.md"
 domain: "diagnosis-engine"
 dimension_schema:
   - "merchant"
@@ -117,7 +117,7 @@ explicada: quem termina a busca é o resíduo.
 
 Densidade primeiro, magnitude depois, parcimônia por último. A justificativa e as
 alternativas descartadas estão em
-`flight_logs/diagnostico_por_densidade_de_deficit.md`.
+`flight_logs/diagnosis_by_deficit_density.md`.
 
 ### 4.3 Peeling
 
@@ -131,14 +131,14 @@ Deslocamento do share por código contra `decline_codes.baseline_share`, com o m
 da própria célula assumindo quando ela tem histórico suficiente. A janela alarga
 de 1 para 5 e 15 minutos até somar recusas suficientes para ler. `91` e `AB03`
 são desambiguados pela dispersão. Ver
-`flight_logs/mix_de_recusas_referencia_catalogo.md`.
+`flight_logs/decline_mix_catalogue_reference.md`.
 
 ### 4.5 Custo e prioridade
 
 Acumulado de `started_at` — varredura retroativa reusada de
 `detect/onset-scan.ts` (DD8) — até a janela de detecção. Aprovações perdidas com
 `ci_high`, custo em USD e na moeda local, e `priority_score` igual ao custo por
-minuto. Ver `flight_logs/prioridade_pelo_custo_conservador.md`.
+minuto. Ver `flight_logs/priority_by_conservative_cost.md`.
 
 ### 4.6 Evidência insuficiente
 

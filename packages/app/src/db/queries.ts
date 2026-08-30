@@ -1,16 +1,23 @@
 import { EvidenceObject } from "@control-tower/contracts";
-import { and, desc, eq, gte, lt, lte, sql } from "drizzle-orm";
-import type { DeclineCode, DeclineRollupRow } from "../diagnose/types";
-import type { MerchantConfig, RollupRow, RoutingCoverage } from "../detect/types";
-import { db } from "./client";
-import { declineCodes, incidents, issuerBanks, merchants, providers, rollupDeclinesMinute, rollupMinute, routingCoverage } from "./schema";
+import { and, desc, eq, gte, lt, sql } from "drizzle-orm";
+import { db } from "./client.js";
+import { declineCodes, incidents, issuerBanks, merchants, providers, rollupDeclinesMinute, rollupMinute, routingCoverage } from "./schema.js";
+import type { MerchantConfig, RollupRow, RoutingCoverage } from "../detect/types.js";
+import type { DeclineCode, DeclineRollupRow } from "../diagnose/types.js";
 
+// SQL implementation belongs to the DB-layer branch; the detector receives arrays.
 export interface RollupSource {
   getWindowRollups(bucket: string): Promise<RollupRow[]>;
   getHistory(fromBucket: string, toBucket: string): Promise<RollupRow[]>;
 }
 
-function toRollupRow(row: typeof rollupMinute.$inferSelect): RollupRow {
+type RollupSelect = typeof rollupMinute.$inferSelect;
+
+// bucket is a TIMESTAMPTZ (Drizzle hands back a Date) while RollupRow.bucket is
+// an ISO string, and country is char(2) while RollupRow.country is a union —
+// both are narrowed here, once, at the SQL boundary, so the pure engine keeps
+// receiving exactly the shape its fixtures already use.
+function toRollupRow(row: RollupSelect): RollupRow {
   return {
     bucket: row.bucket.toISOString(),
     merchantId: row.merchantId,
@@ -26,20 +33,60 @@ function toRollupRow(row: typeof rollupMinute.$inferSelect): RollupRow {
   };
 }
 
-export async function getWindowRollups(bucket: string): Promise<RollupRow[]> {
-  const rows = await db.select().from(rollupMinute).where(eq(rollupMinute.bucket, new Date(bucket)));
-  return rows.map(toRollupRow);
+export function createRollupSource(): RollupSource {
+  return {
+    async getWindowRollups(bucket) {
+      const rows = await db.select().from(rollupMinute).where(eq(rollupMinute.bucket, new Date(bucket)));
+      return rows.map(toRollupRow);
+    },
+    async getHistory(fromBucket, toBucket) {
+      const rows = await db
+        .select()
+        .from(rollupMinute)
+        .where(and(gte(rollupMinute.bucket, new Date(fromBucket)), lt(rollupMinute.bucket, new Date(toBucket))));
+      return rows.map(toRollupRow);
+    },
+  };
 }
 
-export async function getHistory(fromBucket: string, toBucket: string): Promise<RollupRow[]> {
+export async function loadMerchantConfigs(): Promise<MerchantConfig[]> {
   const rows = await db
-    .select()
-    .from(rollupMinute)
-    .where(and(gte(rollupMinute.bucket, new Date(fromBucket)), lt(rollupMinute.bucket, new Date(toBucket))));
-  return rows.map(toRollupRow);
+    .select({
+      merchantId: merchants.merchantId,
+      expectedConversion: merchants.expectedConversion,
+      minMaterialDropPp: merchants.minMaterialDropPp,
+    })
+    .from(merchants);
+
+  // numeric() without an explicit mode is Drizzle's string mode. Passing those
+  // strings into the Wilson comparison would silently never fire.
+  return rows.map((row) => ({
+    merchantId: row.merchantId,
+    expectedConversion: Number(row.expectedConversion),
+    minMaterialDropPp: Number(row.minMaterialDropPp),
+  }));
 }
 
-function toDeclineRow(row: typeof rollupDeclinesMinute.$inferSelect): DeclineRollupRow {
+export async function loadRoutingCoverage(): Promise<RoutingCoverage> {
+  return db
+    .select({
+      providerId: routingCoverage.providerId,
+      country: routingCoverage.country,
+      paymentMethod: routingCoverage.paymentMethod,
+    })
+    .from(routingCoverage);
+}
+
+// SQL implementation belongs to the DB-layer branch; diagnose/ receives arrays,
+// same boundary RollupSource already draws for the detector.
+export interface DeclineSource {
+  getWindowDeclines(bucket: string): Promise<DeclineRollupRow[]>;
+  getHistory(fromBucket: string, toBucket: string): Promise<DeclineRollupRow[]>;
+}
+
+type DeclineRollupSelect = typeof rollupDeclinesMinute.$inferSelect;
+
+function toDeclineRollupRow(row: DeclineRollupSelect): DeclineRollupRow {
   return {
     bucket: row.bucket.toISOString(),
     merchantId: row.merchantId,
@@ -52,30 +99,44 @@ function toDeclineRow(row: typeof rollupDeclinesMinute.$inferSelect): DeclineRol
   };
 }
 
-export async function getDeclineRollups(fromBucket: string, toBucket: string): Promise<DeclineRollupRow[]> {
+export function createDeclineSource(): DeclineSource {
+  return {
+    async getWindowDeclines(bucket) {
+      const rows = await db
+        .select()
+        .from(rollupDeclinesMinute)
+        .where(eq(rollupDeclinesMinute.bucket, new Date(bucket)));
+      return rows.map(toDeclineRollupRow);
+    },
+    async getHistory(fromBucket, toBucket) {
+      const rows = await db
+        .select()
+        .from(rollupDeclinesMinute)
+        .where(
+          and(
+            gte(rollupDeclinesMinute.bucket, new Date(fromBucket)),
+            lt(rollupDeclinesMinute.bucket, new Date(toBucket)),
+          ),
+        );
+      return rows.map(toDeclineRollupRow);
+    },
+  };
+}
+
+export async function loadDeclineCatalog(): Promise<DeclineCode[]> {
   const rows = await db
-    .select()
-    .from(rollupDeclinesMinute)
-    .where(and(gte(rollupDeclinesMinute.bucket, new Date(fromBucket)), lte(rollupDeclinesMinute.bucket, new Date(toBucket))));
-  return rows.map(toDeclineRow);
-}
+    .select({
+      code: declineCodes.code,
+      paymentMethod: declineCodes.paymentMethod,
+      family: declineCodes.family,
+      baselineShare: declineCodes.baselineShare,
+      diagnostic: declineCodes.diagnostic,
+    })
+    .from(declineCodes);
 
-export async function getMerchantConfigs(): Promise<MerchantConfig[]> {
-  const rows = await db.select().from(merchants);
-  return rows.map((row) => ({
-    merchantId: row.merchantId,
-    expectedConversion: Number(row.expectedConversion),
-    minMaterialDropPp: Number(row.minMaterialDropPp),
-  }));
-}
-
-export async function getRoutingCoverage(): Promise<RoutingCoverage> {
-  const rows = await db.select().from(routingCoverage);
-  return rows.map((row) => ({ providerId: row.providerId, country: row.country, paymentMethod: row.paymentMethod }));
-}
-
-export async function getDeclineCodeCatalog(): Promise<DeclineCode[]> {
-  const rows = await db.select().from(declineCodes);
+  // Same trap as loadMerchantConfigs: numeric() without an explicit mode
+  // arrives as a string, and a string baseline share would silently never
+  // move a decline-mix delta.
   return rows.map((row) => ({
     code: row.code,
     paymentMethod: row.paymentMethod as DeclineCode["paymentMethod"],
@@ -84,6 +145,11 @@ export async function getDeclineCodeCatalog(): Promise<DeclineCode[]> {
     diagnostic: row.diagnostic,
   }));
 }
+
+// ══════════════ WEB READ PATH ══════════════
+// packages/web's Next.js API routes call these through @control-tower/app.
+// They read the same tables as the sources above but shaped for direct
+// display, not for the detector/agent pipeline.
 
 export type IncidentRow = {
   incidentId: string;
@@ -100,8 +166,6 @@ export type IncidentRow = {
 // everything the panel shows (drill-down trail, decline mix, echoes, cost),
 // so this is the only incident query the web app needs.
 export async function getIncidents(limit = 100): Promise<IncidentRow[]> {
-  // Explicit columns, not select(): the live table predates schema.ts's
-  // pgvector `embedding` column, and `select *` would fail on it.
   const rows = await db
     .select({
       incidentId: incidents.incidentId,
