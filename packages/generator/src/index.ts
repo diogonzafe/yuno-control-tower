@@ -1,3 +1,4 @@
+export * from "./auto-incidents.ts";
 export * from "./catalog.ts";
 export * from "./emit.ts";
 export * from "./engine.ts";

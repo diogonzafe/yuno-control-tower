@@ -1,4 +1,5 @@
 import type { PaymentMethod } from "./mix.ts";
+import { createSeededRandom, type SeededRandom } from "./random.ts";
 import type { TransactionCell } from "./transaction.ts";
 
 export type Country = "AR" | "MX" | "BR";
@@ -8,6 +9,16 @@ export type Merchant = {
   name: string;
   country: Country;
   expectedConversion: number;
+};
+
+export type MerchantIdentity = { merchantId: string; name: string; country: Country };
+
+export type BuildGeneratorCatalogOptions = {
+  /** Applied to every merchant unless `randomizeConversion` is set. Default 0.90. */
+  defaultConversion?: number;
+  /** When true, each merchant's conversion is `defaultConversion` +/- 0.05 instead of the exact value. */
+  randomizeConversion?: boolean;
+  random?: SeededRandom;
 };
 
 export type MerchantTrafficWeights = Readonly<Record<string, number>>;
@@ -35,43 +46,73 @@ const providers = [
   { providerId: "mercado_pago", name: "Mercado Pago" },
 ] as const;
 
-// Every value below mirrors the real, seeded rows in the shared Postgres
-// catalog (merchants, providers, issuer_banks, routing_coverage) — transactions
+// Every id below mirrors the real, seeded rows in the shared Postgres catalog
+// (merchants, providers, issuer_banks, routing_coverage) — transactions
 // carries NOT NULL foreign keys into those tables, so an id that doesn't exist
 // there is silently dropped by the ingestion consumer's poison-batch handling.
 // Merchants are country-scoped (BR_STORE_01 never trades in AR or MX): 9
 // merchants x their own country's routes reproduces DD13's 90 cells exactly.
-export const defaultGeneratorCatalog: GeneratorCatalog = {
-  merchants: [
-    { merchantId: "AR_STORE_01", name: "Pampa Digital", country: "AR", expectedConversion: 0.87 },
-    { merchantId: "AR_STORE_02", name: "Rivera Tienda", country: "AR", expectedConversion: 0.90 },
-    { merchantId: "AR_STORE_03", name: "Andes Mercado", country: "AR", expectedConversion: 0.88 },
-    { merchantId: "BR_STORE_01", name: "Aurora Marketplace", country: "BR", expectedConversion: 0.92 },
-    { merchantId: "BR_STORE_02", name: "Vitrine Prime", country: "BR", expectedConversion: 0.89 },
-    { merchantId: "BR_STORE_03", name: "Rota Sul Comercio", country: "BR", expectedConversion: 0.94 },
-    { merchantId: "MX_STORE_01", name: "Sol Azteca Retail", country: "MX", expectedConversion: 0.91 },
-    { merchantId: "MX_STORE_02", name: "Delta Norte Shop", country: "MX", expectedConversion: 0.93 },
-    { merchantId: "MX_STORE_03", name: "Casa Maya Online", country: "MX", expectedConversion: 0.89 },
-  ],
-  providers,
-  issuers: [
-    { issuerId: "itau", name: "Itau", country: "BR" },
-    { issuerId: "nubank", name: "Nubank", country: "BR" },
-    { issuerId: "bradesco", name: "Bradesco", country: "BR" },
-    { issuerId: "bbva_mx", name: "BBVA Mexico", country: "MX" },
-    { issuerId: "banorte", name: "Banorte", country: "MX" },
-    { issuerId: "citibanamex", name: "Citibanamex", country: "MX" },
-    { issuerId: "galicia", name: "Galicia", country: "AR" },
-    { issuerId: "santander_rio", name: "Santander Rio", country: "AR" },
-    { issuerId: "macro", name: "Macro", country: "AR" },
-  ],
-  routingCoverage: providers.flatMap((provider) => [
-    { providerId: provider.providerId, country: "AR" as const, paymentMethod: "CARD" as const },
-    { providerId: provider.providerId, country: "MX" as const, paymentMethod: "CARD" as const },
-    { providerId: provider.providerId, country: "BR" as const, paymentMethod: "CARD" as const },
-    { providerId: provider.providerId, country: "BR" as const, paymentMethod: "PIX" as const },
-  ]),
-};
+const merchantIdentities: readonly MerchantIdentity[] = [
+  { merchantId: "AR_STORE_01", name: "Pampa Digital", country: "AR" },
+  { merchantId: "AR_STORE_02", name: "Rivera Tienda", country: "AR" },
+  { merchantId: "AR_STORE_03", name: "Andes Mercado", country: "AR" },
+  { merchantId: "BR_STORE_01", name: "Aurora Marketplace", country: "BR" },
+  { merchantId: "BR_STORE_02", name: "Vitrine Prime", country: "BR" },
+  { merchantId: "BR_STORE_03", name: "Rota Sul Comercio", country: "BR" },
+  { merchantId: "MX_STORE_01", name: "Sol Azteca Retail", country: "MX" },
+  { merchantId: "MX_STORE_02", name: "Delta Norte Shop", country: "MX" },
+  { merchantId: "MX_STORE_03", name: "Casa Maya Online", country: "MX" },
+];
+
+const issuerIdentities: readonly Issuer[] = [
+  { issuerId: "itau", name: "Itau", country: "BR" },
+  { issuerId: "nubank", name: "Nubank", country: "BR" },
+  { issuerId: "bradesco", name: "Bradesco", country: "BR" },
+  { issuerId: "bbva_mx", name: "BBVA Mexico", country: "MX" },
+  { issuerId: "banorte", name: "Banorte", country: "MX" },
+  { issuerId: "citibanamex", name: "Citibanamex", country: "MX" },
+  { issuerId: "galicia", name: "Galicia", country: "AR" },
+  { issuerId: "santander_rio", name: "Santander Rio", country: "AR" },
+  { issuerId: "macro", name: "Macro", country: "AR" },
+];
+
+const routingCoverage: readonly RoutingCoverage[] = providers.flatMap((provider) => [
+  { providerId: provider.providerId, country: "AR" as const, paymentMethod: "CARD" as const },
+  { providerId: provider.providerId, country: "MX" as const, paymentMethod: "CARD" as const },
+  { providerId: provider.providerId, country: "BR" as const, paymentMethod: "CARD" as const },
+  { providerId: provider.providerId, country: "BR" as const, paymentMethod: "PIX" as const },
+]);
+
+const DEFAULT_CONVERSION = 0.90;
+const CONVERSION_RANDOMIZATION_SPREAD = 0.05;
+
+// The merchant-level expected conversion is parameterized (never hardcoded
+// per merchant) — see GENERATOR_DEFAULT_CONVERSION / GENERATOR_RANDOMIZE_CONVERSION
+// in run.ts. Merchant identity (id, name, country) stays fixed: those are the
+// real seeded catalog rows, not a tunable.
+export function buildGeneratorCatalog(options: BuildGeneratorCatalogOptions = {}): GeneratorCatalog {
+  const base = options.defaultConversion ?? DEFAULT_CONVERSION;
+  if (!Number.isFinite(base) || base <= 0 || base >= 1) {
+    throw new Error("defaultConversion must be a probability strictly between 0 and 1");
+  }
+  const randomize = options.randomizeConversion ?? false;
+  const random = options.random ?? createSeededRandom(Date.now());
+
+  return {
+    merchants: merchantIdentities.map((identity) => ({
+      ...identity,
+      expectedConversion: randomize ? randomizedConversion(base, random) : base,
+    })),
+    providers,
+    issuers: issuerIdentities,
+    routingCoverage,
+  };
+}
+
+function randomizedConversion(base: number, random: SeededRandom): number {
+  const offset = (random.next() * 2 - 1) * CONVERSION_RANDOMIZATION_SPREAD;
+  return Math.min(0.99, Math.max(0.5, base + offset));
+}
 
 export function buildTransactionCells(
   catalog: GeneratorCatalog,

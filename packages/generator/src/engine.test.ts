@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { defaultGeneratorCatalog } from "./catalog.ts";
+import { buildGeneratorCatalog } from "./catalog.ts";
 import { createGenerator, startGenerator } from "./engine.ts";
 import { createSeededRandom } from "./random.ts";
 
@@ -19,7 +19,7 @@ const equalTrafficWeights = {
 describe("createGenerator", () => {
   it("selects only covered cells and respects merchant traffic weights", () => {
     const generator = createGenerator({
-      catalog: defaultGeneratorCatalog,
+      catalog: buildGeneratorCatalog(),
       trafficWeights: { ...equalTrafficWeights, BR_STORE_01: 3, BR_STORE_02: 2, BR_STORE_03: 1 },
       random: createSeededRandom(7),
     });
@@ -38,7 +38,7 @@ describe("createGenerator", () => {
 
   it("applies and removes an injected incident", () => {
     const generator = createGenerator({
-      catalog: defaultGeneratorCatalog,
+      catalog: buildGeneratorCatalog(),
       trafficWeights: equalTrafficWeights,
       random: createSeededRandom(11),
     });
@@ -65,7 +65,7 @@ describe("startGenerator", () => {
   it("drops only the one sink call that throws, not the rest of that tick's batch, and never rejects unhandled", async () => {
     vi.useFakeTimers();
     const generator = createGenerator({
-      catalog: defaultGeneratorCatalog,
+      catalog: buildGeneratorCatalog(),
       trafficWeights: equalTrafficWeights,
       random: createSeededRandom(3),
     });

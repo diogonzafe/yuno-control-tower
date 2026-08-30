@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { defaultGeneratorCatalog } from "./catalog.ts";
+import { buildGeneratorCatalog } from "./catalog.ts";
 import { createGenerator } from "./engine.ts";
 import { buildInjectApi } from "./inject-api.ts";
 
@@ -17,7 +17,7 @@ const trafficWeights = {
 };
 
 function freshGenerator() {
-  return createGenerator({ catalog: defaultGeneratorCatalog, trafficWeights });
+  return createGenerator({ catalog: buildGeneratorCatalog(), trafficWeights });
 }
 
 describe("buildInjectApi", () => {
