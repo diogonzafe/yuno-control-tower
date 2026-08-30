@@ -1,16 +1,16 @@
 import { randomUUID } from "node:crypto";
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { eq, inArray } from "drizzle-orm";
 import type { TransactionEvent } from "@control-tower/contracts";
 import { db } from "../db/client";
-import { merchants, providers, issuerBanks, transactions } from "../db/schema";
+import { transactions } from "../db/schema";
 import { insertTransactions } from "./insert-transactions";
 
 function testEvent(overrides: Partial<TransactionEvent> = {}): TransactionEvent {
   return {
     transactionId: randomUUID(),
     merchantOrderId: "order-test",
-    merchantId: "merchant-1",
+    merchantId: "BR_STORE_01",
     providerId: "adyen",
     country: "BR",
     paymentMethod: "CARD",
@@ -36,26 +36,6 @@ function testEvent(overrides: Partial<TransactionEvent> = {}): TransactionEvent 
 
 const insertedIds: string[] = [];
 
-beforeAll(async () => {
-  // Create required foreign key references
-  await db.insert(merchants).values({
-    merchantId: "merchant-1",
-    name: "Test Merchant",
-    expectedConversion: "0.90",
-    avgTicketUsdMinor: 5000,
-  }).onConflictDoNothing();
-
-  await db.insert(providers).values({
-    providerId: "adyen",
-    name: "Adyen",
-  }).onConflictDoNothing();
-
-  await db.insert(issuerBanks).values({
-    issuerId: "itau",
-    name: "Itaú",
-  }).onConflictDoNothing();
-});
-
 afterEach(async () => {
   if (insertedIds.length > 0) {
     await db.delete(transactions).where(inArray(transactions.transactionId, insertedIds));
@@ -76,7 +56,7 @@ describe("insertTransactions", () => {
       .select()
       .from(transactions)
       .where(eq(transactions.transactionId, event.transactionId));
-    expect(row?.merchantId).toBe("merchant-1");
+    expect(row?.merchantId).toBe("BR_STORE_01");
     expect(row?.amountMinor).toBe(1000);
   });
 
