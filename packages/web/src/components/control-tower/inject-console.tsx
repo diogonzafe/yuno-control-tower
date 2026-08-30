@@ -13,12 +13,26 @@ type Form = {
   providerId: string;
   issuerId: string;
   merchantId: string;
-  multiplier: number;
+  targetRate: number;
 };
 
 type ActiveIncident = { id: string; dimensions: Record<string, string>; conversionMultiplier: number };
 
-const initialForm: Form = { country: "BR", paymentMethod: "CARD", providerId: "", issuerId: "", merchantId: "", multiplier: 0.15 };
+// The generator multiplies each cell's baseline conversion by `conversionMultiplier`
+// (see packages/generator/src/transaction.ts). The jury thinks in "conversion drops
+// to X", not in multipliers, so the form takes a target rate and we divide it back
+// out against the generator's default baseline (GENERATOR_DEFAULT_CONVERSION, default
+// 0.90 — see packages/generator/src/catalog.ts). Per-route offsets (PIX +0.05, AR, MX)
+// and per-merchant randomization shift the real baseline slightly, so the achieved
+// rate is approximate.
+const BASELINE_CONVERSION = 0.9;
+
+const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+
+const targetRateToMultiplier = (targetRate: number) =>
+  clamp(Number.isFinite(targetRate) ? targetRate / BASELINE_CONVERSION : 1, 0, 1);
+
+const initialForm: Form = { country: "BR", paymentMethod: "CARD", providerId: "", issuerId: "", merchantId: "", targetRate: 0.3 };
 
 export function InjectConsole({ catalog, catalogFailed }: { catalog: Catalog | null; catalogFailed: boolean }) {
   const [form, setForm] = useState<Form>(initialForm);
@@ -61,7 +75,7 @@ export function InjectConsole({ catalog, catalogFailed }: { catalog: Catalog | n
           id: `jury-${Date.now()}`,
           startsAt: new Date().toISOString(),
           dimensions,
-          conversionMultiplier: form.multiplier,
+          conversionMultiplier: targetRateToMultiplier(form.targetRate),
         }),
       });
       refreshActive();
@@ -128,9 +142,9 @@ export function InjectConsole({ catalog, catalogFailed }: { catalog: Catalog | n
         </div>
 
         <div className="ct-field">
-          <label>6 · Conversion multiplier</label>
-          <input type="number" min={0} max={1} step={0.05} value={form.multiplier} onChange={(event) => update("multiplier", Number(event.target.value))} />
-          <small>0 kills conversion entirely for the slice; 1 leaves it untouched.</small>
+          <label>6 · Conversion during incident</label>
+          <input type="number" min={0} max={BASELINE_CONVERSION} step={0.05} value={form.targetRate} onChange={(event) => update("targetRate", Number(event.target.value))} />
+          <small>Conversion for the slice drops to about this rate (baseline ≈ {BASELINE_CONVERSION}). 0 kills it entirely; {BASELINE_CONVERSION} leaves it untouched. Sent as ×{targetRateToMultiplier(form.targetRate).toFixed(2)}.</small>
         </div>
 
         <div>
@@ -142,7 +156,7 @@ export function InjectConsole({ catalog, catalogFailed }: { catalog: Catalog | n
             <span>Active injections</span>
             {active.map((incident) => (
               <div className="ct-active" key={incident.id}>
-                <span>{Object.entries(incident.dimensions).map(([key, value]) => `${key}=${value}`).join(" · ") || "whole portfolio"} · ×{incident.conversionMultiplier}</span>
+                <span>{Object.entries(incident.dimensions).map(([key, value]) => `${key}=${value}`).join(" · ") || "whole portfolio"} · conv ↓ ≈{(incident.conversionMultiplier * BASELINE_CONVERSION).toFixed(2)}</span>
                 <button type="button" onClick={() => remove(incident.id)} aria-label={`Remove injection ${incident.id}`}>✕</button>
               </div>
             ))}
