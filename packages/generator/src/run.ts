@@ -33,9 +33,16 @@ const random = createSeededRandom(randomizeConversion || randomizeIncidents ? Da
 
 const catalog = buildGeneratorCatalog({ defaultConversion, randomizeConversion, random });
 
+// DD14 locks the spec's target at ~60 TPS against a low-latency Redis; this
+// stays the default. Override only when the deployment's Redis round-trip
+// can't sustain it (e.g. a remote instance over the public internet), where
+// unbounded backlog would otherwise grow because emitTransaction awaits each
+// XADD sequentially — see flight_logs for the measured symptom.
+const baseTps = parseOptionalNumber(process.env.GENERATOR_BASE_TPS) ?? 60;
+
 const redis = new Redis(redisUrl);
 const generator = createGenerator({ catalog, trafficWeights, random });
-const runtime = startGenerator(generator, (event) => emitTransaction(redis, event));
+const runtime = startGenerator(generator, (event) => emitTransaction(redis, event), { baseTps });
 
 for (const incident of pickAutoIncidents(catalog, autoIncidentCount, random, new Date())) {
   generator.addIncident(incident);
@@ -47,7 +54,7 @@ await injectApi.listen({ port: injectPort, host: "127.0.0.1" });
 logger.info(
   {
     stream: "stream:transactions",
-    baseTps: 60,
+    baseTps,
     injectPort,
     defaultConversion: defaultConversion ?? "default (0.90)",
     randomizeConversion,

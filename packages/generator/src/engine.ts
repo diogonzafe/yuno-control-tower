@@ -85,15 +85,21 @@ export function startGenerator(
     try {
       const eventsToEmit = Math.floor(carry);
       carry -= eventsToEmit;
+      // Fire the batch concurrently rather than awaiting each sink call in
+      // turn. Sequential awaiting made one tick's wall-clock cost scale with
+      // eventsToEmit × sink-latency: against a low-latency local Redis that
+      // stays under the 100ms tick budget, but against a higher-latency
+      // remote Redis it doesn't, so ticks start overlapping in intent (more
+      // carry accumulates while one is still draining), each batch grows,
+      // and the generator falls permanently behind real time instead of
+      // recovering. Not awaiting keeps a tick's own cost close to O(1).
       for (let index = 0; index < eventsToEmit; index += 1) {
-        try {
-          await sink(generator.next(at));
-        } catch (error) {
+        Promise.resolve(sink(generator.next(at))).catch((error: unknown) => {
           // One bad event (e.g. an invalid injected incident) must not take
           // down the whole tick, and must never surface as an unhandled
           // promise rejection that crashes the process mid-demo.
           logger.error({ error }, "dropped one transaction while emitting a tick");
-        }
+        });
       }
     } finally {
       running = false;
