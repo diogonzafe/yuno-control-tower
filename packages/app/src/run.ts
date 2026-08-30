@@ -110,9 +110,9 @@ const coordinator = agent.createAgentCoordinator({
   onNarrative: (payload: { incidentId: string; narrative: import("@control-tower/contracts").NarrativeOutput }) =>
     hub.broadcast("narrative", payload),
   onMemoryError: (error: unknown) => logger.warn({ error }, "incident memory recall failed"),
-  // AGENT_FALLBACK_ENABLED=false only: the incident keeps the deterministic
-  // evidence written at tick time but never gets a narrative, and a warning
-  // is the only thing standing between that and a silent gap.
+  // Default path (AGENT_FALLBACK_ENABLED unset): the incident keeps the
+  // deterministic evidence written at tick time but never gets a narrative, and
+  // a warning is the only thing standing between that and a silent gap.
   onFallbackSkipped: (input: { incidentId: string; runId: string }) =>
     logger.warn(input, "deterministic fallback disabled, incident left without a narrative"),
 });

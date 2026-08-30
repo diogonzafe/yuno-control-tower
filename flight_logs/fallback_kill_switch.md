@@ -39,3 +39,13 @@ accept it because the alternative — no switch — means the only way out of a
 misbehaving fallback during the demo is a code change and a redeploy. The
 `onFallbackSkipped` callback exists precisely so that state is loud rather than
 a card that quietly never gets its story.
+
+## Update — default flipped to off
+
+`readFallbackEnabled` now returns true only for the literal `"true"`; unset means
+off. The beam-search + narrator fallback is opt-in. Boundary #3 still holds one
+layer down: `orchestrate/incidents.ts` writes the incident row from deterministic
+evidence at tick time, so the detection never depends on the agent. What the
+default-off state loses is the enriched evidence and the narrative on a failed
+investigation, and `onFallbackSkipped` still logs a warning per incident so the
+gap is visible.

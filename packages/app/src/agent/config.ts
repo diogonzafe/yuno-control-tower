@@ -20,11 +20,13 @@ function readPositiveInt(value: string | undefined, fallback: number): number {
   return parsed;
 }
 
-// rules.md §3 boundary #3 requires the deterministic fallback, so the default is
-// on and stays on: this is a kill switch for an operator watching the fallback
-// itself misbehave, not a design choice. Anything other than "false" keeps it.
+// The deterministic fallback is off by default: a failed investigation leaves
+// the incident with the deterministic evidence orchestrate/incidents.ts already
+// wrote at tick time (boundary #3, one layer down) and skips the extra beam
+// search + narrator run. An operator opts back in with AGENT_FALLBACK_ENABLED
+// set to the literal "true"; anything else leaves it off.
 function readFallbackEnabled(value: string | undefined): boolean {
-  return value !== "false";
+  return value === "true";
 }
 
 export function loadAgentConfig(env: NodeJS.ProcessEnv = process.env): AgentConfig {
