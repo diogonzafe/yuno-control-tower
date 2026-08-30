@@ -1,0 +1,64 @@
+%% The Control Tower — Yuno Control Tower / Caspheon
+%% Architecture diagram. Source of truth: context/roadmap.md §3 + current code under packages/.
+%% Colour semantics: grey = simulation, purple = deterministic, green = agentic (LLM), orange = storage.
+flowchart TD
+    subgraph SIM["Simulation · packages/generator"]
+        GEN["Stream generator<br/><small>~60 TPS · 90 cells · seeded · stationary rate</small>"]
+        INJ["Inject API :4100<br/><small>jury console · parametric &amp; auto incidents</small>"]
+    end
+
+    STREAM[["Redis Stream · stream:transactions<br/><small>managed cloud</small>"]]
+
+    subgraph APP["Application · packages/app · single Node process"]
+        CONS["Ingest consumer<br/><small>micro-batch · dedup via RETURNING</small>"]
+
+        subgraph DET["Detection · deterministic · timer-driven tick"]
+            D1["Absolute trigger<br/><small>merchant × country vs expected_conversion</small>"]
+            D2["Cross-sectional cut<br/><small>vs siblings · same window</small>"]
+            D3["Wilson interval + persistence<br/><small>z = 1.96 · 3 windows · 4 states</small>"]
+        end
+
+        subgraph DIAG["Diagnosis"]
+            COORD["Agent coordinator<br/><small>run lifecycle · dedup · fingerprint</small>"]
+            AGENT["Investigator agent<br/><small>Mastra · 1 per incident · tool/step budget · timeout</small>"]
+            TOOLS["Agent tools<br/><small>query_slice · residual_test · peeling<br/>decline_mix · retro-scan</small>"]
+            FB["Fallback · beam search + peeling<br/><small>deterministic runDiagnosis</small>"]
+            EVID["buildEvidence<br/><small>closed EvidenceObject · deterministic</small>"]
+        end
+
+        subgraph OUT["Output"]
+            NARR["Narrator · LLM<br/><small>ops + executive · deterministic template reserve</small>"]
+            PLAY["Playbooks<br/><small>4 YAML · structured action · never executed</small>"]
+            API["REST API + SSE hub<br/><small>Fastify · /api/* · /api/stream</small>"]
+        end
+    end
+
+    PG[("Postgres · managed cloud<br/><small>transactions · rollup_minute · rollup_declines_minute<br/>merchants · routing_coverage · fx_rates · decline catalog<br/>incidents · investigation_runs · investigation_steps</small>")]
+
+    WEB["Web UI · packages/web<br/><small>live conversion · incident feed · evidence panel · inject console</small>"]
+
+    INJ --> GEN --> STREAM --> CONS --> PG
+    PG --> D1 & D2
+    D1 & D2 --> D3
+    D3 -->|ConfirmedDrop / evidence gap| COORD
+    COORD --> AGENT
+    AGENT <--> TOOLS
+    TOOLS --> PG
+    AGENT -.->|timeout · error · budget| FB
+    AGENT --> EVID
+    FB --> EVID
+    EVID --> NARR --> PLAY --> API
+    COORD --> PG
+    API --> PG
+    API -->|REST + SSE| WEB
+    WEB -.->|operator injects incident| INJ
+
+    classDef sim fill:#F1EFE8,stroke:#5F5E5A,color:#2C2C2A
+    classDef det fill:#EEEDFE,stroke:#534AB7,color:#26215C
+    classDef ag fill:#E1F5EE,stroke:#0F6E56,color:#04342C
+    classDef store fill:#FDF0E7,stroke:#B8642A,color:#4A2810
+
+    class GEN,INJ sim
+    class CONS,D1,D2,D3,COORD,EVID,PLAY det
+    class AGENT,TOOLS,FB,NARR ag
+    class STREAM,PG,WEB store
