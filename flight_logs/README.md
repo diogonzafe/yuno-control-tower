@@ -15,3 +15,5 @@ Arquivos:
 3. `transacoes_sincronas.md` — Transações Síncronas
 4. `quantidade_de_valores_dimensoes.md` — Definição de Quantidade de Valores Das Dimensões
 5. `cotacao_em_dolar.md` — Dólar como moeda padrão mas com registro de moeda local
+6. `contrato_do_evento_de_transacao.md` — Contrato do evento de transação no Redis Stream
+7. `ingestao_em_micro_batch_com_dedup.md` — Ingestão em micro-batch com deduplicação via RETURNING
