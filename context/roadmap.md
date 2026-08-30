@@ -193,7 +193,7 @@ flowchart TD
 | — | **Parcimônia** como desempate | Entre células que explicam igualmente bem, reportar a que fixa menos dimensões. Necessário porque PIX ⇒ BR cria empates estruturais |
 | DD19 | Profundidade máxima **3** | Fixar as 5 dimensões dá célula única, quase sempre específica demais e com amostra minúscula |
 | — | **Sem Benjamini-Hochberg** | A poda hierárquica já reduz os testes em ordens de grandeza. Ter a resposta pronta para a sabatina vale mais que o código |
-| — | Máquina de estados **enxuta**: `candidato → confirmado → em curso → resolvido` | O estado "em recuperação" foi cortado por escopo. `em curso` atualiza sem re-alertar, que é o que evita 36 alertas num incidente de 3h |
+| — | Máquina de estados **enxuta**: `'open' -> 'monitoring' -> 'resolved' -> 'inconclusive'` | O estado "em recuperação" foi cortado por escopo. `em curso` atualiza sem re-alertar, que é o que evita 36 alertas num incidente de 3h |
 | — | **Um modelo de LLM, rápido**, com cache por fingerprint + estado | Latência na narrativa é percebida como sistema lento, e sem cache o texto é regerado a cada atualização |
 | — | **4 playbooks**, um por dimensão causal | provider · emissor · método × país · merchant |
 | DD20 | **Harness de 30 incidentes**, não 200 | Vocês injetam, logo têm ground truth. 30 cabe em 24h e já dá número para o slide |

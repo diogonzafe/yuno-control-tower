@@ -243,7 +243,7 @@ control-tower/
 │   │       │   └── cost.ts           # ponta conservadora do intervalo
 │   │       ├── orchestrate/
 │   │       │   ├── fingerprint.ts
-│   │       │   ├── lifecycle.ts      # candidato→confirmado→em curso→resolvido
+│   │       │   ├── lifecycle.ts      # open->monitoring->resolved->inconclusive
 │   │       │   └── memory.ts         # exato + pgvector
 │   │       ├── agent/
 │   │       │   ├── tools.ts          # 6 ferramentas sobre diagnose/
