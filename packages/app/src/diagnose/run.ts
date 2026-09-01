@@ -56,12 +56,17 @@ export type Diagnosis = {
 // culprit (schema.md §8).
 const OUTAGE_CODES = new Set(["91", "AB03"]);
 
-type Root = { root: SliceFilter; consecutiveWindows: number };
+type Root = { root: SliceFilter; consecutiveWindows: number; rootSignal: ConfirmedDrop | null };
 
 // Several signals collapse onto one merchant x country root (DD17): the
 // provider that tripped the cross-sectional cut and the root that tripped the
 // absolute one are the same incident. The oldest confirmation among them is
 // the one that answers "how long has this been going on".
+//
+// `rootSignal` keeps the exact root-level signal (dimensions === {merchantId,
+// country}, nothing narrower) when one exists among the collapsed set. It is
+// what the no-peel branch below trusts instead of re-deriving MATERIAL_DROP
+// from this tick's single window alone.
 function rootsOf(signals: ConfirmedDrop[]): Root[] {
   const roots = new Map<string, Root>();
   for (const signal of signals) {
@@ -69,9 +74,11 @@ function rootsOf(signals: ConfirmedDrop[]): Root[] {
     if (merchantId === undefined || country === undefined) continue;
     const key = `${merchantId}|${country}`;
     const previous = roots.get(key);
+    const isRootLevel = Object.keys(signal.dimensions).length === 2;
     roots.set(key, {
       root: { merchantId, country },
       consecutiveWindows: Math.max(previous?.consecutiveWindows ?? 0, signal.consecutiveWindows),
+      rootSignal: isRootLevel ? signal : previous?.rootSignal ?? null,
     });
   }
   return [...roots.values()];
@@ -115,7 +122,7 @@ export function runDiagnosis(input: DiagnoseInput): Diagnosis[] {
   const windowRows = input.rollups.filter((row) => row.bucket === input.windowBucket);
   const diagnoses: Diagnosis[] = [];
 
-  for (const { root, consecutiveWindows } of rootsOf(input.signals)) {
+  for (const { root, consecutiveWindows, rootSignal } of rootsOf(input.signals)) {
     const merchant = input.merchants.find((entry) => entry.merchantId === root.merchantId);
     if (merchant === undefined) continue;
     const expected = merchant.expectedConversion;
@@ -126,9 +133,49 @@ export function runDiagnosis(input: DiagnoseInput): Diagnosis[] {
     if (peels.length === 0) {
       // The root is materially down yet no child separates from its siblings:
       // say so instead of promoting the least innocent cell (spec.md §5).
+      const onset = onsetScan(input.rollups, root, input.windowBucket, expected, deltaPp);
+
+      if (rootSignal !== null) {
+        // A root-level signal already confirmed MATERIAL_DROP over
+        // `consecutiveWindows` persisted windows (detect/persistence.ts) —
+        // trust those already-validated numbers instead of re-deriving state
+        // from this tick's single window alone. A lone noisy minute can read
+        // as WITHIN_NORMAL or INSUFFICIENT_EVIDENCE by chance even while the
+        // drop is real and ongoing (the same class of noise persistence.ts's
+        // gap-tolerant fix already accounts for on the detection side); redoing
+        // the check here on one window silently dropped the diagnosis — and
+        // with it the incident — whenever that happened.
+        diagnoses.push({
+          root,
+          cell: root,
+          causalDimension: "merchant",
+          confidence: "INCONCLUSIVE",
+          windowBucket: input.windowBucket,
+          ...onset,
+          attempts: rootSignal.attempts,
+          approved: rootSignal.approved,
+          observedRate: rootSignal.observedRate,
+          expectedRate: rootSignal.expectedRate,
+          expectedSource: rootSignal.expectedSource,
+          deltaPp,
+          ci: { low: rootSignal.ciLow, high: rootSignal.ciHigh },
+          ciLevel: rootSignal.ciLevel,
+          windowUsed: rootSignal.windowUsed,
+          consecutiveWindows,
+          explainedDeficit: Math.max(0, rootSignal.attempts * expected - rootSignal.approved),
+          declineMix: null,
+          outageAttribution: null,
+          impact: estimateImpact(input.rollups, root, expected, onset.startedAt, input.windowBucket),
+          suppressedEchoes: [],
+        });
+        continue;
+      }
+
+      // No root-level signal collapsed here — only narrower cross-sectional
+      // ones did (DD17) — so there is no already-validated root reading to
+      // trust. Fall back to deriving one from this tick's window, as before.
       const residual = residualDeficit(windowRows, root, expected, deltaPp);
       if (residual.state !== "MATERIAL_DROP") continue;
-      const onset = onsetScan(input.rollups, root, input.windowBucket, expected, deltaPp);
       diagnoses.push({
         root,
         cell: root,

@@ -178,3 +178,14 @@ export function brFlatDropGrid(bucket = BUCKET): RollupRow[] {
     ["itau", "nubank", "bradesco"].map((issuerId) => brCard(providerId, issuerId, 40, 28, bucket)),
   );
 }
+
+// Every cell at 200/178 (rate 0.89) — comfortably HEALTHY against the 0.9
+// expected/3pp delta (limit 0.87), with n large enough that the Wilson
+// interval's low bound clears 0.87 too. Models the single noisy tick a
+// persistence-confirmed root can land on: this window alone reads fine even
+// while the signal that triggered diagnosis stayed materially down.
+export function brNoisyHealthyGrid(bucket = BUCKET): RollupRow[] {
+  return ["stripe", "adyen", "mercado_pago"].flatMap((providerId) =>
+    ["itau", "nubank", "bradesco"].map((issuerId) => brCard(providerId, issuerId, 200, 178, bucket)),
+  );
+}

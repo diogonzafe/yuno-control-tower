@@ -10,6 +10,7 @@ import {
   MX_ROOT,
   brFlatDropGrid,
   brFullGrid,
+  brNoisyHealthyGrid,
   confirmedDrop,
   declineRow,
   mxIssuerGrid,
@@ -100,6 +101,29 @@ describe("runDiagnosis", () => {
     expect(diagnoses).toHaveLength(1);
     expect(diagnoses[0]!.confidence).toBe("INCONCLUSIVE");
     expect(cellKey(diagnoses[0]!.cell)).toBe("country=BR|merchantId=BR_STORE_01");
+  });
+
+  test("still reports the root-level signal when this tick's own window reads healthy", () => {
+    // The signal is a real, persistence-confirmed drop (detect/persistence.ts
+    // already required consecutive MATERIAL_DROP windows to produce it), but
+    // this specific tick's rollups look fine on their own — ordinary
+    // minute-to-minute noise, not a resolution. Before the fix this silently
+    // produced zero diagnoses (and therefore no incident) whenever a signal's
+    // own tick happened to land on a healthy-looking window.
+    const diagnoses = runDiagnosis({
+      ...base,
+      signals: [confirmedDrop(BR_ROOT)],
+      rollups: brNoisyHealthyGrid(),
+    });
+
+    expect(diagnoses).toHaveLength(1);
+    expect(diagnoses[0]!.confidence).toBe("INCONCLUSIVE");
+    expect(cellKey(diagnoses[0]!.cell)).toBe("country=BR|merchantId=BR_STORE_01");
+    // Reports the signal's own validated numbers, not a re-derivation from
+    // this window's (healthy-looking) rollups.
+    expect(diagnoses[0]!.attempts).toBe(1400);
+    expect(diagnoses[0]!.approved).toBe(1078);
+    expect(diagnoses[0]!.observedRate).toBe(0.7);
   });
 
   test("attaches the decline shift and names the issuer as the causal dimension", () => {
