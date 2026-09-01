@@ -39,6 +39,18 @@ const DROP_MULTIPLIER = targetRateToMultiplier(DROP_TARGET_RATE);
 
 const initialForm: Form = { country: "BR", paymentMethod: "CARD", providerId: "", issuerId: "", merchantId: "" };
 
+// Mirrors packages/app/src/diagnose/peeling.test.ts's "separates two
+// simultaneous causes under the same root" fixture with real seeded catalog
+// values: same merchant+country root, disjoint provider×issuer cells,
+// deliberately different severities so the two incidents also come out with
+// different priority — the peeling/deficit-density path (not the naive
+// absolute-deficit one, which collapses them into their shared ancestor) is
+// exactly what's supposed to separate and rank these correctly.
+const DUAL_INCIDENT_SCENARIO = [
+  { suffix: "a", providerId: "stripe", issuerId: "itau", conversionMultiplier: 0.15 },
+  { suffix: "b", providerId: "adyen", issuerId: "nubank", conversionMultiplier: 0.5 },
+] as const;
+
 export function InjectConsole({ catalog, catalogFailed }: { catalog: Catalog | null; catalogFailed: boolean }) {
   const [form, setForm] = useState<Form>(initialForm);
   const [active, setActive] = useState<ActiveIncident[]>([]);
@@ -68,6 +80,18 @@ export function InjectConsole({ catalog, catalogFailed }: { catalog: Catalog | n
     ...(key === "paymentMethod" && value === "PIX" ? { issuerId: "" } : {}),
   }));
 
+  const postIncident = async (id: string, dimensions: Record<string, string>, conversionMultiplier: number) => {
+    const response = await fetch("/api/inject", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, startsAt: new Date().toISOString(), dimensions, conversionMultiplier }),
+    });
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(body || `Injection failed (${response.status})`);
+    }
+  };
+
   const submit = async () => {
     setSubmitting(true);
     setSubmitError(null);
@@ -79,20 +103,29 @@ export function InjectConsole({ catalog, catalogFailed }: { catalog: Catalog | n
       if (form.issuerId) dimensions.issuerId = form.issuerId;
       if (form.merchantId) dimensions.merchantId = form.merchantId;
 
-      const response = await fetch("/api/inject", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: `jury-${Date.now()}`,
-          startsAt: new Date().toISOString(),
-          dimensions,
-          conversionMultiplier: DROP_MULTIPLIER,
-        }),
-      });
-      if (!response.ok) {
-        const body = await response.text();
-        throw new Error(body || `Injection failed (${response.status})`);
-      }
+      await postIncident(`jury-${Date.now()}`, dimensions, DROP_MULTIPLIER);
+      refreshActive();
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : "Injection failed");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const submitDualScenario = async () => {
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      const now = Date.now();
+      await Promise.all(
+        DUAL_INCIDENT_SCENARIO.map((incident) =>
+          postIncident(
+            `jury-dual-${incident.suffix}-${now}`,
+            { merchantId: "BR_STORE_01", country: "BR", paymentMethod: "CARD", providerId: incident.providerId, issuerId: incident.issuerId },
+            incident.conversionMultiplier,
+          ),
+        ),
+      );
       refreshActive();
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : "Injection failed");
@@ -162,6 +195,13 @@ export function InjectConsole({ catalog, catalogFailed }: { catalog: Catalog | n
           <button type="button" className="ct-btn ct-btn--primary" onClick={submit} disabled={submitting || pixOnlyBr}>Inject drop now</button>
           <small>Drops conversion for the selected slice to ≈{DROP_TARGET_RATE.toFixed(2)} (baseline ≈ {BASELINE_CONVERSION}).</small>
           {submitError && <small role="alert">{submitError}</small>}
+        </div>
+
+        <div>
+          <button type="button" className="ct-btn ct-btn--ghost" onClick={submitDualScenario} disabled={submitting} style={{ width: "100%" }}>
+            Simulate two simultaneous incidents
+          </button>
+          <small>BR_STORE_01 · CARD, two disjoint provider/issuer cells at once — one severe, one moderate.</small>
         </div>
 
         {active.length > 0 && (
