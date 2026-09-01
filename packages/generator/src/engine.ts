@@ -75,15 +75,8 @@ export function startGenerator(
   let carry = 0;
   let running = false;
 
-  // TEMP DEBUG
-  let lastTickAt = 0;
-  let tickCallCount = 0;
-
   const tick = async (): Promise<void> => {
     const at = now();
-    tickCallCount += 1;
-    const realElapsedMs = lastTickAt === 0 ? -1 : at.getTime() - lastTickAt;
-    lastTickAt = at.getTime();
     // Carry the period's expected volume across ticks so an in-flight tick
     // never loses it outright, but cap the backlog: without a ceiling a slow
     // sink makes `carry` grow without bound and the generator spends the rest
@@ -92,18 +85,12 @@ export function startGenerator(
       carry + transactionsPerSecond(at, baseTps) * tickMilliseconds / 1_000,
       MAX_CARRY_EVENTS,
     );
-    if (tickCallCount % 5 === 0) {
-      console.error("DEBUG_TICK", JSON.stringify({ tickCallCount, realElapsedMs, carryAfterIncrement: carry, running, tickMilliseconds, baseTps }));
-    }
     if (running) return;
 
     running = true;
     try {
       const eventsToEmit = Math.floor(carry);
       carry -= eventsToEmit;
-      if (eventsToEmit > 5) {
-        console.error("DEBUG_BURST", JSON.stringify({ eventsToEmit, tickCallCount }));
-      }
       // Emitted concurrently, not in an awaited loop: every sink call is a
       // network round trip, so awaiting them one at a time caps throughput at
       // 1/latency (~5 TPS against a cloud Redis) no matter what baseTps says.
