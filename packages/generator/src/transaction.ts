@@ -14,6 +14,7 @@ const applyTally = {
   thresholdSeen: new Map<string, number>(),
   approvedUnderIncident: 0,
   declinedUnderIncident: 0,
+  totalCallsAllCells: 0,
 };
 let applyTallyTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -70,6 +71,7 @@ export function generateTransaction(input: GenerateTransactionInput): Transactio
   });
 
   // TEMP DEBUG
+  applyTally.totalCallsAllCells += 1;
   if (cell.country === "BR" && cell.paymentMethod === "CARD") {
     if (effects.conversionMultiplier < 1) applyTally.multiplierApplied += 1;
     else applyTally.multiplierNotApplied += 1;
@@ -77,11 +79,14 @@ export function generateTransaction(input: GenerateTransactionInput): Transactio
     applyTally.incidentsSeenCount.set(n, (applyTally.incidentsSeenCount.get(n) ?? 0) + 1);
     const key = `${cell.baselineConversion}*${effects.conversionMultiplier}`;
     applyTally.thresholdSeen.set(key, (applyTally.thresholdSeen.get(key) ?? 0) + 1);
+  }
+  {
     if (applyTallyTimer === null) {
       applyTallyTimer = setInterval(() => {
         debugLogger.error(
           {
             at: new Date().toISOString(),
+            totalCallsAllCells: applyTally.totalCallsAllCells,
             multiplierApplied: applyTally.multiplierApplied,
             multiplierNotApplied: applyTally.multiplierNotApplied,
             incidentsSeenCount: Object.fromEntries(applyTally.incidentsSeenCount),
