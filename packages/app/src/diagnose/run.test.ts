@@ -126,6 +126,39 @@ describe("runDiagnosis", () => {
     expect(diagnoses[0]!.observedRate).toBe(0.7);
   });
 
+  test("trusts a cross-sectional signal (e.g. + paymentMethod) when no exact root-level one exists", () => {
+    // The jury console's broad injections (country + paymentMethod, no
+    // merchantId) only ever confirm through crossSectionalSweep's
+    // paymentMethod split — a 3-key {merchantId, country, paymentMethod}
+    // signal — never through absoluteTrigger's exact 2-key root. Requiring
+    // dimensions.length === 2 (the first version of this fix) missed this
+    // real case entirely and kept dropping the diagnosis.
+    const diagnoses = runDiagnosis({
+      ...base,
+      signals: [confirmedDrop({ ...BR_ROOT, paymentMethod: "CARD" })],
+      rollups: brNoisyHealthyGrid(),
+    });
+
+    expect(diagnoses).toHaveLength(1);
+    expect(diagnoses[0]!.confidence).toBe("INCONCLUSIVE");
+    expect(cellKey(diagnoses[0]!.cell)).toBe("country=BR|merchantId=BR_STORE_01");
+    expect(diagnoses[0]!.observedRate).toBe(0.7);
+  });
+
+  test("prefers the fewer-dimension signal when both an exact root and a narrower one confirmed", () => {
+    const diagnoses = runDiagnosis({
+      ...base,
+      signals: [
+        { ...confirmedDrop({ ...BR_ROOT, paymentMethod: "CARD" }), observedRate: 0.5 },
+        { ...confirmedDrop(BR_ROOT), observedRate: 0.8 },
+      ],
+      rollups: brNoisyHealthyGrid(),
+    });
+
+    expect(diagnoses).toHaveLength(1);
+    expect(diagnoses[0]!.observedRate).toBe(0.8);
+  });
+
   test("attaches the decline shift and names the issuer as the causal dimension", () => {
     const declines = [
       declineRow({ declineCode: "05", count: 78 }),

@@ -63,10 +63,13 @@ type Root = { root: SliceFilter; consecutiveWindows: number; rootSignal: Confirm
 // absolute one are the same incident. The oldest confirmation among them is
 // the one that answers "how long has this been going on".
 //
-// `rootSignal` keeps the exact root-level signal (dimensions === {merchantId,
-// country}, nothing narrower) when one exists among the collapsed set. It is
-// what the no-peel branch below trusts instead of re-deriving MATERIAL_DROP
-// from this tick's single window alone.
+// `rootSignal` keeps the narrowest-dimensioned signal among those collapsed
+// onto this root — an exact {merchantId, country} absoluteTrigger signal when
+// one exists, otherwise whichever cross-sectional signal (e.g. + paymentMethod)
+// stayed closest to the root. Fewer dimensions reads as "closer to the root"
+// because every extra key only narrows what a signal measures. It is what the
+// no-peel branch below trusts instead of re-deriving MATERIAL_DROP from this
+// tick's single window alone.
 function rootsOf(signals: ConfirmedDrop[]): Root[] {
   const roots = new Map<string, Root>();
   for (const signal of signals) {
@@ -74,11 +77,13 @@ function rootsOf(signals: ConfirmedDrop[]): Root[] {
     if (merchantId === undefined || country === undefined) continue;
     const key = `${merchantId}|${country}`;
     const previous = roots.get(key);
-    const isRootLevel = Object.keys(signal.dimensions).length === 2;
+    const keepPrevious = previous?.rootSignal !== undefined
+      && previous.rootSignal !== null
+      && Object.keys(previous.rootSignal.dimensions).length <= Object.keys(signal.dimensions).length;
     roots.set(key, {
       root: { merchantId, country },
       consecutiveWindows: Math.max(previous?.consecutiveWindows ?? 0, signal.consecutiveWindows),
-      rootSignal: isRootLevel ? signal : previous?.rootSignal ?? null,
+      rootSignal: keepPrevious ? previous!.rootSignal : signal,
     });
   }
   return [...roots.values()];
