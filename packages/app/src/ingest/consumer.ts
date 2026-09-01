@@ -101,7 +101,13 @@ async function processBatchWithRetry(events: TransactionEvent[]): Promise<void> 
   let attempt = 0;
   for (;;) {
     try {
-      await processBatch(events);
+      const result = await processBatch(events);
+      // TEMP DEBUG — throughput-inflation investigation.
+      console.error("DEBUG_PROCESS_BATCH", JSON.stringify({
+        eventsCount: events.length,
+        insertedCount: result.insertedCount,
+        skippedAsDuplicate: events.length - result.insertedCount,
+      }));
       return;
     } catch (error) {
       if (isIntegrityConstraintViolation(error)) {
@@ -136,6 +142,19 @@ async function handleEntries(redis: Redis, rawEntries: RawStreamEntry[]): Promis
   }
 
   const { valid, invalidIds } = parseEntries(rawEntries);
+
+  // TEMP DEBUG — throughput-inflation investigation.
+  const uniqueTxIds = new Set(valid.map((entry) => entry.event.transactionId));
+  const uniqueStreamIds = new Set(rawEntries.map(([id]) => id));
+  console.error("DEBUG_HANDLE_ENTRIES", JSON.stringify({
+    rawEntriesCount: rawEntries.length,
+    uniqueStreamIds: uniqueStreamIds.size,
+    validCount: valid.length,
+    uniqueTxIdsInBatch: uniqueTxIds.size,
+    invalidCount: invalidIds.length,
+    firstStreamId: rawEntries[0]?.[0],
+    lastStreamId: rawEntries.at(-1)?.[0],
+  }));
 
   if (valid.length > 0) {
     await processBatchWithRetry(valid.map((entry) => entry.event));
@@ -221,6 +240,8 @@ export async function startConsumer(): Promise<never> {
     }
 
     const [, entries] = reply[0]!;
+    // TEMP DEBUG — throughput-inflation investigation.
+    console.error("DEBUG_XREADGROUP", JSON.stringify({ entriesRead: entries.length, at: new Date().toISOString() }));
     await handleEntries(redis, entries);
   }
 }
