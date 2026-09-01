@@ -2,6 +2,13 @@ import { transactionEventSchema, type TransactionEvent } from "@control-tower/co
 
 import { applyIncidents, type GeneratorIncident } from "./incident.ts";
 import { declineCodeFor, type CardBrand, type PaymentMethod } from "./mix.ts";
+import { createLogger } from "./logging.js";
+
+// TEMP DEBUG — verifying whether an active incident's multiplier is actually
+// reaching generateTransaction for every matching cell, or only some calls.
+const debugLogger = createLogger("transaction-debug");
+const applyTally = { multiplierApplied: 0, multiplierNotApplied: 0, incidentsSeenCount: new Map<number, number>() };
+let applyTallyTimer: ReturnType<typeof setInterval> | null = null;
 
 type Country = "AR" | "MX" | "BR";
 
@@ -54,6 +61,29 @@ export function generateTransaction(input: GenerateTransactionInput): Transactio
     paymentMethod: cell.paymentMethod,
     issuerId: cell.issuerId,
   });
+
+  // TEMP DEBUG
+  if (cell.country === "BR" && cell.paymentMethod === "CARD") {
+    if (effects.conversionMultiplier < 1) applyTally.multiplierApplied += 1;
+    else applyTally.multiplierNotApplied += 1;
+    const n = (input.incidents ?? []).length;
+    applyTally.incidentsSeenCount.set(n, (applyTally.incidentsSeenCount.get(n) ?? 0) + 1);
+    if (applyTallyTimer === null) {
+      applyTallyTimer = setInterval(() => {
+        debugLogger.error(
+          {
+            at: new Date().toISOString(),
+            multiplierApplied: applyTally.multiplierApplied,
+            multiplierNotApplied: applyTally.multiplierNotApplied,
+            incidentsSeenCount: Object.fromEntries(applyTally.incidentsSeenCount),
+          },
+          "DEBUG_APPLY_TALLY",
+        );
+      }, 5_000);
+      applyTallyTimer.unref?.();
+    }
+  }
+
   const cardBrand = cell.paymentMethod === "CARD" ? cardBrandFor(cell.country, input.random.next()) : null;
   const approved = input.random.next() < cell.baselineConversion * effects.conversionMultiplier;
   const decline = approved
