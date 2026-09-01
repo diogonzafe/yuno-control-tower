@@ -13,7 +13,6 @@ type Form = {
   providerId: string;
   issuerId: string;
   merchantId: string;
-  targetRate: number;
 };
 
 type ActiveIncident = { id: string; dimensions: Record<string, string>; conversionMultiplier: number };
@@ -32,7 +31,13 @@ const clamp = (value: number, min: number, max: number) => Math.min(Math.max(val
 const targetRateToMultiplier = (targetRate: number) =>
   clamp(Number.isFinite(targetRate) ? targetRate / BASELINE_CONVERSION : 1, 0, 1);
 
-const initialForm: Form = { country: "BR", paymentMethod: "CARD", providerId: "", issuerId: "", merchantId: "", targetRate: 0.3 };
+// The jury picks dimensions, not severity — one fixed, deliberately strong
+// drop keeps the scenario unambiguous and detectable without asking anyone
+// to reason about multipliers.
+const DROP_TARGET_RATE = 0.3;
+const DROP_MULTIPLIER = targetRateToMultiplier(DROP_TARGET_RATE);
+
+const initialForm: Form = { country: "BR", paymentMethod: "CARD", providerId: "", issuerId: "", merchantId: "" };
 
 export function InjectConsole({ catalog, catalogFailed }: { catalog: Catalog | null; catalogFailed: boolean }) {
   const [form, setForm] = useState<Form>(initialForm);
@@ -81,7 +86,7 @@ export function InjectConsole({ catalog, catalogFailed }: { catalog: Catalog | n
           id: `jury-${Date.now()}`,
           startsAt: new Date().toISOString(),
           dimensions,
-          conversionMultiplier: targetRateToMultiplier(form.targetRate),
+          conversionMultiplier: DROP_MULTIPLIER,
         }),
       });
       if (!response.ok) {
@@ -106,7 +111,7 @@ export function InjectConsole({ catalog, catalogFailed }: { catalog: Catalog | n
       <div className="ct-aside__head">
         <div className="ct-aside__eyebrow"><i /><span>Jury console</span></div>
         <h2>Inject an incident</h2>
-        <p>Pick which dimensions should fail and by how much conversion drops. Leave a field as <em>any</em> to not fix that dimension.</p>
+        <p>Pick which dimensions should fail, then inject a drop. Leave a field as <em>any</em> to not fix that dimension.</p>
         {catalogFailed && <p className="ct-catalog-warning">Couldn&apos;t load the merchant/provider catalog — dropdowns below will be empty until it&apos;s back.</p>}
       </div>
 
@@ -153,14 +158,9 @@ export function InjectConsole({ catalog, catalogFailed }: { catalog: Catalog | n
           </select>
         </div>
 
-        <div className="ct-field">
-          <label>6 · Conversion during incident</label>
-          <input type="number" min={0} max={BASELINE_CONVERSION} step={0.05} value={form.targetRate} onChange={(event) => update("targetRate", Number(event.target.value))} />
-          <small>Conversion for the slice drops to about this rate (baseline ≈ {BASELINE_CONVERSION}). 0 kills it entirely; {BASELINE_CONVERSION} leaves it untouched. Sent as ×{targetRateToMultiplier(form.targetRate).toFixed(2)}.</small>
-        </div>
-
         <div>
-          <button type="button" className="ct-btn ct-btn--primary" onClick={submit} disabled={submitting || pixOnlyBr}>Inject incident now</button>
+          <button type="button" className="ct-btn ct-btn--primary" onClick={submit} disabled={submitting || pixOnlyBr}>Inject drop now</button>
+          <small>Drops conversion for the selected slice to ≈{DROP_TARGET_RATE.toFixed(2)} (baseline ≈ {BASELINE_CONVERSION}).</small>
           {submitError && <small role="alert">{submitError}</small>}
         </div>
 
