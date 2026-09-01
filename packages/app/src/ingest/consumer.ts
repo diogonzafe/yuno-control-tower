@@ -77,6 +77,19 @@ export function parseEntries(rawEntries: RawStreamEntry[]): {
       continue;
     }
 
+    // TEMP DEBUG — narrow-injection dilution investigation, consumer side.
+    // Tallies the status exactly as read off the Redis stream, before any
+    // Postgres insert, for the same target cells checked earlier at the
+    // generator. If this matches Postgres, corruption is in insert/rollup;
+    // if it already looks wrong here, the effect never made it into Redis
+    // correctly despite the generator's own per-transaction logic checking
+    // out — meaning something is off between generateTransaction's return
+    // value and what emitTransaction actually serializes/sends.
+    const ev = result.data;
+    if (ev.merchantId === "BR_STORE_01" && (ev.providerId === "stripe" || ev.providerId === "adyen") && (ev.issuerId === "itau" || ev.issuerId === "nubank")) {
+      recordConsumerTally(ev.providerId, ev.issuerId, ev.status === "SUCCESS");
+    }
+
     valid.push({ id, event: result.data });
   }
 
@@ -222,5 +235,24 @@ export async function startConsumer(): Promise<never> {
 
     const [, entries] = reply[0]!;
     await handleEntries(redis, entries);
+  }
+}
+
+// TEMP DEBUG — see the comment at the call site above.
+const consumerTally = new Map<string, { success: number; declined: number }>();
+let consumerTallyTimer: ReturnType<typeof setInterval> | null = null;
+
+function recordConsumerTally(providerId: string, issuerId: string, isSuccess: boolean): void {
+  const key = `${providerId}|${issuerId}`;
+  const entry = consumerTally.get(key) ?? { success: 0, declined: 0 };
+  if (isSuccess) entry.success += 1;
+  else entry.declined += 1;
+  consumerTally.set(key, entry);
+
+  if (consumerTallyTimer === null) {
+    consumerTallyTimer = setInterval(() => {
+      logger.error({ at: new Date().toISOString(), tally: Object.fromEntries(consumerTally) }, "DEBUG_CONSUMER_TALLY");
+    }, 5_000);
+    consumerTallyTimer.unref?.();
   }
 }
