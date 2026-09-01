@@ -54,22 +54,8 @@ export function generateTransaction(input: GenerateTransactionInput): Transactio
     paymentMethod: cell.paymentMethod,
     issuerId: cell.issuerId,
   });
-  // TEMP DEBUG — remove once the injection-suppression investigation is done.
-  if ((input.incidents?.length ?? 0) > 0) {
-    console.error("DEBUG_INCIDENT_CHECK", JSON.stringify({
-      cell: { merchantId: cell.merchantId, providerId: cell.providerId, country: cell.country, paymentMethod: cell.paymentMethod, issuerId: cell.issuerId },
-      multiplier: effects.conversionMultiplier,
-      baselineConversion: cell.baselineConversion,
-      incidentCount: input.incidents!.length,
-      incidents: input.incidents!.map((i) => ({ id: i.id, dims: i.dimensions, mult: i.conversionMultiplier, startsAt: i.startsAt })),
-      createdAt: input.createdAt,
-    }));
-  }
   const cardBrand = cell.paymentMethod === "CARD" ? cardBrandFor(cell.country, input.random.next()) : null;
   const approved = input.random.next() < cell.baselineConversion * effects.conversionMultiplier;
-  if ((input.incidents?.length ?? 0) > 0) {
-    console.error("DEBUG_APPROVED_RESULT", JSON.stringify({ transactionId: input.transactionId, approved, multiplier: effects.conversionMultiplier }));
-  }
   const decline = approved
     ? null
     : declineCodeFor(
