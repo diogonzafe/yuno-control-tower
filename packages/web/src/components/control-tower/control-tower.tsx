@@ -35,7 +35,7 @@ export function ControlTower() {
   return (
     <div className="ct-shell">
       <div className="ct-sidebar-stack">
-        <MerchantSettings catalog={catalog} />
+        <MerchantSettings />
         <InjectConsole catalog={catalog} catalogFailed={catalogFailed} />
       </div>
 

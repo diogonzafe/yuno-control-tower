@@ -96,14 +96,15 @@ export async function listMerchantSettings(): Promise<MerchantSetting[]> {
 
 // The scheduler reloads loadMerchantConfigs() fresh on every tick (no cache),
 // so this takes effect on the next minute's detection — no restart needed.
-export async function updateMerchantExpectedConversion(
-  merchantId: string,
+// One value for every merchant: the settings UI has a single field, not a
+// per-merchant one, so this writes it across every row in one statement
+// rather than looping a single-row update.
+export async function updateAllMerchantsExpectedConversion(
   expectedConversion: number,
-): Promise<MerchantSetting | null> {
-  const [row] = await db
+): Promise<MerchantSetting[]> {
+  const rows = await db
     .update(merchants)
     .set({ expectedConversion: expectedConversion.toString() })
-    .where(eq(merchants.merchantId, merchantId))
     .returning({
       merchantId: merchants.merchantId,
       name: merchants.name,
@@ -111,14 +112,12 @@ export async function updateMerchantExpectedConversion(
       minMaterialDropPp: merchants.minMaterialDropPp,
     });
 
-  return row
-    ? {
-      merchantId: row.merchantId,
-      name: row.name,
-      expectedConversion: Number(row.expectedConversion),
-      minMaterialDropPp: Number(row.minMaterialDropPp),
-    }
-    : null;
+  return rows.map((row) => ({
+    merchantId: row.merchantId,
+    name: row.name,
+    expectedConversion: Number(row.expectedConversion),
+    minMaterialDropPp: Number(row.minMaterialDropPp),
+  }));
 }
 
 export async function loadRoutingCoverage(): Promise<RoutingCoverage> {
