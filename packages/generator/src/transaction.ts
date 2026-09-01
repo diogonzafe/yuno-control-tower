@@ -54,8 +54,22 @@ export function generateTransaction(input: GenerateTransactionInput): Transactio
     paymentMethod: cell.paymentMethod,
     issuerId: cell.issuerId,
   });
+  // TEMP DEBUG — two-simultaneous-incidents dilution investigation.
+  if (cell.merchantId === "BR_STORE_01" && (cell.providerId === "stripe" || cell.providerId === "adyen") && (cell.issuerId === "itau" || cell.issuerId === "nubank")) {
+    console.error("DEBUG_DUAL_CHECK", JSON.stringify({
+      transactionId: input.transactionId,
+      cell: { merchantId: cell.merchantId, providerId: cell.providerId, country: cell.country, paymentMethod: cell.paymentMethod, issuerId: cell.issuerId },
+      multiplier: effects.conversionMultiplier,
+      incidentCount: input.incidents?.length ?? 0,
+      incidents: (input.incidents ?? []).map((i) => ({ id: i.id, dims: i.dimensions, mult: i.conversionMultiplier })),
+      createdAt: input.createdAt,
+    }));
+  }
   const cardBrand = cell.paymentMethod === "CARD" ? cardBrandFor(cell.country, input.random.next()) : null;
   const approved = input.random.next() < cell.baselineConversion * effects.conversionMultiplier;
+  if (cell.merchantId === "BR_STORE_01" && (cell.providerId === "stripe" || cell.providerId === "adyen") && (cell.issuerId === "itau" || cell.issuerId === "nubank")) {
+    console.error("DEBUG_DUAL_RESULT", JSON.stringify({ transactionId: input.transactionId, approved, multiplier: effects.conversionMultiplier }));
+  }
   const decline = approved
     ? null
     : declineCodeFor(
