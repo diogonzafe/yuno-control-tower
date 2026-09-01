@@ -8,6 +8,7 @@ import { EvidencePanel } from "./evidence-panel";
 import { IncidentFeed } from "./incident-feed";
 import { InjectConsole } from "./inject-console";
 import { LiveChart } from "./live-chart";
+import { MerchantSettings } from "./merchant-settings";
 import { TopBar } from "./top-bar";
 
 export function ControlTower() {
@@ -33,7 +34,10 @@ export function ControlTower() {
 
   return (
     <div className="ct-shell">
-      <InjectConsole catalog={catalog} catalogFailed={catalogFailed} />
+      <div className="ct-sidebar-stack">
+        <MerchantSettings catalog={catalog} />
+        <InjectConsole catalog={catalog} catalogFailed={catalogFailed} />
+      </div>
 
       <main className="ct-main">
         <TopBar

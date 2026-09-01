@@ -27,6 +27,10 @@ export type SchedulerDeps = {
   loadCoverage: () => Promise<RoutingCoverage>;
   loadDeclineCatalog: () => Promise<DeclineCode[]>;
   emitDeterministicEvidence?: boolean;
+  // Overrides constants.ts's DD11/DD14-locked default (3). Only meant for a
+  // deployment that deliberately trades detection confidence for latency
+  // (e.g. a live demo); the locked default applies whenever this is unset.
+  persistenceWindows?: number;
   onResult: (result: {
     bucket: string;
     signals: ConfirmedDrop[];
@@ -146,7 +150,7 @@ export function createScheduler(deps: SchedulerDeps): SchedulerHandle {
             deps.source.getHistory(shift(bucket, -ONSET_LOOKBACK_MIN), bucket),
           ]);
 
-          const output = runDetectionTick({ bucket, windowRows, history, merchants, coverage, prevState: persistence });
+          const output = runDetectionTick({ bucket, windowRows, history, merchants, coverage, prevState: persistence, persistenceWindows: deps.persistenceWindows });
           persistence = output.nextState;
           lastProcessedBucket = bucket;
 

@@ -67,6 +67,60 @@ export async function loadMerchantConfigs(): Promise<MerchantConfig[]> {
   }));
 }
 
+export type MerchantSetting = {
+  merchantId: string;
+  name: string;
+  expectedConversion: number;
+  minMaterialDropPp: number;
+};
+
+// For the settings UI: same table as loadMerchantConfigs, plus the display
+// name the detector itself never needs.
+export async function listMerchantSettings(): Promise<MerchantSetting[]> {
+  const rows = await db
+    .select({
+      merchantId: merchants.merchantId,
+      name: merchants.name,
+      expectedConversion: merchants.expectedConversion,
+      minMaterialDropPp: merchants.minMaterialDropPp,
+    })
+    .from(merchants);
+
+  return rows.map((row) => ({
+    merchantId: row.merchantId,
+    name: row.name,
+    expectedConversion: Number(row.expectedConversion),
+    minMaterialDropPp: Number(row.minMaterialDropPp),
+  }));
+}
+
+// The scheduler reloads loadMerchantConfigs() fresh on every tick (no cache),
+// so this takes effect on the next minute's detection — no restart needed.
+export async function updateMerchantExpectedConversion(
+  merchantId: string,
+  expectedConversion: number,
+): Promise<MerchantSetting | null> {
+  const [row] = await db
+    .update(merchants)
+    .set({ expectedConversion: expectedConversion.toString() })
+    .where(eq(merchants.merchantId, merchantId))
+    .returning({
+      merchantId: merchants.merchantId,
+      name: merchants.name,
+      expectedConversion: merchants.expectedConversion,
+      minMaterialDropPp: merchants.minMaterialDropPp,
+    });
+
+  return row
+    ? {
+      merchantId: row.merchantId,
+      name: row.name,
+      expectedConversion: Number(row.expectedConversion),
+      minMaterialDropPp: Number(row.minMaterialDropPp),
+    }
+    : null;
+}
+
 export async function loadRoutingCoverage(): Promise<RoutingCoverage> {
   return db
     .select({

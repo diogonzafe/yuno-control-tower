@@ -6,7 +6,7 @@ import { fingerprint, step, type PersistenceState } from "./persistence.js";
 import { absoluteTrigger, crossSectionalSweep, type Candidate } from "./trigger.js";
 import type { MerchantConfig, RollupRow, RoutingCoverage } from "./types.js";
 import { evaluate } from "./wilson.js";
-export type TickInput = { bucket: string; windowRows: RollupRow[]; history: RollupRow[]; merchants: MerchantConfig[]; coverage: RoutingCoverage; prevState: PersistenceState };
+export type TickInput = { bucket: string; windowRows: RollupRow[]; history: RollupRow[]; merchants: MerchantConfig[]; coverage: RoutingCoverage; prevState: PersistenceState; persistenceWindows?: number };
 export type TickOutput = { signals: ConfirmedDrop[]; evidenceGaps: EvidenceGap[]; nextState: PersistenceState };
 function minusMinutes(iso: string, n: number) { return new Date(new Date(iso).getTime() - n * 60_000).toISOString(); }
 function preferred(a: Candidate, b: Candidate) { if (a.state !== b.state) return a.state === "MATERIAL_DROP" ? a : b; return a.expectedSource === "cross_sectional" ? a : b; }
@@ -16,7 +16,7 @@ function retry(c: Candidate, input: TickInput): Candidate | EvidenceGap { const 
 export function runDetectionTick(input: TickInput): TickOutput {
   const raw = dedupe([...absoluteTrigger(input.windowRows, input.merchants), ...crossSectionalSweep(input.windowRows, input.coverage, input.merchants)]), candidates: Candidate[] = [], gaps: EvidenceGap[] = [];
   for (const c of raw) { if (c.state === "INSUFFICIENT_EVIDENCE") gaps.push(gap(c, input.bucket)); else if (c.attempts >= MIN_VOLUME) candidates.push(c); else { const result = retry(c, input); if ("reason" in result) gaps.push(result); else candidates.push(result); } }
-  const { promoted, next } = step(candidates, input.prevState, input.bucket); const series = [...input.history, ...input.windowRows];
+  const { promoted, next } = step(candidates, input.prevState, input.bucket, input.persistenceWindows); const series = [...input.history, ...input.windowRows];
   const signals: ConfirmedDrop[] = promoted.map((c) => { const onset = onsetScan(series, c.dimensions, input.bucket, c.expectedRate, c.deltaPp), entry = next.get(fingerprint(c.dimensions))!; return { dimensions: c.dimensions as ConfirmedDrop["dimensions"], windowBucket: input.bucket, observedRate: c.observedRate, expectedRate: c.expectedRate, expectedSource: c.expectedSource, deltaPp: c.deltaPp, ciLow: c.ci.low, ciHigh: c.ci.high, ciLevel: 0.95, attempts: c.attempts, approved: c.approved, windowUsed: c.windowUsed, ...onset, consecutiveWindows: entry.count }; });
   return { signals, evidenceGaps: [...new Map(gaps.map((g) => [fingerprint(g.dimensions), g])).values()], nextState: next };
 }

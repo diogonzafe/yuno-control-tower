@@ -56,6 +56,12 @@ function sharesRoot(
 
 const logger = createLogger("app");
 const port = Number(process.env.APP_PORT ?? process.env.PORT ?? 4000);
+// Overrides the DD11/DD14-locked PERSISTENCE_WINDOWS default (3) for this
+// deployment only — trades detection confidence for latency, e.g. a live
+// demo. Unset (the default) leaves the locked constant in force.
+const persistenceWindowsOverride = process.env.PERSISTENCE_WINDOWS_OVERRIDE
+  ? Number(process.env.PERSISTENCE_WINDOWS_OVERRIDE)
+  : undefined;
 
 // Everything below reaches for Postgres — the ingest consumer's XAUTOCLAIM
 // replay, the scheduler's first tick, recoverOrphanRuns(). On a joint
@@ -139,6 +145,7 @@ const scheduler = startScheduler({
   loadMerchants: queries.loadMerchantConfigs,
   loadCoverage: queries.loadRoutingCoverage,
   loadDeclineCatalog: queries.loadDeclineCatalog,
+  persistenceWindows: persistenceWindowsOverride,
   // Kept on so the beam-search path runs on every tick and reaches the API on
   // its own. roadmap.md §7 puts the agentic layer first on the cut list, and
   // turning this off would make agent/ load-bearing — deleting it would delete

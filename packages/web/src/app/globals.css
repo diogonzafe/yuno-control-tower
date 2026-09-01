@@ -24,7 +24,10 @@ button, input, select, textarea { font-family: inherit; color: inherit; }
 
 .ct-shell { display: grid; grid-template-columns: 336px minmax(0, 1fr) 452px; height: 100vh; width: 100%; background: var(--bg); overflow: hidden; }
 @media (max-width: 1400px) { .ct-shell { grid-template-columns: 300px minmax(0, 1fr) 380px; } }
-@media (max-width: 1100px) { .ct-shell { grid-template-columns: minmax(0, 1fr); height: auto; min-height: 100vh; overflow: visible; } .ct-shell > aside { max-height: 60vh; min-width: 0; } .ct-main { min-width: 0; } }
+@media (max-width: 1100px) { .ct-shell { grid-template-columns: minmax(0, 1fr); height: auto; min-height: 100vh; overflow: visible; } .ct-shell > aside, .ct-shell > .ct-sidebar-stack { max-height: 60vh; min-width: 0; } .ct-main { min-width: 0; } }
+
+.ct-sidebar-stack { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.ct-sidebar-stack > .ct-aside:last-child { flex: 1; min-height: 0; }
 
 .ct-aside { border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; background: var(--panel); }
 .ct-aside--right { border-right: none; border-left: 1px solid var(--line); }
