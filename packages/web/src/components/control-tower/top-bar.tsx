@@ -28,7 +28,7 @@ export function TopBar({
           <span>{statusLabel}</span>
           <span>{openCount} open</span>
         </div>
-        <span className="ct-meta">rollup_minute · Wilson 95% CI · 3-window persistence</span>
+        <span className="ct-meta">rollup_minute · Wilson 95% CI · 2-window persistence</span>
         {streamError && <span className="ct-stream-error">Refresh error: {streamError}</span>}
       </div>
       <div className="ct-audience">
