@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import type { ProviderMinutePoint } from "@control-tower/app";
 import type { Catalog } from "@control-tower/app";
-import type { ActiveIncident } from "./inject-console";
+import type { ActiveIncident } from "../../lib/use-active-injections";
 
 const PROVIDER_COLORS: Record<string, string> = { stripe: "#E8EAF5", adyen: "#6B78F0", mercado_pago: "oklch(0.72 0.10 305)" };
 const FALLBACK_COLORS = ["#8B95F5", "#6B78F0", "#E8EAF5", "oklch(0.72 0.10 305)"];

@@ -22,12 +22,26 @@ button, input, select, textarea { font-family: inherit; color: inherit; }
 @keyframes ctPulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.35; transform: scale(0.8); } }
 @keyframes ctIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
-.ct-shell { display: grid; grid-template-columns: 336px minmax(0, 1fr) 452px; height: 100vh; width: 100%; background: var(--bg); overflow: hidden; }
-@media (max-width: 1400px) { .ct-shell { grid-template-columns: 300px minmax(0, 1fr) 380px; } }
-@media (max-width: 1100px) { .ct-shell { grid-template-columns: minmax(0, 1fr); height: auto; min-height: 100vh; overflow: visible; } .ct-shell > aside, .ct-shell > .ct-sidebar-stack { max-height: 60vh; min-width: 0; } .ct-main { min-width: 0; } }
+.ct-app { display: flex; flex-direction: column; height: 100vh; width: 100%; background: var(--bg); overflow: hidden; }
 
-.ct-sidebar-stack { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
-.ct-sidebar-stack > .ct-aside:last-child { flex: 1; min-height: 0; }
+.ct-navbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 0 24px; height: 56px; flex: none; border-bottom: 1px solid var(--line); background: var(--panel); }
+.ct-navbar__links { display: flex; align-items: center; gap: 2px; }
+.ct-navbar__links a { padding: 7px 14px; border-radius: 8px; font-size: 13px; font-weight: 500; color: var(--muted-5); }
+.ct-navbar__links a:hover { color: var(--text); background: var(--field); }
+.ct-navbar__links a.ct-navbar__active { color: var(--text); background: var(--indigo-soft); }
+
+.ct-shell { display: grid; grid-template-columns: minmax(0, 1fr); flex: 1; min-height: 0; width: 100%; overflow: hidden; }
+.ct-shell--split { grid-template-columns: minmax(0, 1fr) 452px; }
+@media (max-width: 1400px) { .ct-shell--split { grid-template-columns: minmax(0, 1fr) 380px; } }
+@media (max-width: 1100px) { .ct-shell--split { grid-template-columns: minmax(0, 1fr); height: auto; min-height: 0; overflow: visible; } .ct-shell--split > aside { max-height: 60vh; min-width: 0; } .ct-main { min-width: 0; } }
+
+.ct-page { flex: 1; min-height: 0; overflow-y: auto; }
+.ct-page__inner { max-width: 760px; margin: 0 auto; padding: 32px 24px 48px; }
+.ct-page__inner--wide { max-width: 980px; }
+
+.ct-console-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+@media (max-width: 800px) { .ct-console-grid { grid-template-columns: 1fr; } }
+.ct-console-grid .ct-aside { border: 1px solid var(--line); border-radius: 14px; }
 
 .ct-aside { border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; background: var(--panel); }
 .ct-aside--right { border-right: none; border-left: 1px solid var(--line); }
@@ -105,6 +119,15 @@ button, input, select, textarea { font-family: inherit; color: inherit; }
 .ct-incidents__head h3 { margin: 0; font-size: 14.5px; font-weight: 600; letter-spacing: -0.01em; }
 .ct-incidents__head h3 span { font-family: var(--mono); font-size: 11px; font-weight: 400; color: var(--muted-4); margin-left: 6px; }
 .ct-incidents__count { font-family: var(--mono); font-size: 11px; color: var(--muted-4); }
+
+.ct-history__head { margin-bottom: 24px; }
+.ct-history__head h1 { margin: 0 0 8px; font-size: 24px; font-weight: 700; letter-spacing: -0.02em; }
+.ct-history__head p { margin: 0; font-size: 13px; line-height: 1.5; color: var(--muted-5); max-width: 60ch; }
+.ct-history__filters { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
+.ct-history__filters input, .ct-history__filters select { background: var(--field); border: 1px solid var(--line-2); border-radius: 8px; color: var(--text); padding: 9px 10px; font-size: 13px; outline: none; }
+.ct-history__filters input { flex: 1; min-width: 200px; }
+.ct-history__filters input:focus, .ct-history__filters select:focus { border-color: var(--indigo); }
+.ct-history__list { display: flex; flex-direction: column; gap: 12px; }
 
 .ct-loading { display: flex; flex-direction: column; gap: 9px; align-items: flex-start; padding: 34px 24px; border: 1px dashed var(--line-2); border-radius: 14px; background: var(--panel-2); }
 .ct-loading__title { display: flex; align-items: center; gap: 9px; }

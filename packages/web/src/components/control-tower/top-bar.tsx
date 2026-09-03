@@ -22,7 +22,6 @@ export function TopBar({
   return (
     <header className="ct-topbar">
       <div className="ct-topbar__left">
-        <div className="ct-brand"><strong>Control Tower</strong><span>Yuno</span></div>
         <div className="ct-health">
           <i className={connected ? "" : "ct-health__dot--warn"} />
           <span>{statusLabel}</span>

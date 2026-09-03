@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Catalog } from "@control-tower/app";
 import { COUNTRIES, PAYMENT_METHODS } from "@control-tower/contracts";
+import { useActiveInjections } from "../../lib/use-active-injections";
 
 type Country = (typeof COUNTRIES)[number];
 type Method = (typeof PAYMENT_METHODS)[number];
@@ -14,8 +15,6 @@ type Form = {
   issuerId: string;
   merchantId: string;
 };
-
-export type ActiveIncident = { id: string; dimensions: Record<string, string>; conversionMultiplier: number; startsAt: string };
 
 // The generator multiplies each cell's baseline conversion by `conversionMultiplier`
 // (see packages/generator/src/transaction.ts). The jury thinks in "conversion drops
@@ -51,17 +50,8 @@ const DUAL_INCIDENT_SCENARIO = [
   { suffix: "b", providerId: "adyen", issuerId: "nubank", conversionMultiplier: 0.5 },
 ] as const;
 
-export function InjectConsole({
-  catalog,
-  catalogFailed,
-  active,
-  onActiveChange,
-}: {
-  catalog: Catalog | null;
-  catalogFailed: boolean;
-  active: ActiveIncident[];
-  onActiveChange: () => void;
-}) {
+export function InjectConsole({ catalog, catalogFailed }: { catalog: Catalog | null; catalogFailed: boolean }) {
+  const { active, refresh: onActiveChange } = useActiveInjections();
   const [form, setForm] = useState<Form>(initialForm);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
