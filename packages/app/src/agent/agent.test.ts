@@ -33,11 +33,11 @@ describe("agent module", () => {
     decisionContext,
   } as const;
 
-  it("defaults to one model per role, with a distinct reserve (rules.md §6.4.1)", () => {
+  it("defaults all three roles to Kimi", () => {
     expect(loadAgentConfig({} as NodeJS.ProcessEnv)).toEqual({
-      investigatorModel: "openai/gpt-5.6-sol",
-      narratorModel: "openai/gpt-5.6-terra",
-      narratorFallbackModel: "openai/gpt-5.6-luna",
+      investigatorModel: "kimi-for-coding/k3",
+      narratorModel: "kimi-for-coding/k3",
+      narratorFallbackModel: "kimi-for-coding/k3",
       maxToolCalls: 12,
       timeoutMs: 45_000,
       // The deterministic fallback ships off; AGENT_FALLBACK_ENABLED=true opts in.

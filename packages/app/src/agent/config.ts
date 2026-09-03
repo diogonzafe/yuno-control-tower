@@ -31,12 +31,13 @@ function readFallbackEnabled(value: string | undefined): boolean {
 
 export function loadAgentConfig(env: NodeJS.ProcessEnv = process.env): AgentConfig {
   return {
-    // rules.md §6.4.1 locks one model per role. The reserve must differ from
-    // the narrator's, or a rate limit on the narrator takes the reserve with it
-    // (§6.8). All three ids verified against the provider's model list.
-    investigatorModel: env.INVESTIGATOR_MODEL ?? "openai/gpt-5.6-sol",
-    narratorModel: env.NARRATOR_MODEL ?? "openai/gpt-5.6-terra",
-    narratorFallbackModel: env.NARRATOR_FALLBACK_MODEL ?? "openai/gpt-5.6-luna",
+    // Deliberately all on Kimi now (moved off the rules.md §6.4.1 OpenAI
+    // split) — the reserve no longer being a different model than the
+    // narrator's means a Kimi-side rate limit takes both down together
+    // (§6.8's original reasoning for keeping them apart); accepted knowingly.
+    investigatorModel: env.INVESTIGATOR_MODEL ?? "kimi-for-coding/k3",
+    narratorModel: env.NARRATOR_MODEL ?? "kimi-for-coding/k3",
+    narratorFallbackModel: env.NARRATOR_FALLBACK_MODEL ?? "kimi-for-coding/k3",
     maxToolCalls: readPositiveInt(env.AGENT_MAX_TOOL_CALLS, 12),
     timeoutMs: readPositiveInt(env.AGENT_TIMEOUT_MS, 45_000),
     fallbackEnabled: readFallbackEnabled(env.AGENT_FALLBACK_ENABLED),
