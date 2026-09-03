@@ -7,6 +7,7 @@ import { useControlTowerStream } from "../../lib/use-control-tower-stream";
 import { dimensionLabel } from "../../lib/narrative";
 import { statusBadge } from "../../lib/status";
 import { IncidentCard } from "./incident-card";
+import { EvidencePanel } from "./evidence-panel";
 
 const STATUS_OPTIONS = ["resolved", "inconclusive", "monitoring"] as const;
 
@@ -20,6 +21,7 @@ export function IncidentHistory() {
 
   const loading = snapshot === null;
   const closed = (snapshot?.incidents ?? []).filter((incident) => incident.status !== "open");
+  const selected = closed.find((incident) => incident.incidentId === selectedId) ?? null;
 
   const merchantOptions = useMemo(
     () => [...new Set(closed.map((incident) => incident.evidence.dimensions.merchantId).filter(Boolean))] as string[],
@@ -38,46 +40,50 @@ export function IncidentHistory() {
     .sort((a, b) => b.detectedAt.localeCompare(a.detectedAt));
 
   return (
-    <div className="ct-page">
-      <div className="ct-page__inner">
-        <div className="ct-history__head">
-          <h1>Incident history</h1>
-          <p>Every incident this run has closed the book on — resolved, inconclusive, or still quietly monitoring after its first confirmation.</p>
-        </div>
-
-        <div className="ct-history__filters">
-          <input
-            type="search"
-            placeholder="Search by dimension or fingerprint…"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-          />
-          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
-            <option value="">any status</option>
-            {STATUS_OPTIONS.map((status) => <option key={status} value={status}>{statusBadge({ status, costUsdPerMin: 0 }).label}</option>)}
-          </select>
-          <select value={merchantFilter} onChange={(event) => setMerchantFilter(event.target.value)}>
-            <option value="">any merchant</option>
-            {merchantOptions.map((id) => <option key={id} value={id}>{catalog?.merchants.find((m) => m.id === id)?.name ?? id}</option>)}
-          </select>
-        </div>
-
-        {loading && (
-          <div className="ct-loading">
-            <div className="ct-loading__title"><i /><span>Connecting to the incident stream…</span></div>
+    <div className={`ct-shell ${selected ? "ct-shell--split" : ""}`}>
+      <div className="ct-page">
+        <div className="ct-page__inner">
+          <div className="ct-history__head">
+            <h1>Incident history</h1>
+            <p>Every incident this run has closed the book on — resolved, inconclusive, or still quietly monitoring after its first confirmation.</p>
           </div>
-        )}
 
-        {!loading && filtered.length === 0 && (
-          <p className="ct-wilson-note">No incident matches these filters.</p>
-        )}
+          <div className="ct-history__filters">
+            <input
+              type="search"
+              placeholder="Search by dimension or fingerprint…"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+            />
+            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+              <option value="">any status</option>
+              {STATUS_OPTIONS.map((status) => <option key={status} value={status}>{statusBadge({ status, costUsdPerMin: 0 }).label}</option>)}
+            </select>
+            <select value={merchantFilter} onChange={(event) => setMerchantFilter(event.target.value)}>
+              <option value="">any merchant</option>
+              {merchantOptions.map((id) => <option key={id} value={id}>{catalog?.merchants.find((m) => m.id === id)?.name ?? id}</option>)}
+            </select>
+          </div>
 
-        <div className="ct-history__list">
-          {filtered.map((incident: IncidentRow) => (
-            <IncidentCard key={incident.incidentId} incident={incident} selectedId={selectedId} onSelect={setSelectedId} catalog={catalog} />
-          ))}
+          {loading && (
+            <div className="ct-loading">
+              <div className="ct-loading__title"><i /><span>Connecting to the incident stream…</span></div>
+            </div>
+          )}
+
+          {!loading && filtered.length === 0 && (
+            <p className="ct-wilson-note">No incident matches these filters.</p>
+          )}
+
+          <div className="ct-history__list">
+            {filtered.map((incident: IncidentRow) => (
+              <IncidentCard key={incident.incidentId} incident={incident} selectedId={selectedId} onSelect={setSelectedId} catalog={catalog} />
+            ))}
+          </div>
         </div>
       </div>
+
+      {selected && <EvidencePanel incident={selected} catalog={catalog} audience="operations" />}
     </div>
   );
 }
