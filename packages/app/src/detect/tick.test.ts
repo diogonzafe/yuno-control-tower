@@ -44,4 +44,23 @@ describe("runDetectionTick", () => {
     expect(result.signals).toEqual([]);
     expect(result.evidenceGaps).toContainEqual(expect.objectContaining({ dimensions: expect.objectContaining({ providerId: "adyen" }), attempts: 5, reason: "INSUFFICIENT_EVIDENCE" }));
   });
+
+  it("clears a pending signal once the cell recovers, instead of leaving it stuck forever", () => {
+    const buckets = [0, 1, 2].map((i) => new Date(Date.UTC(2026, 7, 30, 17, i)).toISOString());
+    let state = new Map();
+
+    const dropped = runDetectionTick({ bucket: buckets[0]!, windowRows: window(buckets[0]!), history: [], merchants: [merchant], coverage, prevState: state, persistenceWindows: 2 });
+    state = dropped.nextState;
+    expect(dropped.pending.some((p) => p.dimensions.providerId === "adyen")).toBe(true);
+
+    // adyen recovers to match its siblings (approved=95) — no longer a drop.
+    const recovered = runDetectionTick({ bucket: buckets[1]!, windowRows: window(buckets[1]!, 95), history: [buckets[0]!].flatMap((b) => window(b)), merchants: [merchant], coverage, prevState: state, persistenceWindows: 2 });
+    state = recovered.nextState;
+
+    expect(recovered.pending.some((p) => p.dimensions.providerId === "adyen")).toBe(false);
+
+    // and it must not silently re-promote later just because the stale streak survived.
+    const later = runDetectionTick({ bucket: buckets[2]!, windowRows: window(buckets[2]!, 95), history: buckets.slice(0, 2).flatMap((b, i) => window(b, i === 0 ? 20 : 95)), merchants: [merchant], coverage, prevState: state, persistenceWindows: 2 });
+    expect(later.signals.some((s) => s.dimensions.providerId === "adyen")).toBe(false);
+  });
 });
