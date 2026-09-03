@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Catalog } from "@control-tower/app";
 import { COUNTRIES, PAYMENT_METHODS } from "@control-tower/contracts";
 
@@ -15,7 +15,7 @@ type Form = {
   merchantId: string;
 };
 
-type ActiveIncident = { id: string; dimensions: Record<string, string>; conversionMultiplier: number };
+export type ActiveIncident = { id: string; dimensions: Record<string, string>; conversionMultiplier: number; startsAt: string };
 
 // The generator multiplies each cell's baseline conversion by `conversionMultiplier`
 // (see packages/generator/src/transaction.ts). The jury thinks in "conversion drops
@@ -51,24 +51,30 @@ const DUAL_INCIDENT_SCENARIO = [
   { suffix: "b", providerId: "adyen", issuerId: "nubank", conversionMultiplier: 0.5 },
 ] as const;
 
-export function InjectConsole({ catalog, catalogFailed }: { catalog: Catalog | null; catalogFailed: boolean }) {
+export function InjectConsole({
+  catalog,
+  catalogFailed,
+  active,
+  onActiveChange,
+}: {
+  catalog: Catalog | null;
+  catalogFailed: boolean;
+  active: ActiveIncident[];
+  onActiveChange: () => void;
+}) {
   const [form, setForm] = useState<Form>(initialForm);
-  const [active, setActive] = useState<ActiveIncident[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
-  const refreshActive = () => {
-    fetch("/api/inject")
-      .then((response) => response.json())
-      .then((data: ActiveIncident[]) => setActive(data))
-      .catch(() => {});
+  useEffect(() => () => clearTimeout(toastTimer.current), []);
+
+  const showToast = (message: string) => {
+    clearTimeout(toastTimer.current);
+    setToast(message);
+    toastTimer.current = setTimeout(() => setToast(null), 4000);
   };
-
-  useEffect(() => {
-    refreshActive();
-    const interval = setInterval(refreshActive, 5000);
-    return () => clearInterval(interval);
-  }, []);
 
   const issuerOptions = catalog?.issuers.filter((issuer) => !form.country || issuer.country === form.country || issuer.id === "NA") ?? [];
   const merchantOptions = catalog?.merchants.filter((merchant) => !form.country || merchant.id.startsWith(form.country)) ?? [];
@@ -104,7 +110,8 @@ export function InjectConsole({ catalog, catalogFailed }: { catalog: Catalog | n
       if (form.merchantId) dimensions.merchantId = form.merchantId;
 
       await postIncident(`jury-${Date.now()}`, dimensions, DROP_MULTIPLIER);
-      refreshActive();
+      onActiveChange();
+      showToast("Incident injected — monitoring for confirmation…");
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : "Injection failed");
     } finally {
@@ -126,7 +133,8 @@ export function InjectConsole({ catalog, catalogFailed }: { catalog: Catalog | n
           ),
         ),
       );
-      refreshActive();
+      onActiveChange();
+      showToast("Two incidents injected — monitoring for confirmation…");
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : "Injection failed");
     } finally {
@@ -136,7 +144,7 @@ export function InjectConsole({ catalog, catalogFailed }: { catalog: Catalog | n
 
   const remove = async (id: string) => {
     await fetch(`/api/inject/${encodeURIComponent(id)}`, { method: "DELETE" });
-    refreshActive();
+    onActiveChange();
   };
 
   return (
@@ -146,6 +154,7 @@ export function InjectConsole({ catalog, catalogFailed }: { catalog: Catalog | n
         <h2>Inject an incident</h2>
         <p>Pick which dimensions should fail, then inject a drop. Leave a field as <em>any</em> to not fix that dimension.</p>
         {catalogFailed && <p className="ct-catalog-warning">Couldn&apos;t load the merchant/provider catalog — dropdowns below will be empty until it&apos;s back.</p>}
+        {toast && <p className="ct-toast" role="status">{toast}</p>}
       </div>
 
       <div className="ct-aside__body">

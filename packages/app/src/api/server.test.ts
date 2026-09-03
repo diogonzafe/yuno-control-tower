@@ -5,6 +5,7 @@ import type { RollupSource } from "../db/queries.js";
 import { InMemoryInvestigationRunRepository } from "../agent/persistence.js";
 import type { RollupRow } from "../detect/types.js";
 import { createEvidenceStore } from "./evidence-store.js";
+import { createPendingStore } from "./pending-store.js";
 import { createSignalStore } from "./signal-store.js";
 import { createSseHub } from "./sse.js";
 import { buildServer } from "./server.js";
@@ -28,6 +29,7 @@ function historyRow(bucket: string, attempts: number, approved: number): RollupR
 function build(overrides: Partial<Parameters<typeof buildServer>[0]> = {}) {
   const store = createSignalStore();
   const evidenceStore = createEvidenceStore();
+  const pendingStore = createPendingStore();
   const hub = createSseHub();
   const source: RollupSource = {
     getWindowRollups: async () => [],
@@ -38,7 +40,7 @@ function build(overrides: Partial<Parameters<typeof buildServer>[0]> = {}) {
   };
   const repository = new InMemoryInvestigationRunRepository();
   const app = buildServer({
-    store, evidenceStore, hub, source, repository,
+    store, evidenceStore, pendingStore, hub, source, repository,
     getSchedulerStatus: () => ({
       lastTickAt: "2026-08-30T14:07:10.000Z",
       lastProcessedBucket: "2026-08-30T14:06:00.000Z",
@@ -48,7 +50,7 @@ function build(overrides: Partial<Parameters<typeof buildServer>[0]> = {}) {
     isIngestUp: () => true,
     ...overrides,
   });
-  return { app, store, evidenceStore, hub, repository };
+  return { app, store, evidenceStore, pendingStore, hub, repository };
 }
 
 describe("GET /health", () => {
@@ -110,6 +112,33 @@ describe("GET /api/signals", () => {
     const response = await app.inject({ method: "GET", url: "/api/signals?limit=abc" });
 
     expect(response.statusCode).toBe(400);
+  });
+});
+
+describe("GET /api/pending-signals", () => {
+  it("returns whatever the pending store currently holds", async () => {
+    const { app, pendingStore } = build();
+    pendingStore.replace([{
+      dimensions: { merchantId: "BR_STORE_01", country: "BR", paymentMethod: "CARD" },
+      windowBucket: "2026-08-30T14:06:00.000Z", observedRate: 0.6, expectedRate: 0.9,
+      expectedSource: "cross_sectional", deltaPp: 3, ciLow: 0.5, ciHigh: 0.7, ciLevel: 0.95,
+      attempts: 80, approved: 48, windowUsed: "1m",
+      firstBucket: "2026-08-30T14:05:00.000Z", windowsConfirmed: 1, windowsRequired: 2,
+    }]);
+
+    const response = await app.inject({ method: "GET", url: "/api/pending-signals" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toHaveLength(1);
+    expect(response.json()[0].windowsConfirmed).toBe(1);
+  });
+
+  it("returns an empty array once nothing is pending", async () => {
+    const { app } = build();
+
+    const response = await app.inject({ method: "GET", url: "/api/pending-signals" });
+
+    expect(response.json()).toEqual([]);
   });
 });
 

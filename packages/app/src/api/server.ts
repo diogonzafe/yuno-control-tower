@@ -7,12 +7,14 @@ import type { SchedulerStatus } from "../detect/scheduler.js";
 import type { SliceFilter } from "../detect/types.js";
 import type { InvestigationRunRepository } from "../agent/persistence.js";
 import type { EvidenceStore } from "./evidence-store.js";
+import type { PendingStore } from "./pending-store.js";
 import type { SignalStore } from "./signal-store.js";
 import type { SseConnection, SseHub } from "./sse.js";
 
 export type ServerDeps = {
   store: SignalStore;
   evidenceStore: EvidenceStore;
+  pendingStore: PendingStore;
   hub: SseHub;
   source: RollupSource;
   repository: InvestigationRunRepository;
@@ -78,6 +80,8 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     }
     return deps.evidenceStore.recent(query.data.limit);
   });
+
+  app.get("/api/pending-signals", async () => deps.pendingStore.current());
 
   app.get("/api/evidence-gaps", async (request, reply) => {
     const query = limitQuery.safeParse(request.query);

@@ -1,7 +1,10 @@
 import { PERSISTENCE_WINDOWS } from "./constants.js";
 import type { Candidate } from "./trigger.js";
 import type { SliceFilter } from "./types.js";
-export type PersistenceEntry = { count: number; firstBucket: string; emitted: boolean };
+// `candidate` is the latest confident MATERIAL_DROP reading for this
+// fingerprint — carried so a still-accumulating (not yet emitted) streak has
+// something displayable (dashboard "watching" cards) without re-deriving it.
+export type PersistenceEntry = { count: number; firstBucket: string; emitted: boolean; candidate: Candidate };
 export type PersistenceState = Map<string, PersistenceEntry>;
 const KEYS: Array<keyof SliceFilter> = ["merchantId", "providerId", "country", "paymentMethod", "issuerId"];
 export function fingerprint(dims: SliceFilter): string { return KEYS.filter((k) => dims[k] !== undefined).sort().map((k) => `${k}=${dims[k]}`).join("|"); }
@@ -11,7 +14,7 @@ export function step(candidates: Candidate[], prev: PersistenceState, bucket: st
     const fp = fingerprint(c.dimensions);
     seen.add(fp);
     if (c.state !== "MATERIAL_DROP") continue;
-    const before = prev.get(fp); const entry = before ? { ...before, count: before.count + 1 } : { count: 1, firstBucket: bucket, emitted: false };
+    const before = prev.get(fp); const entry = before ? { ...before, count: before.count + 1, candidate: c } : { count: 1, firstBucket: bucket, emitted: false, candidate: c };
     if (entry.count >= persistenceWindows && !entry.emitted) { entry.emitted = true; promoted.push(c); }
     next.set(fp, entry);
   }

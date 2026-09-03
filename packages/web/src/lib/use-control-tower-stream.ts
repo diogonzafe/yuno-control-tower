@@ -2,12 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { IncidentRow, PortfolioPoint, ProviderMinutePoint } from "@control-tower/app";
+import type { PendingSignal } from "@control-tower/contracts";
 import { FIXTURE_SNAPSHOT } from "./fixtures";
 
 export type StreamSnapshot = {
   incidents: IncidentRow[];
   providerSeries: ProviderMinutePoint[];
   portfolioSeries: PortfolioPoint[];
+  pendingSignals: PendingSignal[];
   generatedAt: string;
 };
 

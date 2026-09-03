@@ -41,6 +41,29 @@ export const ConfirmedDrop = z.object({
 });
 export type ConfirmedDrop = z.infer<typeof ConfirmedDrop>;
 
+// A drop confirmed MATERIAL_DROP for `windowsConfirmed` of the
+// `windowsRequired` consecutive windows the persistence rule needs, not yet
+// promoted to a ConfirmedDrop. Dashboard-only ("watching" cards) — nothing
+// downstream of detection (orchestrate/, the agent) ever sees these.
+export const PendingSignal = z.object({
+  dimensions: Dimensions,
+  windowBucket: z.string().datetime(),
+  observedRate: z.number(),
+  expectedRate: z.number(),
+  expectedSource: ExpectedSource,
+  deltaPp: z.number(),
+  ciLow: z.number(),
+  ciHigh: z.number(),
+  ciLevel: z.number(),
+  attempts: z.number().int(),
+  approved: z.number().int(),
+  windowUsed: z.enum(["1m", "5m"]),
+  firstBucket: z.string().datetime(),
+  windowsConfirmed: z.number().int(),
+  windowsRequired: z.number().int(),
+});
+export type PendingSignal = z.infer<typeof PendingSignal>;
+
 export const EvidenceGap = z.object({
   dimensions: Dimensions,
   windowBucket: z.string().datetime(),

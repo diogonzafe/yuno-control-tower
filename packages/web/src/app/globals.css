@@ -48,6 +48,7 @@ button, input, select, textarea { font-family: inherit; color: inherit; }
 .ct-field small { font-size: 11px; color: var(--muted-4); line-height: 1.4; }
 .ct-field small code { font-family: var(--mono); }
 .ct-catalog-warning { margin: 8px 0 0; font-size: 11.5px; line-height: 1.4; color: var(--amber); }
+.ct-toast { margin: 8px 0 0; padding: 9px 12px; border-radius: 8px; background: var(--indigo-soft); color: var(--indigo); font-size: 12.5px; line-height: 1.4; animation: ctIn 0.25s ease both; }
 
 .ct-btn { padding: 13px; border-radius: 10px; border: none; font-size: 14px; font-weight: 600; letter-spacing: -0.01em; cursor: pointer; }
 .ct-btn--primary { width: 100%; background: var(--indigo); color: #fff; }
@@ -121,6 +122,10 @@ button, input, select, textarea { font-family: inherit; color: inherit; }
 .ct-incident--selected { border-color: var(--indigo-line); background: var(--indigo-soft); }
 .ct-incident--critical { border-left-color: var(--red); }
 .ct-incident--warn { border-left-color: var(--amber); }
+.ct-incident--pending { border-style: dashed; border-left-color: var(--muted-4); opacity: 0.85; cursor: default; }
+.ct-incident--pending:hover { border-color: var(--line-2); }
+.ct-badge--pending { background: rgba(232, 234, 245, 0.08); color: var(--muted-4); }
+.ct-pending-progress { font-family: var(--mono); font-size: 10.5px; color: var(--muted-4); }
 .ct-incident__top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 .ct-incident__id { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .ct-incident__tags { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }

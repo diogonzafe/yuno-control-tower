@@ -17,6 +17,7 @@ const [
   agent,
   { createSignalStore },
   { createEvidenceStore },
+  { createPendingStore },
   { createSseHub },
   { buildServer },
   orchestrate,
@@ -30,6 +31,7 @@ const [
   import("./agent/index.js"),
   import("./api/signal-store.js"),
   import("./api/evidence-store.js"),
+  import("./api/pending-store.js"),
   import("./api/sse.js"),
   import("./api/server.js"),
   import("./orchestrate/index.js"),
@@ -91,6 +93,7 @@ function enqueueOrchestration(bucket: string, work: () => Promise<void>): void {
 
 const store = createSignalStore();
 const evidenceStore = createEvidenceStore();
+const pendingStore = createPendingStore();
 const hub = createSseHub();
 const incidentWriter = orchestrate.createIncidentWriter();
 const lifecycle = orchestrate.createLifecycle();
@@ -152,10 +155,11 @@ const scheduler = startScheduler({
   // the evidence pipeline with it. The coordinator's richer evidence replaces
   // this one by fingerprint in the store (api/evidence-store.ts).
   emitDeterministicEvidence: true,
-  onResult: ({ bucket, signals, evidenceGaps, evidence }) => {
+  onResult: ({ bucket, signals, evidenceGaps, evidence, pending }) => {
     store.addSignals(signals);
     store.addGaps(evidenceGaps);
     evidenceStore.add(evidence);
+    pendingStore.replace(pending);
 
     // Broadcast before any await, exactly as this callback did before incidents
     // were wired in. None of these payloads carries an incidentId, so nothing is
@@ -207,7 +211,7 @@ const scheduler = startScheduler({
 });
 
 const app = buildServer({
-  store, evidenceStore, hub,
+  store, evidenceStore, pendingStore, hub,
   repository,
   source: queries.createRollupSource(),
   getSchedulerStatus: scheduler.getStatus,

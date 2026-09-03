@@ -1,5 +1,5 @@
 import type { Catalog, IncidentRow, PortfolioPoint, ProviderMinutePoint } from "@control-tower/app";
-import type { EvidenceObject } from "@control-tower/contracts";
+import type { EvidenceObject, PendingSignal } from "@control-tower/contracts";
 
 // Hand-built, contract-shaped sample data used only when NEXT_PUBLIC_USE_FIXTURES=true.
 // Lets the History/status-badge UI be developed and eyeballed without the
@@ -131,9 +131,30 @@ const portfolioSeries: PortfolioPoint[] = [
   { bucket: "2026-08-30T14:01:00.000Z", attempts: 485, approved: 288 },
 ];
 
+const pendingSignals: PendingSignal[] = [
+  {
+    dimensions: { merchantId: "BR_STORE_02", country: "BR", paymentMethod: "CARD" },
+    windowBucket: "2026-08-30T14:06:00.000Z",
+    observedRate: 0.58,
+    expectedRate: 0.9,
+    expectedSource: "cross_sectional",
+    deltaPp: 3,
+    ciLow: 0.5,
+    ciHigh: 0.66,
+    ciLevel: 0.95,
+    attempts: 96,
+    approved: 56,
+    windowUsed: "1m",
+    firstBucket: "2026-08-30T14:05:00.000Z",
+    windowsConfirmed: 1,
+    windowsRequired: 2,
+  },
+];
+
 export const FIXTURE_SNAPSHOT = {
   incidents: [openIncident, monitoringIncident, resolvedIncident, inconclusiveIncident],
   providerSeries,
   portfolioSeries,
+  pendingSignals,
   generatedAt: "2026-08-30T14:06:00.000Z",
 };

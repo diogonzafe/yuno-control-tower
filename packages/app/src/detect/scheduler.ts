@@ -1,4 +1,4 @@
-import type { ConfirmedDrop, EvidenceGap, EvidenceObject } from "@control-tower/contracts";
+import type { ConfirmedDrop, EvidenceGap, EvidenceObject, PendingSignal } from "@control-tower/contracts";
 import { createLogger } from "../logging.js";
 import type { DeclineSource, RollupSource } from "../db/queries.js";
 import { DECLINE_CURRENT_LOOKBACK_MIN, DECLINE_HISTORY_LOOKBACK_MIN } from "../diagnose/constants.js";
@@ -36,6 +36,7 @@ export type SchedulerDeps = {
     signals: ConfirmedDrop[];
     evidenceGaps: EvidenceGap[];
     evidence: EvidenceObject[];
+    pending: PendingSignal[];
   }) => void;
   now?: () => Date;
 };
@@ -165,7 +166,7 @@ export function createScheduler(deps: SchedulerDeps): SchedulerHandle {
               coverage,
               catalog,
             );
-          deps.onResult({ bucket, signals: output.signals, evidenceGaps: output.evidenceGaps, evidence });
+          deps.onResult({ bucket, signals: output.signals, evidenceGaps: output.evidenceGaps, evidence, pending: output.pending });
         }
 
         lastError = null;
