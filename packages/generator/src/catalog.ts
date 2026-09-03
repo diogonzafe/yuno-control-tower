@@ -186,12 +186,17 @@ function validateCatalog(catalog: GeneratorCatalog, merchantTrafficWeights: Merc
   }
 }
 
-function baselineConversionFor(expectedConversion: number, route: RoutingCoverage): number {
-  const offset = route.paymentMethod === "PIX" ? 0.05
-    : route.country === "AR" ? -0.01
-      : route.country === "MX" ? -0.04
-        : 0;
-  return expectedConversion + offset;
+// Deliberately offset-free. This used to shift the baseline per route (PIX
+// +0.05, AR -0.01, MX -0.04), but the detector measures every merchant against
+// the single merchants.expected_conversion in the shared catalog, which carries
+// no such offsets. Any spread here is therefore read as a real, permanent
+// deficit for that route: MX generated at 0.86 against an expected 0.90, 4pp
+// past the 3pp material-drop threshold with enough volume for a tight interval,
+// so all three MX merchants alerted continuously with nothing injected. Route
+// realism is not worth a standing false positive; if it comes back, the
+// catalog's expected_conversion has to carry the same offsets.
+function baselineConversionFor(expectedConversion: number, _route: RoutingCoverage): number {
+  return expectedConversion;
 }
 
 function methodTrafficMultiplier(paymentMethod: PaymentMethod): number {

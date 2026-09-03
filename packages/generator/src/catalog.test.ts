@@ -58,19 +58,16 @@ describe("buildTransactionCells", () => {
     ).toBe(true);
     // A merchant never trades outside its own country.
     expect(cells.every((cell) => cell.merchantId.startsWith(cell.country))).toBe(true);
-    // MX carries a -0.04 offset (baselineConversionFor) relative to the shared 0.90 base.
-    expect(
-      cells.some((cell) => cell.country === "MX" && cell.paymentMethod === "CARD" && cell.baselineConversion < 0.9),
-    ).toBe(true);
-
-    // baselineConversionFor per-route offsets, applied on top of the shared 0.90 base.
-    const brCells = cells.filter((cell) => cell.merchantId === "BR_STORE_01");
-    for (const cell of brCells.filter((cell) => cell.paymentMethod === "CARD")) {
+    // Every route generates at the merchant's own expectedConversion, with no
+    // per-country or per-method offset. The detector compares observed rates
+    // against merchants.expected_conversion; any offset here that the catalog
+    // does not carry reads as a permanent, un-injected material drop for that
+    // route (MX sat 4pp under its expected rate and alerted forever).
+    for (const cell of cells) {
       expect(cell.baselineConversion).toBeCloseTo(0.9, 12);
     }
-    for (const cell of brCells.filter((cell) => cell.paymentMethod === "PIX")) {
-      expect(cell.baselineConversion).toBeCloseTo(0.95, 12);
-    }
+
+    const brCells = cells.filter((cell) => cell.merchantId === "BR_STORE_01");
     // Traffic weight within one merchant sums to that merchant's configured weight.
     const merchantTrafficWeight = brCells.reduce((total, cell) => total + cell.trafficWeight, 0);
     expect(merchantTrafficWeight).toBeCloseTo(testTrafficWeights.BR_STORE_01, 12);
