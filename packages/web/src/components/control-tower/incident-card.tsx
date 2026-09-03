@@ -4,6 +4,8 @@ import type { Catalog, IncidentRow } from "@control-tower/app";
 import { formatPercent, formatRelativeSince, formatUsdPerMin } from "../../lib/format";
 import { dimensionLabel } from "../../lib/narrative";
 import { statusBadge } from "../../lib/status";
+import { Term } from "./term";
+import { expectedSourceHint } from "../../lib/labels";
 
 export function IncidentCard({
   incident,
@@ -37,7 +39,7 @@ export function IncidentCard({
         </div>
         <div className="ct-incident__cost">
           <strong>{formatUsdPerMin(incident.costUsdPerMin)}</strong>
-          <span>conservative floor</span>
+          <Term title="Computed with the optimistic edge of the confidence interval, so the real cost is this number or higher, never lower.">conservative floor</Term>
         </div>
       </div>
 
@@ -49,7 +51,7 @@ export function IncidentCard({
         </div>
         <div className="ct-ci-labels">
           <span>observed {formatPercent(e.observedRate)} · CI{Math.round(e.ci.level * 100)} {formatPercent(e.ci.low)}–{formatPercent(e.ci.high)}</span>
-          <span>expected {formatPercent(e.expectedRate)} · {e.expectedSource.replace("_", "-")}</span>
+          <span>expected {formatPercent(e.expectedRate)} · <Term title={expectedSourceHint(e.expectedSource)}>{e.expectedSource.replace("_", "-")}</Term></span>
         </div>
       </div>
 

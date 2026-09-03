@@ -5,6 +5,8 @@ import { formatLocal, formatPercent, formatRelativeSince, formatUsd, formatUsdPe
 import { decisionTagLabel, declineCodeLabel } from "../../lib/labels";
 import { dimensionLabel, executiveNarrative, operationsNarrative, playbookFor, type Audience } from "../../lib/narrative";
 import { statusBadge } from "../../lib/status";
+import { expectedSourceHint } from "../../lib/labels";
+import { Term } from "./term";
 
 const EMPTY_CATALOG: Catalog = { merchants: [], providers: [], issuers: [] };
 
@@ -57,7 +59,7 @@ export function EvidencePanel({ incident, catalog, audience }: { incident: Incid
         </div>
 
         <div className="ct-box">
-          <span>Wilson 95% interval · {e.windowUsed} window</span>
+          <span><Term title="A 95% Wilson score interval: a confidence range for the true approval rate given the sample size, more honest than a plain percentage at low volume.">Wilson 95% interval</Term> · {e.windowUsed} window</span>
           <div className="ct-wilson-track">
             <div className="ct-ci-bar__fill" style={{ left: `${ciLeft}%`, width: `${ciWidth}%`, background: "rgba(232,80,80,0.15)", borderColor: "currentColor" }} />
             <div className="ct-ci-bar__expected" style={{ left: `${e.expectedRate * 100}%` }} />
@@ -65,7 +67,7 @@ export function EvidencePanel({ incident, catalog, audience }: { incident: Incid
           </div>
           <div className="ct-wilson-row">
             <div><span className="ct-muted">observed</span><span>{formatPercent(e.observedRate)} · {formatPercent(e.ci.low)}–{formatPercent(e.ci.high)}</span></div>
-            <div><span className="ct-muted">expected</span><span>{formatPercent(e.expectedRate)} · {e.expectedSource.replace("_", "-")}</span></div>
+            <div><span className="ct-muted">expected</span><span>{formatPercent(e.expectedRate)} · <Term title={expectedSourceHint(e.expectedSource)}>{e.expectedSource.replace("_", "-")}</Term></span></div>
             <div><span className="ct-muted">sample</span><span>{e.approved}/{e.attempts} approved</span></div>
           </div>
           <span className="ct-wilson-note">Confirmed for {e.consecutiveWindows} consecutive window{e.consecutiveWindows === 1 ? "" : "s"} — even the interval&apos;s optimistic edge sits below the material-drop threshold.</span>

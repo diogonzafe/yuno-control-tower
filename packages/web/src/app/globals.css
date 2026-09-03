@@ -91,6 +91,7 @@ button, input, select, textarea { font-family: inherit; color: inherit; }
 .ct-health span:nth-of-type(1) { font-size: 12.5px; font-weight: 500; color: var(--text); }
 .ct-health span:nth-of-type(2) { font-family: var(--mono); font-size: 11px; color: var(--muted-4); }
 .ct-meta { font-family: var(--mono); font-size: 10.5px; color: var(--muted-3); }
+.ct-term { border-bottom: 1px dotted var(--muted-4); cursor: help; }
 .ct-stream-error { font-family: var(--mono); font-size: 10.5px; color: var(--red); }
 .ct-audience { display: flex; align-items: center; gap: 6px; padding: 3px; border-radius: 9px; border: 1px solid var(--line-2); background: var(--chip); }
 .ct-audience button { padding: 6px 13px; border-radius: 7px; border: none; font-size: 12.5px; font-weight: 600; cursor: pointer; background: transparent; color: var(--muted-5); }

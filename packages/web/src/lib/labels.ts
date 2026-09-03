@@ -55,6 +55,18 @@ export const CAUSAL_DIMENSION_LABELS: Record<string, string> = {
   merchant: "merchant",
 };
 
+// ExpectedSource from @control-tower/contracts — what the "expected" rate in
+// a Wilson comparison was actually computed against.
+export const EXPECTED_SOURCE_HINTS: Record<string, string> = {
+  cross_sectional: "Expected rate is the same-window rate of the cell's peers (other providers/issuers active right now) — rules out a rate that's just normally low for the hour.",
+  temporal: "Expected rate is this same cell's own recent history — used when there's no comparable peer cell to benchmark against.",
+  absolute: "Expected rate is a fixed floor set for this dimension — used when neither a peer cell nor recent history gives a reliable baseline.",
+};
+
+export function expectedSourceHint(source: string): string {
+  return EXPECTED_SOURCE_HINTS[source] ?? "How the expected rate for this comparison was derived.";
+}
+
 export const PLAYBOOKS: Record<string, { id: string; title: string; body: string }> = {
   issuer: {
     id: "PB-ISSUER-01",

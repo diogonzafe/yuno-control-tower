@@ -5,6 +5,7 @@ import type { PendingSignal } from "@control-tower/contracts";
 import { formatPercent, formatRelativeSince } from "../../lib/format";
 import { dimensionLabel } from "../../lib/narrative";
 import { IncidentCard } from "./incident-card";
+import { Term } from "./term";
 
 // Not yet a confirmed incident — still building persistence confidence — so
 // it gets its own dashed, unclickable card instead of joining the real list
@@ -77,7 +78,7 @@ export function IncidentFeed({
       {!loading && open.length === 0 && pendingSignals.length === 0 && (
         <div className="ct-silence">
           <div className="ct-silence__title"><i /><span>Silence — and that is the expected outcome</span></div>
-          <p>No cell is confirmed down for three consecutive windows right now. The Wilson interval covers the expected rate across the low-volume tail, so there is nothing to claim.</p>
+          <p>No cell is confirmed down for two consecutive windows right now. The <Term title="A 95% Wilson score interval: a confidence range for the true approval rate given the sample size, more honest than a plain percentage at low volume.">Wilson interval</Term> covers the expected rate across the low-volume tail, so there is nothing to claim.</p>
         </div>
       )}
 
