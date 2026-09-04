@@ -451,11 +451,18 @@ Regras:
 - Para cada candidato: `fp = fingerprint(dims)`;
   `entry = prev.get(fp) ?? { count: 0, firstBucket: bucket, emitted: false }`;
   `entry.count += 1`.
-- `entry.count ≥ PERSISTENCE_WINDOWS` **e** `!entry.emitted` → entra em `promoted`;
-  `entry.emitted = true`.
-- Fingerprint em `prev` ausente nos candidatos desta janela → **não** copiado para
-  `next` (a série reseta; "3 janelas consecutivas").
-- `entry.emitted === true` que persiste → segue em `next`, **não** re-promovido.
+- `entry.count ≥ PERSISTENCE_WINDOWS` → entra em `promoted`; `entry.emitted = true`.
+  Re-promove em **toda** janela em que a queda segue confirmada: tudo que mantém
+  um incidente vivo roda sobre sinais, inclusive o `openOrUpdate` que bumpa
+  `detected_at` (ver `flight_logs/reconfirm_while_the_drop_stands.md`).
+- Fingerprint em `prev` ausente nos candidatos desta janela → copiado para `next`
+  inalterado. Ausência é falta de leitura confiante (volume baixo, sem linhas),
+  não evidência de que a queda parou; só um candidato desta janela com veredito
+  diferente de `MATERIAL_DROP` reseta a série (`b346914`).
+- `entry.emitted === true` que persiste → segue em `next` e é re-promovido.
+  `emitted` só marca a série como confirmada, que é o que separa um card
+  "watching" (`pending`) de um incidente — não é o que evita re-alertar, porque
+  `openOrUpdate` já responde uma re-confirmação com `monitoring` (roadmap.md §5).
   É a política de dedup: "incidente contínuo não pode alertar a cada janela"
   (`context/schema.md` §8), "em curso atualiza sem re-alertar"
   (`context/roadmap.md` §4).
@@ -541,7 +548,7 @@ calculadas à mão, sem mock de tempo, sem LLM.
 | 2 | `aggregate.test.ts` | Lotes fixos de `RollupRow[]` → somas exatas de `attempts`/`approved`/`amountUsdSum`/`approvedUsdSum`; `rate` nulo com `attempts = 0`; `filter` por subconjunto; `exclude` (pai menos C); `aggregateByBucket` ordenado e por bucket. |
 | 3 | `expected.test.ts` | `crossSectionalExpected`: taxa dos irmãos menos si; `null` sem irmãos. `temporalExpected`: mesma fatia sobre N buckets; respeito às bordas `[from, to)`. |
 | 4 | `trigger.test.ts` | `absoluteTrigger`: fronteira merchant×país (dentro / fora / cruzando); lê só `expectedConversion`; nunca agrega abaixo de merchant×país. `crossSectionalSweep`: isola o filho que concentra o déficit; pula split com < 2 filhos válidos; célula fora de `routing_coverage` ignorada; sem split de `issuerId` em PIX; `paymentMethod` só em BR. |
-| 5 | `persistence.test.ts` | 2 janelas não promove; 3ª promove com `consecutiveWindows = 3`; sequência interrompida reseta; contadores independentes por `fingerprint`; `firstBucket` preservado; fatia já `emitted` que persiste não re-promove. |
+| 5 | `persistence.test.ts` | 2 janelas não promove; 3ª promove com `consecutiveWindows = 3`; sequência interrompida reseta; contadores independentes por `fingerprint`; `firstBucket` preservado; fatia já `emitted` que persiste **re-promove** a cada janela confirmada. |
 | 6 | `onset-scan.test.ts` | Acha o 1º bucket da sequência ininterrupta abaixo de `p_lim`; exige ≥ 3 consecutivos (soluço isolado ignorado); bucket de baixo volume dentro da sequência → `startedAtExact = false`; sequência curta → `startedAt = detectionBucket`, inexato. |
 | 7 | `tick.test.ts` | **Operação normal** (~30 buckets saudáveis) → `signals: []`. **Cenário obrigatório** (`context/spec.md` §4): provider recusando só no BR **e** emissor caindo para um único merchant no MX, simultâneos em ≥ 3 buckets → **dois** `ConfirmedDrop` distintos, com `dimensions` / `startedAt` / `expectedSource` corretos (não se testa ordenação nem merge — é diagnóstico). **Persistência**: mesmo drop nos buckets 1–2 sem sinal, bucket 3 emite. **Célula fina**: `< 30` em 1 min e `≥ 30` em 5 min → confirma com `windowUsed: "5m"`. **Evidência insuficiente**: `< 30` nos dois → `evidenceGaps`, nunca `signals`. |
 

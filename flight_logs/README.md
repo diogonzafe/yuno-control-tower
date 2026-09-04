@@ -38,3 +38,4 @@ Files:
 18. `fallback_kill_switch.md` — `AGENT_FALLBACK_ENABLED` toggle for the deterministic fallback, default off (opt in with `"true"`)
 19. `priority_score_precision.md` — `priority_score` holds minor units per minute; the column widened to `NUMERIC(20,4)`
 20. `incident_identity_by_containment.md` — Incident identity is containment of the cell, not equality of the fingerprint; `fingerprint` stays the DD15 signature
+21. `reconfirm_while_the_drop_stands.md` — A confirmed drop re-confirms every window; `emitted` stops gating promotion and only marks a streak as confirmed

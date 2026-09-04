@@ -46,9 +46,11 @@ describe("triggers", () => {
 describe("persistence and onset", () => {
   const dims = { merchantId: "BR_STORE_01", country: "BR", providerId: "adyen" };
   const candidate: Candidate = { dimensions: dims, state: "MATERIAL_DROP", ci: { low: .1, high: .3 }, observedRate: .2, expectedRate: .9, expectedSource: "cross_sectional", deltaPp: 3, attempts: 100, approved: 20, windowUsed: "1m" };
-  it("promotes once on the third consecutive tick and finds the onset", () => {
+  it("promotes on the third consecutive tick, keeps confirming, and finds the onset", () => {
     let state = new Map(); state = step([candidate], state, "t1").next; state = step([candidate], state, "t2").next; const third = step([candidate], state, "t3");
-    expect(third.promoted).toEqual([candidate]); expect(third.next.get(fingerprint(dims))?.emitted).toBe(true); expect(step([candidate], third.next, "t4").promoted).toEqual([]);
+    expect(third.promoted).toEqual([candidate]); expect(third.next.get(fingerprint(dims))?.emitted).toBe(true); // A fourth window with the drop still confirmed re-confirms it: everything that keeps an
+    // incident alive runs on signals (persistence-reconfirm.test.ts).
+    expect(step([candidate], third.next, "t4").promoted).toEqual([candidate]);
     const series = [95, 20, 20, 20].map((approved, i) => row({ bucket: new Date(Date.UTC(2026, 7, 30, 14, i)).toISOString(), providerId: "adyen", approved }));
     expect(onsetScan(series, { merchantId: "BR_STORE_01", providerId: "adyen" }, series[3]!.bucket, .9, 3)).toEqual({ startedAt: series[1]!.bucket, startedAtExact: true });
   });
