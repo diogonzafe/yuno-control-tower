@@ -92,9 +92,19 @@ of opening the eighth card observed at 18:03.
 
 ## What it costs
 
-An incident's `dimensions` can now widen as well as narrow, when a later window
-diagnoses the same fault less precisely. The row always describes the most recent
-diagnosis, which is the same contract the other measured columns already hold.
+An incident's `dimensions` could widen as well as narrow, when a later window
+diagnosed the same fault less precisely. This log first recorded that as an
+acceptable cost — "the row always describes the most recent diagnosis" — and
+watching it happen showed the judgement was wrong. On 2026-09-04 at 21:23 an
+incident that had read `stripe x itau` for twenty minutes was overwritten by the
+root-level INCONCLUSIVE branch and its card stopped naming a culprit at all,
+which is the one thing the product exists to do.
+
+`openOrUpdate` now takes only the liveness marker from a reading coarser than
+the incident it matches: `detected_at` moves, everything else stays. A wider view
+of a fault is evidence that it is still running, not a better diagnosis of it —
+and its measured columns describe the wider slice, so taking them left the row
+naming one cell and costing another.
 
 Two evidence objects in one tick whose cells are compatible but not equal —
 which the rescue peel in `run.ts` dedupes by exact `cellKey`, not by containment

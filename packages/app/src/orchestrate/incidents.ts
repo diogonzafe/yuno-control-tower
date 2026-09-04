@@ -119,6 +119,25 @@ export function createIncidentWriter(database: Database = defaultDatabase): Inci
       const existing = await findLiveIncident(database, evidence);
 
       if (existing) {
+        // A wider view of a fault is evidence that it is still running, not a
+        // better diagnosis of it. The root-level INCONCLUSIVE branch of
+        // runDiagnosis covers every cell under the merchant, so letting it
+        // write here replaced a cell the peel had named with the merchant it
+        // sits in — observed live on 2026-09-04 at 21:23, where an incident
+        // that had read `stripe x itau` for twenty minutes stopped naming a
+        // culprit at all. Its measured columns describe the wider slice too, so
+        // taking them would leave the row naming one cell and costing another.
+        //
+        // Only the marker lifecycle.ts reads as "still live" survives, which is
+        // exactly what this reading proves.
+        if (specificity(existing.dimensions as Cell) > specificity(evidence.dimensions)) {
+          await database
+            .update(incidents)
+            .set({ detectedAt: new Date(evidence.windowBucket), status: "monitoring" })
+            .where(eq(incidents.incidentId, existing.incidentId));
+          return { incidentId: existing.incidentId, status: "monitoring" };
+        }
+
         // roadmap.md §5: `monitoring` updates without re-alerting, which is
         // what stops a three-hour incident from producing 36 alerts. The
         // detectedAt bump inside measuredColumns is what lifecycle.ts reads

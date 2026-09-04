@@ -211,6 +211,42 @@ describe("incident writer", () => {
     expect(live).toHaveLength(1);
   });
 
+  // Observed live on 2026-09-04 at 21:23: an incident that had named
+  // `stripe x itau` for twenty minutes was overwritten by a merchant-wide
+  // INCONCLUSIVE reading and its card stopped naming the culprit. Keeping it
+  // alive is right — the fault was still running — but a coarser view of the
+  // same fault is not a better diagnosis of it, and the measured columns it
+  // carries describe a different slice from the one the row reports.
+  it("lets a coarser diagnosis keep an incident alive without downgrading it", async () => {
+    const writer = createIncidentWriter();
+    const merchantId = `test-${randomUUID()}`;
+    const precise: EvidenceObject["dimensions"] =
+      { merchantId, country: "BR", paymentMethod: "CARD", providerId: "stripe", issuerId: "itau" };
+
+    const opened = await writer.openOrUpdate(
+      evidenceFixture(`test-${randomUUID()}`, BUCKET_1, precise),
+    );
+    created.push(opened.incidentId);
+    const [before] = await db.select().from(incidents).where(eq(incidents.incidentId, opened.incidentId));
+
+    const coarse = evidenceFixture(`test-${randomUUID()}`, BUCKET_2, { merchantId, country: "BR" });
+    const updated = await writer.openOrUpdate({ ...coarse, observedRate: 0.77, costUsdPerMin: 12 });
+    created.push(updated.incidentId);
+
+    expect(updated.incidentId).toBe(opened.incidentId);
+
+    const [after] = await db.select().from(incidents).where(eq(incidents.incidentId, opened.incidentId));
+    // Still live: detectedAt is the only thing a coarser reading proves.
+    expect(after?.detectedAt.toISOString()).toBe(BUCKET_2);
+    expect(after?.status).toBe("monitoring");
+    // Still the diagnosis it had. The row and its numbers stay the same slice.
+    expect((after?.dimensions as Record<string, string>).providerId).toBe("stripe");
+    expect((after?.dimensions as Record<string, string>).issuerId).toBe("itau");
+    expect(after?.currentRate).toBe(before?.currentRate);
+    expect(after?.costUsdPerMin).toBe(before?.costUsdPerMin);
+    expect((after?.evidence as EvidenceObject).dimensions.providerId).toBe("stripe");
+  });
+
   it("opens a new incident when the previous one with the same fingerprint is resolved", async () => {
     const writer = createIncidentWriter();
     const fingerprint = `test-${randomUUID()}`;
