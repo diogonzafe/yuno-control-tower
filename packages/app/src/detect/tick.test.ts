@@ -45,6 +45,25 @@ describe("runDetectionTick", () => {
     expect(result.evidenceGaps).toContainEqual(expect.objectContaining({ dimensions: expect.objectContaining({ providerId: "adyen" }), attempts: 5, reason: "INSUFFICIENT_EVIDENCE" }));
   });
 
+  // The retry path exists to give a THIN DROP a wider window before calling it.
+  // A cell that already read as confidently healthy has nothing to re-measure,
+  // and routing it there turned it into an INSUFFICIENT_EVIDENCE gap — which
+  // orchestrate/lifecycle.ts reads as "we lost sight of this cell" and uses to
+  // mark a recovering incident inconclusive instead of resolved.
+  it("never reports a confidently healthy cell as an evidence gap", () => {
+    const bucket = new Date(Date.UTC(2026, 7, 30, 18, 0)).toISOString();
+    // adyen sits at 29/29 — below MIN_VOLUME, but its interval clears the
+    // threshold outright because the siblings it is measured against are down.
+    const rows: RollupRow[] = [
+      { bucket, merchantId: "BR_STORE_01", providerId: "adyen", country: "BR", paymentMethod: "CARD", issuerId: "itau", attempts: 29, approved: 29, amountMinorSum: 5000, amountUsdSum: 1000, approvedUsdSum: 950 },
+      ...["stripe", "mercado_pago"].map((providerId): RollupRow => ({ bucket, merchantId: "BR_STORE_01", providerId, country: "BR", paymentMethod: "CARD", issuerId: "itau", attempts: 400, approved: 340, amountMinorSum: 5000, amountUsdSum: 1000, approvedUsdSum: 950 })),
+    ];
+
+    const result = runDetectionTick({ bucket, windowRows: rows, history: [], merchants: [merchant], coverage, prevState: new Map() });
+
+    expect(result.evidenceGaps.filter((g) => g.dimensions.providerId === "adyen")).toEqual([]);
+  });
+
   it("clears a pending signal once the cell recovers, instead of leaving it stuck forever", () => {
     const buckets = [0, 1, 2].map((i) => new Date(Date.UTC(2026, 7, 30, 17, i)).toISOString());
     let state = new Map();

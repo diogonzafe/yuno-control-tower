@@ -16,7 +16,12 @@ function gap(c: Candidate, bucket: string, attempts = c.attempts): EvidenceGap {
 function retry(c: Candidate, input: TickInput): Candidate | EvidenceGap { const from = minusMinutes(input.bucket, THIN_CELL_WINDOW_MIN - 1); const agg = aggregate([...input.history.filter((r) => r.bucket >= from && r.bucket < input.bucket), ...input.windowRows].filter((r) => matchesFilter(r, c.dimensions))); const result = evaluate(agg.approved, agg.attempts, c.expectedRate, c.deltaPp, MIN_VOLUME); return result.state === "MATERIAL_DROP" && agg.attempts >= MIN_VOLUME ? { ...c, ci: result.ci, observedRate: agg.rate ?? 0, attempts: agg.attempts, approved: agg.approved, windowUsed: "5m" } : gap(c, input.bucket, agg.attempts); }
 export function runDetectionTick(input: TickInput): TickOutput {
   const raw = dedupe([...absoluteTrigger(input.windowRows, input.merchants), ...crossSectionalSweep(input.windowRows, input.coverage, input.merchants)]), candidates: Candidate[] = [], gaps: EvidenceGap[] = [];
-  for (const c of raw) { if (c.state === "INSUFFICIENT_EVIDENCE") gaps.push(gap(c, input.bucket)); else if (c.attempts >= MIN_VOLUME) candidates.push(c); else { const result = retry(c, input); if ("reason" in result) gaps.push(result); else candidates.push(result); } }
+  // Only a thin MATERIAL_DROP earns the wider window: HEALTHY and MONITORING
+  // are already decided, and persistence.step() only needs "not a drop" to
+  // clear a streak. Sending them through retry() turned a confidently healthy
+  // cell into an INSUFFICIENT_EVIDENCE gap, which lifecycle.ts reads as having
+  // lost sight of the cell and uses to mark a recovering incident inconclusive.
+  for (const c of raw) { if (c.state === "INSUFFICIENT_EVIDENCE") gaps.push(gap(c, input.bucket)); else if (c.state !== "MATERIAL_DROP" || c.attempts >= MIN_VOLUME) candidates.push(c); else { const result = retry(c, input); if ("reason" in result) gaps.push(result); else candidates.push(result); } }
   const { promoted, next } = step(candidates, input.prevState, input.bucket, input.persistenceWindows); const series = [...input.history, ...input.windowRows];
   const signals: ConfirmedDrop[] = promoted.map((c) => { const onset = onsetScan(series, c.dimensions, input.bucket, c.expectedRate, c.deltaPp), entry = next.get(fingerprint(c.dimensions))!; return { dimensions: c.dimensions as ConfirmedDrop["dimensions"], windowBucket: input.bucket, observedRate: c.observedRate, expectedRate: c.expectedRate, expectedSource: c.expectedSource, deltaPp: c.deltaPp, ciLow: c.ci.low, ciHigh: c.ci.high, ciLevel: 0.95, attempts: c.attempts, approved: c.approved, windowUsed: c.windowUsed, ...onset, consecutiveWindows: entry.count }; });
   const windowsRequired = input.persistenceWindows ?? PERSISTENCE_WINDOWS;
