@@ -26,6 +26,11 @@ export function IncidentCard({
 
   return (
     <article
+      // The card shows the cell and the fingerprint, and both are re-derived
+      // every window — so neither tells a reader whether this is still the same
+      // incident or a fresh one for the same place, which is the failure the
+      // e2e suite has to be able to see (e2e/scenarios.spec.ts).
+      data-incident-id={incident.incidentId}
       className={`ct-incident ct-incident--${borderTier} ${incident.incidentId === selectedId ? "ct-incident--selected" : ""}`}
       onClick={() => onSelect(incident.incidentId)}
     >

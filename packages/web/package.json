@@ -8,7 +8,9 @@
     "build": "next build --webpack",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:e2e": "playwright test --project=ui",
+    "test:e2e:scenarios": "playwright test --project=scenarios"
   },
   "dependencies": {
     "@control-tower/app": "workspace:^",
@@ -20,6 +22,7 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@types/node": "^22.10.2",
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",
