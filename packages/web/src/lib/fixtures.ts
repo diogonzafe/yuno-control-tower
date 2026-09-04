@@ -29,6 +29,7 @@ function evidence(overrides: Partial<EvidenceObject> & Pick<EvidenceObject, "fin
     costLocal: { BRL: 128_400_00 },
     priorityScore: 91.4,
     diagnosisSource: "beam_search",
+    confidence: "CONFIRMED",
     investigationTrail: [],
     ...overrides,
   };
@@ -80,6 +81,11 @@ const monitoringIncident: IncidentRow = {
     costUsdMinor: 45_000,
     costUsdPerMin: 900,
     costLocal: { MXN: 8_200_00 },
+    // The one fixture whose drill-down gave up at the root, so both states of
+    // the cause chip and the evidence panel's explanation are on screen. It
+    // deliberately sits on a non-inconclusive status: whether a cause was
+    // isolated and where the incident is in its lifecycle are separate axes.
+    confidence: "INCONCLUSIVE",
   }),
 };
 
