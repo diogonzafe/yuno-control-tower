@@ -27,7 +27,41 @@ function childValues(rows: RollupRow[], coverage: RoutingCoverage, parent: Slice
 }
 export function crossSectionalSweep(rows: RollupRow[], coverage: RoutingCoverage, merchants: MerchantConfig[]): Candidate[] {
   const configs = new Map(merchants.map((m) => [m.merchantId, m])); const out: Candidate[] = [];
-  for (const root of roots(rows)) { const m = configs.get(root.merchantId); if (!m) continue; const splits: Array<{ parent: SliceFilter; dim: Dimension }> = [{ parent: root, dim: "providerId" }, { parent: { ...root, paymentMethod: "CARD" }, dim: "issuerId" }]; if (root.country === "BR") splits.push({ parent: root, dim: "paymentMethod" });
-    for (const { parent, dim } of splits) for (const value of childValues(rows, coverage, parent, dim)) { const values = childValues(rows, coverage, parent, dim); if (values.length < 2) break; const expected = crossSectionalExpected(rows, parent, dim, value); if (expected === null) continue; const filter = { ...parent, [dim]: value } as SliceFilter; out.push(candidate(filter, aggregate(rows, { filter }), expected, m.minMaterialDropPp, "cross_sectional")); }
+  for (const root of roots(rows)) { const m = configs.get(root.merchantId); if (!m) continue;
+    for (const { parent, dim } of splitsOf(root)) for (const value of childValues(rows, coverage, parent, dim)) { const values = childValues(rows, coverage, parent, dim); if (values.length < 2) break; const expected = crossSectionalExpected(rows, parent, dim, value); if (expected === null) continue; const filter = { ...parent, [dim]: value } as SliceFilter; out.push(candidate(filter, aggregate(rows, { filter }), expected, m.minMaterialDropPp, "cross_sectional")); }
+  } return out;
+}
+
+function splitsOf(root: SliceFilter): Array<{ parent: SliceFilter; dim: Dimension }> {
+  const splits: Array<{ parent: SliceFilter; dim: Dimension }> = [{ parent: root, dim: "providerId" }, { parent: { ...root, paymentMethod: "CARD" }, dim: "issuerId" }];
+  if (root.country === "BR") splits.push({ parent: root, dim: "paymentMethod" });
+  return splits;
+}
+
+/**
+ * The third lens: each cell against its own past, not against its siblings.
+ *
+ * Cross-sectional expectation is drawn from a cell's siblings, so two causes
+ * under one merchant each drag the other's reference down until neither reads
+ * as material. Production showed it exactly: a severe stripe/itau drop pulled
+ * adyen's reference from ~0.886 to ~0.780, leaving a real 0.44 cell only 2.7pp
+ * below its own baseline and therefore invisible. A cell's own history does not
+ * move when a sibling breaks, so this catches what that masking hides — the
+ * `temporal` expectedSource the contract has always allowed and nothing emitted.
+ *
+ * Rides on the history the tick already loads for the onset scan rather than
+ * widening the per-tick read; the agent's own temporal fallback settles for the
+ * same window. `MIN_VOLUME` applies to the baseline too: a handful of past
+ * attempts is not a baseline worth comparing against.
+ */
+export function temporalSweep(rows: RollupRow[], history: RollupRow[], coverage: RoutingCoverage, merchants: MerchantConfig[]): Candidate[] {
+  const configs = new Map(merchants.map((m) => [m.merchantId, m])); const out: Candidate[] = [];
+  for (const root of roots(rows)) { const m = configs.get(root.merchantId); if (!m) continue;
+    for (const { parent, dim } of splitsOf(root)) for (const value of childValues(rows, coverage, parent, dim)) {
+      const filter = { ...parent, [dim]: value } as SliceFilter;
+      const past = aggregate(history, { filter });
+      if (past.rate === null || past.attempts < MIN_VOLUME) continue;
+      out.push(candidate(filter, aggregate(rows, { filter }), past.rate, m.minMaterialDropPp, "temporal"));
+    }
   } return out;
 }

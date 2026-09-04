@@ -7,7 +7,54 @@ const coverage: RoutingCoverage = ["adyen", "stripe", "mercado_pago"].map((provi
 function window(bucket: string, adyenApproved = 20): RollupRow[] {
   return ["adyen", "stripe", "mercado_pago"].map((providerId) => ({ bucket, merchantId: "BR_STORE_01", providerId, country: "BR" as const, paymentMethod: "CARD" as const, issuerId: "itau", attempts: 100, approved: providerId === "adyen" ? adyenApproved : 95, amountMinorSum: 5000, amountUsdSum: 1000, approvedUsdSum: 950 }));
 }
+// The jury's two-simultaneous-incidents scenario: one severe cause and one
+// moderate cause in disjoint cells under the same merchant.
+function dualCauseGrid(bucket: string, severeApproved: number, moderateApproved: number): RollupRow[] {
+  const cell = (providerId: string, issuerId: string, approved: number): RollupRow => ({
+    bucket, merchantId: "BR_STORE_01", providerId, country: "BR" as const, paymentMethod: "CARD" as const,
+    issuerId, attempts: 100, approved, amountMinorSum: 5000, amountUsdSum: 1000, approvedUsdSum: 950,
+  });
+  return ["stripe", "adyen", "mercado_pago"].flatMap((providerId) =>
+    ["itau", "nubank", "bradesco"].map((issuerId) => {
+      if (providerId === "stripe" && issuerId === "itau") return cell(providerId, issuerId, severeApproved);
+      if (providerId === "adyen" && issuerId === "nubank") return cell(providerId, issuerId, moderateApproved);
+      return cell(providerId, issuerId, 90);
+    }),
+  );
+}
+
 describe("runDetectionTick", () => {
+  // Cross-sectional expectation comes from a cell's siblings, so two causes
+  // under one root each drag the other's baseline down until neither looks
+  // material: in production the severe cause pulled adyen's reference from
+  // ~0.886 to ~0.780, leaving the moderate cause 2.7pp below it — under the
+  // 3pp threshold. Comparing a cell against its own past is immune to that.
+  it("finds the moderate cause that a severe sibling masks", () => {
+    const history = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((i) =>
+      new Date(Date.UTC(2026, 7, 30, 19, i)).toISOString(),
+    ).flatMap((b) => dualCauseGrid(b, 90, 90)); // tudo saudável no passado
+    const buckets = [10, 11].map((i) => new Date(Date.UTC(2026, 7, 30, 19, i)).toISOString());
+
+    let state = new Map();
+    let last;
+    for (const bucket of buckets) {
+      last = runDetectionTick({
+        bucket,
+        windowRows: dualCauseGrid(bucket, 13, 45), // severa 0.13, moderada 0.45
+        history,
+        merchants: [merchant],
+        coverage,
+        prevState: state,
+        persistenceWindows: 2,
+      });
+      state = last.nextState;
+    }
+
+    const cells = last!.signals.map((s) => `${s.dimensions.providerId ?? ""}/${s.dimensions.issuerId ?? ""}`);
+    expect(cells.some((c) => c.includes("stripe") || c.includes("itau"))).toBe(true);
+    expect(cells.some((c) => c.includes("adyen") || c.includes("nubank"))).toBe(true);
+  });
+
   it("confirms a cross-sectional provider drop once after three consecutive windows", () => {
     const buckets = [0, 1, 2].map((i) => new Date(Date.UTC(2026, 7, 30, 14, i)).toISOString());
     let state = new Map(); let last;

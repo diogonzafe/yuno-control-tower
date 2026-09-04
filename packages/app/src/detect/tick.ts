@@ -4,7 +4,7 @@ import { MIN_VOLUME, THIN_CELL_WINDOW_MIN } from "./constants.js";
 import { onsetScan } from "./onset-scan.js";
 import { PERSISTENCE_WINDOWS } from "./constants.js";
 import { fingerprint, step, type PersistenceState } from "./persistence.js";
-import { absoluteTrigger, crossSectionalSweep, type Candidate } from "./trigger.js";
+import { absoluteTrigger, crossSectionalSweep, temporalSweep, type Candidate } from "./trigger.js";
 import type { MerchantConfig, RollupRow, RoutingCoverage } from "./types.js";
 import { evaluate } from "./wilson.js";
 export type TickInput = { bucket: string; windowRows: RollupRow[]; history: RollupRow[]; merchants: MerchantConfig[]; coverage: RoutingCoverage; prevState: PersistenceState; persistenceWindows?: number };
@@ -15,7 +15,14 @@ function dedupe(candidates: Candidate[]) { const map = new Map<string, Candidate
 function gap(c: Candidate, bucket: string, attempts = c.attempts): EvidenceGap { return { dimensions: c.dimensions as EvidenceGap["dimensions"], windowBucket: bucket, attempts, reason: "INSUFFICIENT_EVIDENCE" }; }
 function retry(c: Candidate, input: TickInput): Candidate | EvidenceGap { const from = minusMinutes(input.bucket, THIN_CELL_WINDOW_MIN - 1); const agg = aggregate([...input.history.filter((r) => r.bucket >= from && r.bucket < input.bucket), ...input.windowRows].filter((r) => matchesFilter(r, c.dimensions))); const result = evaluate(agg.approved, agg.attempts, c.expectedRate, c.deltaPp, MIN_VOLUME); return result.state === "MATERIAL_DROP" && agg.attempts >= MIN_VOLUME ? { ...c, ci: result.ci, observedRate: agg.rate ?? 0, attempts: agg.attempts, approved: agg.approved, windowUsed: "5m" } : gap(c, input.bucket, agg.attempts); }
 export function runDetectionTick(input: TickInput): TickOutput {
-  const raw = dedupe([...absoluteTrigger(input.windowRows, input.merchants), ...crossSectionalSweep(input.windowRows, input.coverage, input.merchants)]), candidates: Candidate[] = [], gaps: EvidenceGap[] = [];
+  // dedupe() keeps the cross-sectional reading when both lenses agree on a
+  // cell, and prefers whichever one calls it a drop when they disagree — so the
+  // temporal sweep only ever adds cells the sibling comparison could not see.
+  const raw = dedupe([
+    ...absoluteTrigger(input.windowRows, input.merchants),
+    ...crossSectionalSweep(input.windowRows, input.coverage, input.merchants),
+    ...temporalSweep(input.windowRows, input.history, input.coverage, input.merchants),
+  ]), candidates: Candidate[] = [], gaps: EvidenceGap[] = [];
   // Only a thin MATERIAL_DROP earns the wider window: HEALTHY and MONITORING
   // are already decided, and persistence.step() only needs "not a drop" to
   // clear a streak. Sending them through retry() turned a confidently healthy
