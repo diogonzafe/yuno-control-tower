@@ -7,7 +7,7 @@ import { useControlTowerStream } from "../../lib/use-control-tower-stream";
 import { dimensionLabel } from "../../lib/narrative";
 import { statusBadge } from "../../lib/status";
 import { IncidentCard } from "./incident-card";
-import { EvidencePanel } from "./evidence-panel";
+import { SplitShell } from "./split-shell";
 
 const STATUS_OPTIONS = ["resolved", "inconclusive", "monitoring"] as const;
 
@@ -40,7 +40,7 @@ export function IncidentHistory() {
     .sort((a, b) => b.detectedAt.localeCompare(a.detectedAt));
 
   return (
-    <div className={`ct-shell ${selected ? "ct-shell--split" : ""}`}>
+    <SplitShell selected={selected} catalog={catalog}>
       <div className="ct-page">
         <div className="ct-page__inner">
           <div className="ct-history__head">
@@ -82,8 +82,6 @@ export function IncidentHistory() {
           </div>
         </div>
       </div>
-
-      {selected && <EvidencePanel incident={selected} catalog={catalog} audience="operations" />}
-    </div>
+    </SplitShell>
   );
 }

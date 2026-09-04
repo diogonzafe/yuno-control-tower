@@ -1,3 +1,5 @@
+import type { DiagnosisConfidence } from "@control-tower/contracts";
+
 export type IncidentTier = "critical" | "warn" | "ok" | "monitoring" | "resolved" | "inconclusive";
 
 export function severityTier(costUsdPerMinCents: number): "critical" | "warn" | "ok" {
@@ -10,7 +12,7 @@ export function severityTier(costUsdPerMinCents: number): "critical" | "warn" | 
 // A confirmed drop and a diagnosed cause are different claims, and the card
 // looks the same either way unless we say so. Evidence written before the
 // verdict existed reports neither, so it gets no label rather than a guess.
-export function causeLabel(confidence: string | undefined): { isolated: boolean; label: string } | null {
+export function causeLabel(confidence: DiagnosisConfidence | undefined): { isolated: boolean; label: string } | null {
   if (confidence === "CONFIRMED") return { isolated: true, label: "Cause isolated" };
   if (confidence === "INCONCLUSIVE") return { isolated: false, label: "Cause not isolated" };
   return null;

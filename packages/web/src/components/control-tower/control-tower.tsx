@@ -5,7 +5,7 @@ import { useActiveInjections } from "../../lib/use-active-injections";
 import { useCatalog } from "../../lib/use-catalog";
 import { useControlTowerStream } from "../../lib/use-control-tower-stream";
 import type { Audience } from "../../lib/narrative";
-import { EvidencePanel } from "./evidence-panel";
+import { SplitShell } from "./split-shell";
 import { IncidentFeed } from "./incident-feed";
 import { LiveChart } from "./live-chart";
 import { TopBar } from "./top-bar";
@@ -23,7 +23,7 @@ export function ControlTower() {
   const selected = incidents.find((incident) => incident.incidentId === selectedId) ?? null;
 
   return (
-    <div className={`ct-shell ${selected ? "ct-shell--split" : ""}`}>
+    <SplitShell selected={selected} catalog={catalog} audience={audience}>
       <main className="ct-main">
         <TopBar
           loading={loading}
@@ -45,8 +45,6 @@ export function ControlTower() {
           />
         </div>
       </main>
-
-      {selected && <EvidencePanel incident={selected} catalog={catalog} audience={audience} />}
-    </div>
+    </SplitShell>
   );
 }
