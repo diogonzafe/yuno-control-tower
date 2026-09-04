@@ -96,14 +96,15 @@ export function declineMixShift(
   // evidence panel tells. Naming ONE code is a different question, and ranking
   // that by movement is what made it unstable: a rare code doubling from 2% to
   // 10% moves further than the code carrying a third of the failures, and which
-  // rare code does that changes with a single extra decline. The fingerprint
-  // carries this code (evidence.ts), so that churn opened a fresh incident for
-  // one ongoing fault.
+  // rare code does that changes with a single extra decline, which made the
+  // evidence panel name a different culprit from minute to minute for one
+  // unchanging fault.
   //
   // The failure happening in a cell is the code its failures actually carry, so
   // rank by share — and only name it when the sample supports the rise, using
   // the same Wilson bound the detector uses on rates. Below that bar the honest
-  // answer is no dominant code, and a bare fingerprint is stable by definition.
+  // answer is no dominant code, and the panel says so instead of pointing at
+  // whichever code the last twenty declines happened to favour.
   const leading = shifts
     .filter((shift) => shift.diagnostic)
     .sort((a, b) => b.observedShare - a.observedShare || a.code.localeCompare(b.code))[0];

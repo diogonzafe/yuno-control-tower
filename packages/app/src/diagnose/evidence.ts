@@ -72,9 +72,15 @@ export function buildEvidence(input: BuildEvidenceInput): EvidenceObject {
 }
 
 // The dimensions alone name the place; the dominant code names the failure
-// happening there. Both belong in the key, so the same cell breaking a second
-// time for a different reason opens a new incident instead of quietly
-// updating the old one (incidents.fingerprint, db/schema.ts).
+// happening there. Both belong in the signature, which is what memory.ts
+// recognises a past occurrence by (DD15) — "this cell was down this way on
+// Tuesday" needs the reason as well as the place.
+//
+// It is not the live incident's identity. That is containment of the cell, in
+// orchestrate/incidents.ts: this string is re-derived every window from two
+// threshold tests, so keying a live incident on it retired one ongoing fault
+// every three windows and opened its replacement
+// (flight_logs/incident_identity_by_containment.md).
 function fingerprintOf(diagnosis: Diagnosis, dominantDecline: string | null): string {
   const cell = cellKey(diagnosis.cell);
   return dominantDecline === null ? cell : `${cell}#${dominantDecline}`;

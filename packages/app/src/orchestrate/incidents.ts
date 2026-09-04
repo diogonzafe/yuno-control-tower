@@ -3,6 +3,7 @@ import { and, desc, eq, ne, sql } from "drizzle-orm";
 import type { EvidenceObject } from "@control-tower/contracts";
 import { db as defaultDatabase } from "../db/client.js";
 import { incidents } from "../db/schema.js";
+import { compatible, specificity, type Cell } from "./cell.js";
 
 type Database = typeof defaultDatabase;
 
@@ -27,6 +28,13 @@ export type IncidentWriter = {
 // fails at the driver, not at the type checker.
 function measuredColumns(evidence: EvidenceObject) {
   return {
+    // The fingerprint is derived from exactly the two fields below it, so it
+    // tracks them. It stopped being the incident's identity when findLiveIncident
+    // took that job, and leaving it frozen at the opening window would make the
+    // row disagree with itself — and would file a sharpened incident under the
+    // coarse signature its first minute happened to produce, which is the
+    // signature memory.ts then fails to recall it by (DD15).
+    fingerprint: evidence.fingerprint,
     dimensions: evidence.dimensions,
     dominantDecline: evidence.dominantDecline,
     ciLow: evidence.ci.low.toString(),
@@ -45,18 +53,70 @@ function measuredColumns(evidence: EvidenceObject) {
   };
 }
 
+type LiveIncident = { incidentId: string; dimensions: unknown; diagnosisSource: string | null };
+
+/**
+ * Which live incident this window's evidence is about.
+ *
+ * Not the fingerprint, and not any other exact key. Every level of the
+ * diagnosis behind such a key is re-estimated from one minute of rollups on
+ * every tick — the causal cell by the concentration band in `parsimony.ts`, the
+ * dominant decline code by the Wilson bound in `decline-mix.ts` — so the key
+ * churns while the fault stands still, and each churn retires a live incident
+ * and opens a replacement three windows later. Measured on the outage of
+ * 2026-09-04 17:19-18:02: one cell flat at ~13% with ~35 attempts a minute for
+ * 44 minutes produced seven incidents, all carrying the same `started_at`.
+ *
+ * The stable question is containment, not equality: a diagnosis belongs to the
+ * live incident whose cell it does not contradict. Two simultaneous causes under
+ * one root stay two incidents, because their cells disagree on a dimension both
+ * name (spec.md §4 criterion 5); and the narrowest match wins, so the
+ * merchant-wide INCONCLUSIVE reading of an ongoing fault updates the incident
+ * that names it precisely instead of opening a third one.
+ *
+ * `fingerprint` is untouched by any of this. It stays cell + dominant code,
+ * which is what DD15 recalls a past incident by (memory.ts).
+ */
+async function findLiveIncident(
+  database: Database,
+  evidence: EvidenceObject,
+): Promise<LiveIncident | undefined> {
+  const { merchantId, country } = evidence.dimensions;
+  const rooted = merchantId !== undefined && country !== undefined;
+
+  const rows = await database
+    .select({
+      incidentId: incidents.incidentId,
+      dimensions: incidents.dimensions,
+      diagnosisSource: sql<string | null>`${incidents.evidence}->>'diagnosisSource'`,
+    })
+    .from(incidents)
+    .where(
+      and(
+        ne(incidents.status, "resolved"),
+        // DD17 fixes merchant and country on every root, so this is the entire
+        // candidate set and it is a handful of rows. An evidence object with no
+        // root cannot be placed by its cell at all, and keeps the exact key.
+        rooted
+          ? sql`${incidents.dimensions}->>'merchantId' = ${merchantId} and ${incidents.dimensions}->>'country' = ${country}`
+          : eq(incidents.fingerprint, evidence.fingerprint),
+      ),
+    )
+    .orderBy(desc(incidents.detectedAt));
+
+  if (!rooted) return rows[0];
+
+  // Array.prototype.sort is stable, so among equally specific matches the most
+  // recently confirmed one stays first, where `orderBy` left it.
+  return rows
+    .filter((row) => compatible(row.dimensions as Cell, evidence.dimensions))
+    .sort((a, b) => specificity(b.dimensions as Cell) - specificity(a.dimensions as Cell))[0];
+}
+
 export function createIncidentWriter(database: Database = defaultDatabase): IncidentWriter {
   return {
     async openOrUpdate(evidence: EvidenceObject): Promise<IncidentUpsert> {
-      const [existing] = await database
-        .select({
-          incidentId: incidents.incidentId,
-          diagnosisSource: sql<string | null>`${incidents.evidence}->>'diagnosisSource'`,
-        })
-        .from(incidents)
-        .where(and(eq(incidents.fingerprint, evidence.fingerprint), ne(incidents.status, "resolved")))
-        .orderBy(desc(incidents.detectedAt))
-        .limit(1);
+      const existing = await findLiveIncident(database, evidence);
 
       if (existing) {
         // roadmap.md §5: `monitoring` updates without re-alerting, which is
@@ -86,7 +146,6 @@ export function createIncidentWriter(database: Database = defaultDatabase): Inci
       const incidentId = randomUUID();
       await database.insert(incidents).values({
         incidentId,
-        fingerprint: evidence.fingerprint,
         status: "open",
         resolvedAt: null,
         narrativeOps: null,
@@ -109,7 +168,7 @@ export function createIncidentWriter(database: Database = defaultDatabase): Inci
       // deterministic one no matter how the investigation went.
       const [row] = await database
         .select({
-          fingerprint: incidents.fingerprint,
+          dimensions: incidents.dimensions,
           diagnosisSource: sql<string | null>`${incidents.evidence}->>'diagnosisSource'`,
         })
         .from(incidents)
@@ -135,7 +194,14 @@ export function createIncidentWriter(database: Database = defaultDatabase): Inci
       // object belongs to the sibling's row, not this one. Measured columns
       // stay untouched either way: the narrator verbalizes, it never recomputes
       // (rules.md §3 boundary #2).
-      const enriches = row?.fingerprint === input.evidence.fingerprint;
+      //
+      // The test is the same containment openOrUpdate matches on. Comparing
+      // fingerprints here rejected the agent's own object whenever the dominant
+      // code moved between the tick that opened the row and the investigation
+      // that finished after it — a sibling's cell contradicts this one, a
+      // restated code does not.
+      const enriches =
+        row !== undefined && compatible(row.dimensions as Cell, input.evidence.dimensions);
 
       await database
         .update(incidents)

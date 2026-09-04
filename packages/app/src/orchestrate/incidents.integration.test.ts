@@ -23,16 +23,28 @@ const STARTED_AT = "2999-01-01T00:07:00.000Z";
 
 const created: string[] = [];
 
-function evidenceFixture(fingerprint: string, windowBucket: string): EvidenceObject {
+// A cell owned by one fingerprint alone. openOrUpdate recognises a live
+// incident by its cell now, so the fixed `BR_STORE_01` this fixture used to
+// carry would make every test in this file — and the real BR_STORE_01 rows the
+// shared database already holds — look like one ongoing incident.
+function cellOf(merchantId: string): EvidenceObject["dimensions"] {
+  return {
+    merchantId,
+    providerId: "adyen",
+    country: "BR",
+    paymentMethod: "CARD",
+    issuerId: "itau",
+  };
+}
+
+function evidenceFixture(
+  fingerprint: string,
+  windowBucket: string,
+  dimensions: EvidenceObject["dimensions"] = cellOf(fingerprint),
+): EvidenceObject {
   return {
     fingerprint,
-    dimensions: {
-      merchantId: "BR_STORE_01",
-      providerId: "adyen",
-      country: "BR",
-      paymentMethod: "CARD",
-      issuerId: "itau",
-    },
+    dimensions,
     observedRate: 0.51,
     expectedRate: 0.92,
     expectedSource: "cross_sectional",
@@ -86,6 +98,117 @@ describe("incident writer", () => {
     // whole mechanism that keeps a live incident from being auto-resolved.
     expect(rows[0]?.detectedAt.toISOString()).toBe(BUCKET_2);
     expect(rows[0]?.status).toBe("monitoring");
+  });
+
+  // The three fixes that preceded this one all chased the same symptom from the
+  // key's side: pick a steadier dominant code, then let there be no code at all.
+  // Both only moved where the key churns. The diagnosis behind the key is
+  // re-derived from one minute of rollups every tick — the decline code by a
+  // Wilson bound (decline-mix.ts) and the cell itself by a 2% concentration band
+  // (parsimony.ts) — so no exact key is stable, and matching by exact equality
+  // is what retires a live incident and opens its replacement.
+  //
+  // Measured on the real outage of 2026-09-04 17:19-18:02: one cell flat at ~13%
+  // for 44 minutes with ~35 attempts a minute produced seven incidents, each
+  // resolved after exactly RESOLVE_AFTER_QUIET_WINDOWS, every one of them
+  // carrying the same started_at.
+  it("reconfirms in place when the dominant decline code changes", async () => {
+    const writer = createIncidentWriter();
+    const merchantId = `test-${randomUUID()}`;
+
+    const withCode = evidenceFixture(`${merchantId}#05`, BUCKET_1, cellOf(merchantId));
+    const first = await writer.openOrUpdate({ ...withCode, dominantDecline: "05" });
+    created.push(first.incidentId);
+
+    // Same cell, same fault, one decline short of the Wilson bound.
+    const bare = evidenceFixture(merchantId, BUCKET_2, cellOf(merchantId));
+    const second = await writer.openOrUpdate({ ...bare, dominantDecline: null });
+    created.push(second.incidentId);
+
+    expect(second.incidentId).toBe(first.incidentId);
+    expect(second.status).toBe("monitoring");
+  });
+
+  it("reconfirms in place when the peel settles one level deeper", async () => {
+    const writer = createIncidentWriter();
+    const merchantId = `test-${randomUUID()}`;
+    const provider: EvidenceObject["dimensions"] =
+      { merchantId, country: "BR", paymentMethod: "CARD", providerId: "stripe" };
+
+    const first = await writer.openOrUpdate(
+      evidenceFixture(`test-${randomUUID()}`, BUCKET_1, provider),
+    );
+    created.push(first.incidentId);
+
+    const second = await writer.openOrUpdate(
+      evidenceFixture(`test-${randomUUID()}`, BUCKET_2, { ...provider, issuerId: "itau" }),
+    );
+    created.push(second.incidentId);
+
+    expect(second.incidentId).toBe(first.incidentId);
+
+    // The incident sharpens as the evidence does: the row now names the issuer.
+    const [row] = await db.select().from(incidents).where(eq(incidents.incidentId, first.incidentId));
+    expect((row?.dimensions as Record<string, string>).issuerId).toBe("itau");
+  });
+
+  // spec.md §4 criterion 5: two simultaneous causes under one merchant are two
+  // incidents. Compatibility must not collapse them.
+  it("opens a second incident for an incompatible cell under the same root", async () => {
+    const writer = createIncidentWriter();
+    const merchantId = `test-${randomUUID()}`;
+    const root: EvidenceObject["dimensions"] = { merchantId, country: "BR", paymentMethod: "CARD" };
+
+    const stripe = await writer.openOrUpdate(
+      evidenceFixture(`test-${randomUUID()}`, BUCKET_1, {
+        ...root,
+        providerId: "stripe",
+        issuerId: "itau",
+      }),
+    );
+    created.push(stripe.incidentId);
+
+    const adyen = await writer.openOrUpdate(
+      evidenceFixture(`test-${randomUUID()}`, BUCKET_1, {
+        ...root,
+        providerId: "adyen",
+        issuerId: "nubank",
+      }),
+    );
+    created.push(adyen.incidentId);
+
+    expect(adyen.incidentId).not.toBe(stripe.incidentId);
+    expect(adyen.status).toBe("open");
+  });
+
+  // The root-level INCONCLUSIVE branch of runDiagnosis sees the same fault from
+  // further away. It is not a third card on the operator's screen — it is what
+  // opened at 18:03 on the day the outage ended.
+  it("does not open a third incident when a coarser diagnosis arrives", async () => {
+    const writer = createIncidentWriter();
+    const merchantId = `test-${randomUUID()}`;
+    const root: EvidenceObject["dimensions"] = { merchantId, country: "BR" };
+
+    const stripe = await writer.openOrUpdate(
+      evidenceFixture(`test-${randomUUID()}`, BUCKET_1, {
+        ...root,
+        paymentMethod: "CARD",
+        providerId: "stripe",
+        issuerId: "itau",
+      }),
+    );
+    created.push(stripe.incidentId);
+
+    const coarse = await writer.openOrUpdate(evidenceFixture(`test-${randomUUID()}`, BUCKET_2, root));
+    created.push(coarse.incidentId);
+
+    expect(coarse.incidentId).toBe(stripe.incidentId);
+
+    const live = await db
+      .select()
+      .from(incidents)
+      .where(inArray(incidents.incidentId, [stripe.incidentId, coarse.incidentId]));
+    expect(live).toHaveLength(1);
   });
 
   it("opens a new incident when the previous one with the same fingerprint is resolved", async () => {
