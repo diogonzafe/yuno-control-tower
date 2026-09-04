@@ -66,6 +66,7 @@ export function buildEvidence(input: BuildEvidenceInput): EvidenceObject {
     priorityScore: diagnosis.impact.priorityScore,
 
     diagnosisSource,
+    confidence: diagnosis.confidence,
     investigationTrail: input.investigationTrail ?? buildTrail(rows, diagnosis),
   });
 }

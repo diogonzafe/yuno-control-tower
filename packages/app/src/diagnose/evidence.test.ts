@@ -7,6 +7,7 @@ import {
   DECLINE_CATALOG,
   DIAGNOSE_MERCHANTS,
   MX_ROOT,
+  brFlatDropGrid,
   brFullGrid,
   confirmedDrop,
   declineRow,
@@ -70,6 +71,16 @@ describe("buildEvidence", () => {
       high: expect.any(Number),
       level: 0.95,
     });
+  });
+
+  // Whether the drill-down actually named a cell is the difference between a
+  // diagnosis and a bare detection, and the dashboard cannot tell them apart
+  // unless the verdict survives into the evidence object.
+  test("carries the diagnosis's verdict on whether it isolated a cause", () => {
+    expect(evidenceFor().confidence).toBe("CONFIRMED");
+    // Every cell down by the same amount: the root is materially down, no
+    // child separates from its siblings, so the diagnosis stops at the root.
+    expect(evidenceFor(brFlatDropGrid()).confidence).toBe("INCONCLUSIVE");
   });
 
   test("fingerprints the cell together with the dominant decline code", () => {

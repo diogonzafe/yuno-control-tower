@@ -14,6 +14,13 @@ export type DeclineMixEntry = z.infer<typeof DeclineMixEntry>;
 export const SuppressedEcho = z.object({ dimensions: Dimensions, observedRate: z.number(), residualRate: z.number() });
 export type SuppressedEcho = z.infer<typeof SuppressedEcho>;
 
+// CONFIRMED: the peeling isolated a causal cell and the residual test kept it.
+// INCONCLUSIVE: the root is materially down but no child separated from its
+// siblings, so the system reports the drop without naming a culprit rather
+// than promoting the least innocent cell (spec.md §5).
+export const DiagnosisConfidence = z.enum(["CONFIRMED", "INCONCLUSIVE"]);
+export type DiagnosisConfidence = z.infer<typeof DiagnosisConfidence>;
+
 /**
  * The closed evidence object: every number the narrator is allowed to say.
  *
@@ -40,6 +47,13 @@ export const EvidenceObject = z.object({
   costLocal: z.record(z.number().int()), priorityScore: z.number(),
   // How it was reached — proves the deterministic fallback actually ran when the agent didn't.
   diagnosisSource: z.enum(["agent", "beam_search"]),
+  // Whether the drill-down named a causal cell or stopped at the root because
+  // no child separated from its siblings. Without it a bare detection is
+  // indistinguishable from a full diagnosis once it reaches the dashboard.
+  // Optional only for reading back rows written before the field existed
+  // (db/queries.ts re-parses stored evidence); diagnose/evidence.ts is the
+  // single assembly point and always sets it, so nothing new can omit it.
+  confidence: DiagnosisConfidence.optional(),
   investigationTrail: z.array(InvestigationAuditStep),
 });
 export type EvidenceObject = z.infer<typeof EvidenceObject>;

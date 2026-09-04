@@ -4,7 +4,7 @@ import type { Catalog, IncidentRow } from "@control-tower/app";
 import { formatLocal, formatPercent, formatRelativeSince, formatUsd, formatUsdPerMin } from "../../lib/format";
 import { decisionTagLabel, declineCodeLabel } from "../../lib/labels";
 import { dimensionLabel, executiveNarrative, operationsNarrative, playbookFor, type Audience } from "../../lib/narrative";
-import { statusBadge } from "../../lib/status";
+import { causeLabel, statusBadge } from "../../lib/status";
 import { expectedSourceHint } from "../../lib/labels";
 import { Term } from "./term";
 
@@ -41,6 +41,7 @@ export function EvidencePanel({ incident, catalog, audience }: { incident: Incid
   const ciWidth = Math.max(1, (e.ci.high - e.ci.low) * 100);
   const currency = Object.keys(e.costLocal)[0];
   const badge = statusBadge(incident);
+  const cause = causeLabel(e.confidence);
 
   return (
     <aside className="ct-aside ct-aside--right">
@@ -54,6 +55,18 @@ export function EvidencePanel({ incident, catalog, audience }: { incident: Incid
       </div>
 
       <div className="ct-evidence-body">
+        {cause && !cause.isolated && (
+          <div className="ct-inconclusive">
+            <span>Cause not isolated</span>
+            <p>
+              The drop is confirmed, but no child slice separated from its siblings in this
+              window — usually because splitting the cell leaves each child below the volume
+              needed to tell it apart from noise. The system reports the deficit at the
+              merchant level instead of promoting the least innocent cell.
+            </p>
+          </div>
+        )}
+
         <div className="ct-ev-dims">
           {Object.entries(e.dimensions).map(([key, value]) => value && <span className="ct-ev-dim" key={key}><span>{key}</span><span>{String(value)}</span></span>)}
         </div>

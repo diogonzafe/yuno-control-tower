@@ -3,7 +3,7 @@
 import type { Catalog, IncidentRow } from "@control-tower/app";
 import { formatPercent, formatRelativeSince, formatUsdPerMin } from "../../lib/format";
 import { dimensionLabel } from "../../lib/narrative";
-import { statusBadge } from "../../lib/status";
+import { causeLabel, statusBadge } from "../../lib/status";
 import { Term } from "./term";
 import { expectedSourceHint } from "../../lib/labels";
 
@@ -20,6 +20,7 @@ export function IncidentCard({
 }) {
   const e = incident.evidence;
   const badge = statusBadge(incident);
+  const cause = causeLabel(e.confidence);
   const ciLow = e.ci.low * 100, ciHigh = e.ci.high * 100;
   const borderTier = incident.status === "open" ? badge.tier : "default";
 
@@ -32,6 +33,16 @@ export function IncidentCard({
         <div className="ct-incident__id">
           <div className="ct-incident__tags">
             <span className={`ct-badge ct-badge--${badge.tier}`}>{badge.label}</span>
+            {cause && (
+              <span
+                className={`ct-cause ${cause.isolated ? "ct-cause--isolated" : "ct-cause--open"}`}
+                title={cause.isolated
+                  ? "The drill-down narrowed to a single cell and the residual test confirmed it explains the deficit."
+                  : "The drop is confirmed, but no child slice separated from its siblings — the system reports it without naming a culprit."}
+              >
+                {cause.label}
+              </span>
+            )}
             <span className="ct-fingerprint">{incident.fingerprint}</span>
           </div>
           <h4>{dimensionLabel(e.dimensions, catalog ?? { merchants: [], providers: [], issuers: [] })} is degrading</h4>

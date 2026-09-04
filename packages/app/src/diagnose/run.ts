@@ -1,4 +1,4 @@
-import type { ConfirmedDrop, ExpectedSource } from "@control-tower/contracts";
+import type { ConfirmedDrop, DiagnosisConfidence, ExpectedSource } from "@control-tower/contracts";
 import type { MerchantConfig, RollupRow, RoutingCoverage, SliceFilter } from "../detect/types.js";
 import type { Interval } from "../detect/wilson.js";
 import { DELTA_PP_DEFAULT } from "../detect/constants.js";
@@ -26,7 +26,7 @@ export type Diagnosis = {
   root: SliceFilter;
   cell: SliceFilter;
   causalDimension: CausalDimension;
-  confidence: "CONFIRMED" | "INCONCLUSIVE";
+  confidence: DiagnosisConfidence;
   windowBucket: string;
   startedAt: string;
   startedAtExact: boolean;
