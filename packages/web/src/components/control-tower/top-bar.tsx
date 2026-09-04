@@ -7,14 +7,14 @@ export function TopBar({
   loading,
   connected,
   streamError,
-  openCount,
+  activeCount,
   audience,
   onAudienceChange,
 }: {
   loading: boolean;
   connected: boolean;
   streamError: string | null;
-  openCount: number;
+  activeCount: number;
   audience: Audience;
   onAudienceChange: (audience: Audience) => void;
 }) {
@@ -26,7 +26,7 @@ export function TopBar({
         <div className="ct-health">
           <i className={connected ? "" : "ct-health__dot--warn"} />
           <span>{statusLabel}</span>
-          <span>{openCount} open</span>
+          <span>{activeCount} active</span>
         </div>
         <span className="ct-meta">
           <Term title="Raw transactions are aggregated into 1-minute buckets before any rate is compared.">rollup_minute</Term>

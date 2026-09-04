@@ -2,6 +2,16 @@ import type { DiagnosisConfidence } from "@control-tower/contracts";
 
 export type IncidentTier = "critical" | "warn" | "ok" | "monitoring" | "resolved" | "inconclusive";
 
+// Mirrors orchestrate/lifecycle.ts's ACTIVE_STATUSES. `monitoring` is not a
+// calmer kind of closed: it is an open incident the detector keeps
+// re-confirming, which updates it without re-alerting (roadmap.md §5). Listing
+// only "open" made an ongoing incident vanish from the live view precisely
+// because it persisted, and file itself under a history of what the run had
+// closed the book on.
+export function isActiveIncident(status: string): boolean {
+  return status === "open" || status === "monitoring";
+}
+
 export function severityTier(costUsdPerMinCents: number): "critical" | "warn" | "ok" {
   const usdPerMin = costUsdPerMinCents / 100;
   if (usdPerMin >= 200) return "critical";

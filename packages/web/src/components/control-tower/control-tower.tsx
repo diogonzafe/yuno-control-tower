@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useActiveInjections } from "../../lib/use-active-injections";
+import { isActiveIncident } from "../../lib/status";
 import { useCatalog } from "../../lib/use-catalog";
 import { useControlTowerStream } from "../../lib/use-control-tower-stream";
 import type { Audience } from "../../lib/narrative";
@@ -19,7 +20,7 @@ export function ControlTower() {
 
   const loading = snapshot === null;
   const incidents = snapshot?.incidents ?? [];
-  const openIncidents = incidents.filter((incident) => incident.status === "open");
+  const activeIncidents = incidents.filter((incident) => isActiveIncident(incident.status));
   const selected = incidents.find((incident) => incident.incidentId === selectedId) ?? null;
 
   return (
@@ -29,7 +30,7 @@ export function ControlTower() {
           loading={loading}
           connected={connected}
           streamError={streamError}
-          openCount={openIncidents.length}
+          activeCount={activeIncidents.length}
           audience={audience}
           onAudienceChange={setAudience}
         />
@@ -37,7 +38,7 @@ export function ControlTower() {
           <LiveChart series={snapshot?.providerSeries ?? []} catalog={catalog} injections={activeInjections} />
           <IncidentFeed
             loading={loading}
-            incidents={openIncidents}
+            incidents={activeIncidents}
             pendingSignals={snapshot?.pendingSignals ?? []}
             selectedId={selectedId}
             onSelect={setSelectedId}

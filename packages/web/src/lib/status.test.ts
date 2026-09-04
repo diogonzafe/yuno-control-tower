@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { causeLabel, severityTier, statusBadge } from "./status.ts";
+import { causeLabel, isActiveIncident, severityTier, statusBadge } from "./status.ts";
 
 test("severity tiers follow the usd/min thresholds", () => {
   expect(severityTier(29_99)).toBe("ok");
@@ -28,4 +28,14 @@ test("non-open incidents badge by status, regardless of cost", () => {
   expect(statusBadge({ status: "monitoring", costUsdPerMin: 300_00 })).toEqual({ tier: "monitoring", label: "Monitoring" });
   expect(statusBadge({ status: "resolved", costUsdPerMin: 0 })).toEqual({ tier: "resolved", label: "Resolved" });
   expect(statusBadge({ status: "inconclusive", costUsdPerMin: 0 })).toEqual({ tier: "inconclusive", label: "Inconclusive" });
+});
+
+test("a monitoring incident is still live, not history", () => {
+  // It is an open incident the detector keeps re-confirming; treating it as
+  // closed hid an ongoing incident from the dashboard and filed it under
+  // history while it was still happening.
+  expect(isActiveIncident("open")).toBe(true);
+  expect(isActiveIncident("monitoring")).toBe(true);
+  expect(isActiveIncident("resolved")).toBe(false);
+  expect(isActiveIncident("inconclusive")).toBe(false);
 });

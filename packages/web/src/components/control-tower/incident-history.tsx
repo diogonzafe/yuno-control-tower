@@ -5,11 +5,11 @@ import type { IncidentRow } from "@control-tower/app";
 import { useCatalog } from "../../lib/use-catalog";
 import { useControlTowerStream } from "../../lib/use-control-tower-stream";
 import { dimensionLabel } from "../../lib/narrative";
-import { statusBadge } from "../../lib/status";
+import { isActiveIncident, statusBadge } from "../../lib/status";
 import { IncidentCard } from "./incident-card";
 import { SplitShell } from "./split-shell";
 
-const STATUS_OPTIONS = ["resolved", "inconclusive", "monitoring"] as const;
+const STATUS_OPTIONS = ["resolved", "inconclusive"] as const;
 
 export function IncidentHistory() {
   const { snapshot } = useControlTowerStream();
@@ -20,7 +20,7 @@ export function IncidentHistory() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const loading = snapshot === null;
-  const closed = (snapshot?.incidents ?? []).filter((incident) => incident.status !== "open");
+  const closed = (snapshot?.incidents ?? []).filter((incident) => !isActiveIncident(incident.status));
   const selected = closed.find((incident) => incident.incidentId === selectedId) ?? null;
 
   const merchantOptions = useMemo(
