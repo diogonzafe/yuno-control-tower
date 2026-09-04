@@ -5,6 +5,7 @@ import { DELTA_PP_DEFAULT } from "../detect/constants.js";
 import { onsetScan } from "../detect/onset-scan.js";
 import { estimateImpact, type Impact } from "./cost.js";
 import { declineMixShift, disambiguateOutage, type DeclineMix, type OutageAttribution } from "./decline-mix.js";
+import { cellKey, type Candidate } from "./beam-search.js";
 import { peel, type Echo } from "./peeling.js";
 import { residualDeficit } from "./residual.js";
 import type { DeclineCode, DeclineRollupRow } from "./types.js";
@@ -207,10 +208,54 @@ export function runDiagnosis(input: DiagnoseInput): Diagnosis[] {
       continue;
     }
 
+    const rootDiagnoses: Diagnosis[] = [];
     for (const { causal, suppressedEchoes } of peels) {
-      const onset = onsetScan(input.rollups, causal.cell, input.windowBucket, causal.expectedRate, deltaPp);
-      const { declineMix, outageAttribution } = explain(input, causal.cell);
-      diagnoses.push({
+      rootDiagnoses.push(confirmedDiagnosis(input, root, causal, suppressedEchoes, consecutiveWindows, deltaPp));
+    }
+
+    // A signal the detector confirmed with two-window persistence and a Wilson
+    // bound is evidence at the granularity that matters. The peel works down
+    // from the merchant root, so a cause the root no longer registers — a
+    // healthy PIX book can dilute it below the bar once a severe cause is
+    // carved out — never gets reached. Rather than lose it, drill each
+    // unexplained signal on its own: peel from that cell as the root.
+    for (const signal of input.signals) {
+      const cell = signal.dimensions as SliceFilter;
+      if (cell.merchantId !== root.merchantId || cell.country !== root.country) continue;
+      if (Object.keys(cell).length <= 2) continue; // o próprio root, já tratado
+      if (rootDiagnoses.some((d) => compatible(cell, d.cell))) continue;
+
+      const rescued = peel(windowRows, cell, signal.expectedRate, deltaPp, input.coverage);
+      for (const { causal, suppressedEchoes } of rescued) {
+        if (rootDiagnoses.some((d) => cellKey(d.cell) === cellKey(causal.cell))) continue;
+        rootDiagnoses.push(confirmedDiagnosis(input, root, causal, suppressedEchoes, consecutiveWindows, deltaPp));
+      }
+    }
+
+    diagnoses.push(...rootDiagnoses);
+  }
+
+  return diagnoses.sort((a, b) => b.impact.priorityScore - a.impact.priorityScore);
+}
+
+// Two cells describe the same place unless they disagree on a dimension both
+// name: `stripe` covers `stripe x itau`, while `adyen` cannot.
+function compatible(a: SliceFilter, b: SliceFilter): boolean {
+  const keys = [...new Set([...Object.keys(a), ...Object.keys(b)])] as Array<keyof SliceFilter>;
+  return keys.every((key) => a[key] === undefined || b[key] === undefined || a[key] === b[key]);
+}
+
+function confirmedDiagnosis(
+  input: DiagnoseInput,
+  root: SliceFilter,
+  causal: Candidate,
+  suppressedEchoes: Echo[],
+  consecutiveWindows: number,
+  deltaPp: number,
+): Diagnosis {
+  const onset = onsetScan(input.rollups, causal.cell, input.windowBucket, causal.expectedRate, deltaPp);
+  const { declineMix, outageAttribution } = explain(input, causal.cell);
+  return {
         root,
         cell: causal.cell,
         causalDimension: causalDimension(causal.cell, outageAttribution),
@@ -238,9 +283,5 @@ export function runDiagnosis(input: DiagnoseInput): Diagnosis[] {
           input.windowBucket,
         ),
         suppressedEchoes,
-      });
-    }
-  }
-
-  return diagnoses.sort((a, b) => b.impact.priorityScore - a.impact.priorityScore);
+  };
 }

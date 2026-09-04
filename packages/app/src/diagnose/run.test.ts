@@ -9,6 +9,7 @@ import {
   DIAGNOSE_MERCHANTS,
   MX_ROOT,
   brFlatDropGrid,
+  brDualCauseWithPixGrid,
   brFullGrid,
   brNoisyHealthyGrid,
   confirmedDrop,
@@ -27,6 +28,31 @@ const base = {
 };
 
 describe("runDiagnosis", () => {
+
+  // The detector confirms a cell with two-window persistence and a Wilson bound
+  // at the granularity that matters; throwing that away because the merchant
+  // root no longer reads as material is how the jury's second incident went
+  // missing. Here the healthy PIX book dilutes the root to 0.871 against a
+  // 0.870 limit once the severe cause is peeled, so the peel stops — while
+  // adyen and nubank are already confirmed drops in their own right.
+  test("keeps a confirmed signal the peel could not reach", () => {
+    const rollups = brDualCauseWithPixGrid();
+    const diagnoses = runDiagnosis({
+      ...base,
+      signals: [
+        confirmedDrop({ merchantId: "BR_STORE_01", country: "BR" }),
+        confirmedDrop({ merchantId: "BR_STORE_01", country: "BR", providerId: "stripe" }),
+        confirmedDrop({ merchantId: "BR_STORE_01", country: "BR", providerId: "adyen" }),
+        confirmedDrop({ merchantId: "BR_STORE_01", country: "BR", paymentMethod: "CARD", issuerId: "nubank" }),
+      ],
+      rollups,
+    });
+
+    const cells = diagnoses.map((d) => cellKey(d.cell));
+    expect(cells.some((c) => c.includes("stripe") && c.includes("itau"))).toBe(true);
+    expect(cells.some((c) => c.includes("adyen") || c.includes("nubank"))).toBe(true);
+  });
+
   test("separates the two mandatory incidents and ranks them by money per minute", () => {
     const diagnoses = runDiagnosis({
       ...base,

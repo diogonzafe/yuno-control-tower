@@ -189,3 +189,24 @@ export function brNoisyHealthyGrid(bucket = BUCKET): RollupRow[] {
     ["itau", "nubank", "bradesco"].map((issuerId) => brCard(providerId, issuerId, 200, 178, bucket)),
   );
 }
+
+// The jury's two-simultaneous-incidents scenario as production actually shapes
+// it: disjoint CARD cells under one merchant, plus the healthy PIX book that
+// carries three times a CARD route's traffic. That PIX volume is the whole
+// point — it dilutes the merchant root until the deficit left by the moderate
+// cause no longer reads as material there, which is what stopped the peel from
+// finding it while the detector had already confirmed it.
+export function brDualCauseWithPixGrid(bucket = BUCKET): RollupRow[] {
+  const row = (providerId: string, issuerId: string, paymentMethod: "CARD" | "PIX", attempts: number, approved: number): RollupRow => ({
+    bucket, merchantId: "BR_STORE_01", providerId, country: "BR", paymentMethod, issuerId,
+    attempts, approved, amountMinorSum: 5000, amountUsdSum: 1000, approvedUsdSum: 950,
+  });
+  const card = ["stripe", "adyen", "mercado_pago"].flatMap((providerId) =>
+    ["itau", "nubank", "bradesco"].map((issuerId) =>
+      row(providerId, issuerId, "CARD", 76,
+        providerId === "stripe" && issuerId === "itau" ? 2
+          : providerId === "adyen" && issuerId === "nubank" ? 34
+            : 68)));
+  const pix = ["stripe", "adyen", "mercado_pago"].map((providerId) => row(providerId, "NA", "PIX", 228, 205));
+  return [...card, ...pix];
+}
