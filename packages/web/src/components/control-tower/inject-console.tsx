@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Catalog } from "@control-tower/app";
 import { COUNTRIES, PAYMENT_METHODS } from "@control-tower/contracts";
 import { useActiveInjections } from "../../lib/use-active-injections";
+import { declineSignatureFor } from "../../lib/decline-signature";
 
 type Country = (typeof COUNTRIES)[number];
 type Method = (typeof PAYMENT_METHODS)[number];
@@ -76,11 +77,16 @@ export function InjectConsole({ catalog, catalogFailed }: { catalog: Catalog | n
     ...(key === "paymentMethod" && value === "PIX" ? { issuerId: "" } : {}),
   }));
 
-  const postIncident = async (id: string, dimensions: Record<string, string>, conversionMultiplier: number) => {
+  const postIncident = async (
+    id: string,
+    dimensions: Record<string, string>,
+    conversionMultiplier: number,
+    declineWeights: Record<string, number>,
+  ) => {
     const response = await fetch("/api/inject", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, startsAt: new Date().toISOString(), dimensions, conversionMultiplier }),
+      body: JSON.stringify({ id, startsAt: new Date().toISOString(), dimensions, conversionMultiplier, declineWeights }),
     });
     if (!response.ok) {
       const body = await response.text();
@@ -99,7 +105,7 @@ export function InjectConsole({ catalog, catalogFailed }: { catalog: Catalog | n
       if (form.issuerId) dimensions.issuerId = form.issuerId;
       if (form.merchantId) dimensions.merchantId = form.merchantId;
 
-      await postIncident(`jury-${Date.now()}`, dimensions, DROP_MULTIPLIER);
+      await postIncident(`jury-${Date.now()}`, dimensions, DROP_MULTIPLIER, declineSignatureFor(dimensions));
       onActiveChange();
       showToast("Incident injected — monitoring for confirmation…");
     } catch (error) {
@@ -115,13 +121,15 @@ export function InjectConsole({ catalog, catalogFailed }: { catalog: Catalog | n
     try {
       const now = Date.now();
       await Promise.all(
-        DUAL_INCIDENT_SCENARIO.map((incident) =>
-          postIncident(
+        DUAL_INCIDENT_SCENARIO.map((incident) => {
+          const dimensions = { merchantId: "BR_STORE_01", country: "BR", paymentMethod: "CARD", providerId: incident.providerId, issuerId: incident.issuerId };
+          return postIncident(
             `jury-dual-${incident.suffix}-${now}`,
-            { merchantId: "BR_STORE_01", country: "BR", paymentMethod: "CARD", providerId: incident.providerId, issuerId: incident.issuerId },
+            dimensions,
             incident.conversionMultiplier,
-          ),
-        ),
+            declineSignatureFor(dimensions),
+          );
+        }),
       );
       onActiveChange();
       showToast("Two incidents injected — monitoring for confirmation…");
