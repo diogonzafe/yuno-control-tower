@@ -1,5 +1,6 @@
 import { matchesFilter } from "../detect/aggregate.js";
 import type { SliceFilter } from "../detect/types.js";
+import { wilson } from "../detect/wilson.js";
 import { DECLINE_WINDOWS_MIN, MIN_DECLINES, TEMPORAL_MIN_DECLINES } from "./constants.js";
 import type { DeclineCode, DeclineFamily, DeclineRollupRow } from "./types.js";
 
@@ -91,7 +92,25 @@ export function declineMixShift(
   }
   shifts.sort((a, b) => b.deltaPp - a.deltaPp || a.code.localeCompare(b.code));
 
-  const dominant = shifts.find((shift) => shift.diagnostic && shift.deltaPp > 0);
+  // `shifts` stays ordered by how far each code moved — that is the story the
+  // evidence panel tells. Naming ONE code is a different question, and ranking
+  // that by movement is what made it unstable: a rare code doubling from 2% to
+  // 10% moves further than the code carrying a third of the failures, and which
+  // rare code does that changes with a single extra decline. The fingerprint
+  // carries this code (evidence.ts), so that churn opened a fresh incident for
+  // one ongoing fault.
+  //
+  // The failure happening in a cell is the code its failures actually carry, so
+  // rank by share — and only name it when the sample supports the rise, using
+  // the same Wilson bound the detector uses on rates. Below that bar the honest
+  // answer is no dominant code, and a bare fingerprint is stable by definition.
+  const leading = shifts
+    .filter((shift) => shift.diagnostic)
+    .sort((a, b) => b.observedShare - a.observedShare || a.code.localeCompare(b.code))[0];
+  const dominant = leading !== undefined
+    && wilson(leading.count, totalDeclines).low > leading.referenceShare
+    ? leading
+    : undefined;
   return {
     totalDeclines,
     windowUsed,

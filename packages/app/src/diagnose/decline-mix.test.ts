@@ -36,6 +36,31 @@ describe("declineMixShift", () => {
     expect(mix.dominantCode).toBe("AB03");
   });
 
+  // The dominant code keys the incident fingerprint (evidence.ts), so whichever
+  // code wins has to be stable across windows for one ongoing fault. Ranking by
+  // how far a code rose above its own baseline is not: a rare code doubling from
+  // 2% to 10% "rose the most" while explaining a tenth of the failures, and
+  // which rare code does that flips on sampling noise alone. One injected fault
+  // produced #01, #62, #65 and #91 this way, opening a new incident each time.
+  test("ignores a rare code that rose sharply but explains almost nothing", () => {
+    const declines = [
+      declineRow({ declineCode: "51", count: 11 }), // 55%, not diagnostic
+      declineRow({ declineCode: "05", count: 7 }), //  35% against a 32% baseline — barely moved
+      declineRow({ declineCode: "91", count: 2 }), //  10% against a 2% baseline — the old winner
+    ];
+
+    expect(declineMixShift(declines, BR_CAUSAL, BUCKET, DECLINE_CATALOG).dominantCode).toBeNull();
+  });
+
+  test("names the code that carries the failures once its rise is supported", () => {
+    const declines = [
+      declineRow({ declineCode: "05", count: 60 }),
+      declineRow({ declineCode: "51", count: 20 }),
+    ];
+
+    expect(declineMixShift(declines, BR_CAUSAL, BUCKET, DECLINE_CATALOG).dominantCode).toBe("05");
+  });
+
   test("names no dominant code when only non-diagnostic noise moved", () => {
     const declines = [
       declineRow({ declineCode: "51", count: 90 }),
