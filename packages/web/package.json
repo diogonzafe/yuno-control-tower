@@ -8,7 +8,7 @@
     "build": "next build --webpack",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test src/lib/*.test.ts"
+    "test": "vitest run"
   },
   "dependencies": {
     "@control-tower/app": "workspace:^",
@@ -23,6 +23,7 @@
     "@types/node": "^22.10.2",
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
   }
 }
