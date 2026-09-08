@@ -1,4 +1,9 @@
-# The sweep splits issuers inside each provider, because that cell is invisible everywhere else
+# The sweep does not split issuers inside each provider — tried, measured, reverted
+
+> **Reverted.** The change this log proposed shipped as `c1ffd0d` and was backed
+> out. Everything below about *why the cell is invisible* holds and is worth
+> keeping; the conclusion that depth was the answer did not survive contact with
+> production. The measurement that killed it is at the end.
 
 **Decisions:** extends `crossSectionalSweep` and `temporalSweep` in
 `detect/trigger.ts` with a fourth family of splits. Completes the pair
@@ -94,3 +99,38 @@ DD19 warns that fixing all five dimensions is usually too specific to defend.
 That warning is about which cell a *diagnosis* names, and it still stands: the
 peel decides that, on the residual. This only decides what the detector is
 allowed to notice.
+
+
+## What happened when it shipped
+
+Four days of production, split at the deploy:
+
+```
+                          incidents/h   mean attempts per slice
+before c1ffd0d                    5.4                       175
+after  c1ffd0d                   21.2                        65
+```
+
+1853 incidents in the second phase, 836 of them on slices under 60 attempts, the
+minimum sitting exactly on `MIN_VOLUME`. At night, when traffic thins, it reached
+50+ an hour. Almost all of them diagnosed as root-level `INCONCLUSIVE`: the thin
+signal fired, the peel found nothing to isolate, and the merchant root became an
+incident.
+
+## Why the reasoning was wrong
+
+"What it costs" above weighed the extra cells as aggregation work and thin-cell
+volume, and both of those were handled. It never counted the statistical cost:
+the split multiplies the number of hypotheses tested per window by roughly four,
+each at a fixed 95% level. Testing forty slices a minute at that level produces
+false positives by construction, and `PERSISTENCE_WINDOWS` does not clear them —
+a borderline thin cell stays borderline across consecutive windows.
+
+That is `context/spec.md` §8, open question 3 — "como controlar múltiplas
+comparações" — which the project has never answered. The masking this log
+describes is real, and reaching it means answering that question first, not
+descending another level and hoping the volume holds.
+
+Criterion 1 of `spec.md` §4 outranks criterion 5 here: a board carrying fifty
+invented incidents an hour is worse than one that occasionally misses the
+smaller of two simultaneous causes.

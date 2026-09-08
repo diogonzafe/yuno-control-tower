@@ -13,6 +13,8 @@ function cell(providerId: string, issuerId: string, approved: number): RollupRow
 }
 
 /**
+ * A known, measured limitation — not a passing feature.
+ *
  * Two causes under one merchant, one of them living in a provider x issuer cell.
  *
  * Measured in production on 2026-09-04: `adyen x nubank` was injected at ~0.32
@@ -26,6 +28,13 @@ function cell(providerId: string, issuerId: string, approved: number): RollupRow
  * In both of those slices the healthy half of the traffic lifts the average
  * back above the sibling reference, which the other cause has meanwhile pulled
  * down. The fault is arithmetically invisible at every slice the sweep looks at.
+ *
+ * Adding that split (`c1ffd0d`) did catch it, and was reverted: the cells carry
+ * ~40 attempts a minute against a MIN_VOLUME of 30, and testing four times as
+ * many hypotheses per window at a fixed 95% level took the incident rate from
+ * 5.4 to 21.2 an hour. This file keeps the arithmetic on record so the next
+ * attempt starts from it rather than rediscovering it — the way through is
+ * `spec.md` §8 question 3, controlling multiple comparisons, still open.
  */
 describe("a fault in a provider x issuer cell", () => {
   const rows = [
@@ -50,10 +59,12 @@ describe("a fault in a provider x issuer cell", () => {
     expect(dropping).not.toContainEqual({ merchantId: "BR_STORE_01", country: "BR", paymentMethod: "CARD", issuerId: "nubank" });
   });
 
-  it("is caught where it actually lives, against its siblings inside that provider", () => {
-    // adyen x nubank = 0.32 against adyen x itau = 0.92: a 60pp gap, and the
-    // only slice in the cube where this fault is not averaged away.
-    expect(dropping).toContainEqual({
+  // The sweep does not descend to `provider x issuer`, so the cell where this
+  // fault lives undiluted is never tested. Asserting the gap keeps the cost of
+  // the limitation visible: 0.32 against a 0.92 sibling is a 60pp difference
+  // nobody is looking at.
+  it("is never tested at the depth where it would be a 60pp gap", () => {
+    expect(dropping).not.toContainEqual({
       merchantId: "BR_STORE_01",
       country: "BR",
       paymentMethod: "CARD",
@@ -62,23 +73,9 @@ describe("a fault in a provider x issuer cell", () => {
     });
   });
 
-  it("still catches the severe cause at the same depth", () => {
-    expect(dropping).toContainEqual({
-      merchantId: "BR_STORE_01",
-      country: "BR",
-      paymentMethod: "CARD",
-      providerId: "stripe",
-      issuerId: "itau",
-    });
-  });
-
-  it("does not accuse a healthy cell", () => {
-    expect(dropping).not.toContainEqual({
-      merchantId: "BR_STORE_01",
-      country: "BR",
-      paymentMethod: "CARD",
-      providerId: "adyen",
-      issuerId: "itau",
-    });
+  // The severe cause is caught, and that is why the pair reads as one incident
+  // rather than none: stripe separates from adyen at the provider slice.
+  it("still catches the severe cause at the depth the sweep does reach", () => {
+    expect(dropping).toContainEqual({ merchantId: "BR_STORE_01", country: "BR", providerId: "stripe" });
   });
 });

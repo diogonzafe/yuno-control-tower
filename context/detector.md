@@ -390,15 +390,16 @@ splits abaixo, coerentes com a estrutura do cubo (DD12/DD13):
 | 1 | `{ merchantId, country }` | `providerId` | sempre |
 | 2 | `{ merchantId, country }` | `paymentMethod` | só se o país tem ≥ 2 métodos (só BR) |
 | 3 | `{ merchantId, country, paymentMethod: "CARD" }` | `issuerId` | sempre (PIX não tem emissor) |
-| 4 | `{ merchantId, country, paymentMethod: "CARD", providerId: p }` | `issuerId` | um por provider `p` coberto |
 
-O split 4 é o que enxerga uma causa confinada a `provider × issuer`. Nas fatias
-de dimensão única ela é invisível por aritmética: os outros emissores do provider
-levantam a média dele, os outros providers do emissor levantam a média dele, e
-uma segunda causa sob o mesmo merchant puxa a referência dos irmãos para baixo ao
-encontro dela. Medido em produção (`flight_logs/the_cell_the_sweep_could_not_see.md`,
-`detect/masked-cell.test.ts`). É a mesma profundidade em que o `peel` já termina
-do lado do diagnóstico; o detector é que não chegava lá para lhe entregar o sinal.
+Um quarto split, emissores dentro de cada provider, foi tentado e **revertido**
+(`c1ffd0d` → `d9…`). Ele enxerga uma causa confinada a `provider × issuer` — que
+nas fatias de dimensão única é invisível por aritmética — mas essas células
+carregam ~40 tentativas por minuto contra `MIN_VOLUME = 30`, e quadruplicar as
+hipóteses testadas por janela a 95% fixo levou a taxa de incidentes de 5.4 para
+21.2 por hora, com a fatia média caindo de 175 para 65 tentativas. O mascaramento
+é real e continua registrado em `detect/masked-cell.test.ts`; o caminho para ele
+passa pela pergunta 3 de `context/spec.md` §8 — controle de múltiplas comparações
+— ainda em aberto. Ver `flight_logs/the_cell_the_sweep_could_not_see.md`.
 
 Para cada valor-filho `v` do split:
 
@@ -556,7 +557,7 @@ calculadas à mão, sem mock de tempo, sem LLM.
 | 1 | `wilson.test.ts` | `wilson()`: `n = 0 → {0, 1}`; valores fechados para alguns `(k, n)`; `low ≥ 0`, `high ≤ 1`. `evaluate()`: tabela dos 4 estados, linhas exatas na fronteira `p_lim` (`ci.high` logo abaixo / logo acima; cruzando com `n = 29` e `n = 30`). |
 | 2 | `aggregate.test.ts` | Lotes fixos de `RollupRow[]` → somas exatas de `attempts`/`approved`/`amountUsdSum`/`approvedUsdSum`; `rate` nulo com `attempts = 0`; `filter` por subconjunto; `exclude` (pai menos C); `aggregateByBucket` ordenado e por bucket. |
 | 3 | `expected.test.ts` | `crossSectionalExpected`: taxa dos irmãos menos si; `null` sem irmãos. `temporalExpected`: mesma fatia sobre N buckets; respeito às bordas `[from, to)`. |
-| 4 | `trigger.test.ts` | `absoluteTrigger`: fronteira merchant×país (dentro / fora / cruzando); lê só `expectedConversion`; nunca agrega abaixo de merchant×país. `crossSectionalSweep`: isola o filho que concentra o déficit; pula split com < 2 filhos válidos; célula fora de `routing_coverage` ignorada; sem split de `issuerId` em PIX; `paymentMethod` só em BR; causa em `provider × issuer` mascarada nas duas fatias de dimensão única é pega no split 4 (`masked-cell.test.ts`). |
+| 4 | `trigger.test.ts` | `absoluteTrigger`: fronteira merchant×país (dentro / fora / cruzando); lê só `expectedConversion`; nunca agrega abaixo de merchant×país. `crossSectionalSweep`: isola o filho que concentra o déficit; pula split com < 2 filhos válidos; célula fora de `routing_coverage` ignorada; sem split de `issuerId` em PIX; `paymentMethod` só em BR; causa em `provider × issuer` mascarada nas duas fatias de dimensão única **não** é detectada, limitação medida em `masked-cell.test.ts`. |
 | 5 | `persistence.test.ts` | 2 janelas não promove; 3ª promove com `consecutiveWindows = 3`; sequência interrompida reseta; contadores independentes por `fingerprint`; `firstBucket` preservado; fatia já `emitted` que persiste **re-promove** a cada janela confirmada. |
 | 6 | `onset-scan.test.ts` | Acha o 1º bucket da sequência ininterrupta abaixo de `p_lim`; exige ≥ 3 consecutivos (soluço isolado ignorado); bucket de baixo volume dentro da sequência → `startedAtExact = false`; sequência curta → `startedAt = detectionBucket`, inexato. |
 | 7 | `tick.test.ts` | **Operação normal** (~30 buckets saudáveis) → `signals: []`. **Cenário obrigatório** (`context/spec.md` §4): provider recusando só no BR **e** emissor caindo para um único merchant no MX, simultâneos em ≥ 3 buckets → **dois** `ConfirmedDrop` distintos, com `dimensions` / `startedAt` / `expectedSource` corretos (não se testa ordenação nem merge — é diagnóstico). **Persistência**: mesmo drop nos buckets 1–2 sem sinal, bucket 3 emite. **Célula fina**: `< 30` em 1 min e `≥ 30` em 5 min → confirma com `windowUsed: "5m"`. **Evidência insuficiente**: `< 30` nos dois → `evidenceGaps`, nunca `signals`. |

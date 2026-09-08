@@ -28,35 +28,28 @@ function childValues(rows: RollupRow[], coverage: RoutingCoverage, parent: Slice
 export function crossSectionalSweep(rows: RollupRow[], coverage: RoutingCoverage, merchants: MerchantConfig[]): Candidate[] {
   const configs = new Map(merchants.map((m) => [m.merchantId, m])); const out: Candidate[] = [];
   for (const root of roots(rows)) { const m = configs.get(root.merchantId); if (!m) continue;
-    const providers = childValues(rows, coverage, root, "providerId");
-    for (const { parent, dim } of splitsOf(root, providers)) for (const value of childValues(rows, coverage, parent, dim)) { const values = childValues(rows, coverage, parent, dim); if (values.length < 2) break; const expected = crossSectionalExpected(rows, parent, dim, value); if (expected === null) continue; const filter = { ...parent, [dim]: value } as SliceFilter; out.push(candidate(filter, aggregate(rows, { filter }), expected, m.minMaterialDropPp, "cross_sectional")); }
+    for (const { parent, dim } of splitsOf(root)) for (const value of childValues(rows, coverage, parent, dim)) { const values = childValues(rows, coverage, parent, dim); if (values.length < 2) break; const expected = crossSectionalExpected(rows, parent, dim, value); if (expected === null) continue; const filter = { ...parent, [dim]: value } as SliceFilter; out.push(candidate(filter, aggregate(rows, { filter }), expected, m.minMaterialDropPp, "cross_sectional")); }
   } return out;
 }
 
 /**
  * The slices both sweeps compare a cell against its siblings in.
  *
- * The last group is what lets a fault be seen where it actually lives. A cause
+ * Deliberately stops one dimension below the merchant x country root. Splitting
+ * the issuers inside each provider was tried (`c1ffd0d`) because a cause
  * confined to one provider's traffic through one issuer is arithmetically
- * invisible in every single-dimension slice: the provider's other issuers lift
- * its average back up, the issuer's other providers do the same, and a second
- * cause elsewhere under the merchant pulls the sibling reference down to meet
- * it. Measured on 2026-09-04 — `adyen x nubank` at ~0.32 against a 0.90
- * baseline, next to a severe `stripe x itau`, read as *better* than expected in
- * both of its own slices (masked-cell.test.ts reproduces the arithmetic).
+ * invisible at every slice here — `masked-cell.test.ts` still holds that
+ * arithmetic. It was reverted: those cells carry ~40 attempts a minute against a
+ * `MIN_VOLUME` of 30, and quadrupling the hypotheses tested per window at a
+ * fixed 95% level took the incident rate from 5.4 to 21.2 an hour with the mean
+ * slice halving from 175 attempts to 65.
  *
- * Splitting the issuers inside one provider is the only comparison that puts
- * that cell next to a sibling the fault does not touch. It is where `peel`
- * already ends up on the diagnosis side; the detector simply could not see far
- * enough to hand it the signal.
+ * The masking is real and the depth is not the way to reach it. What it needs is
+ * an answer to `spec.md` §8 question 3 — controlling multiple comparisons —
+ * which is still open. See `flight_logs/the_cell_the_sweep_could_not_see.md`.
  */
-function splitsOf(root: SliceFilter, providers: string[]): Array<{ parent: SliceFilter; dim: Dimension }> {
-  const card = { ...root, paymentMethod: "CARD" } as SliceFilter;
-  const splits: Array<{ parent: SliceFilter; dim: Dimension }> = [
-    { parent: root, dim: "providerId" },
-    { parent: card, dim: "issuerId" },
-    ...providers.map((providerId) => ({ parent: { ...card, providerId } as SliceFilter, dim: "issuerId" as Dimension })),
-  ];
+function splitsOf(root: SliceFilter): Array<{ parent: SliceFilter; dim: Dimension }> {
+  const splits: Array<{ parent: SliceFilter; dim: Dimension }> = [{ parent: root, dim: "providerId" }, { parent: { ...root, paymentMethod: "CARD" }, dim: "issuerId" }];
   if (root.country === "BR") splits.push({ parent: root, dim: "paymentMethod" });
   return splits;
 }
@@ -80,8 +73,7 @@ function splitsOf(root: SliceFilter, providers: string[]): Array<{ parent: Slice
 export function temporalSweep(rows: RollupRow[], history: RollupRow[], coverage: RoutingCoverage, merchants: MerchantConfig[]): Candidate[] {
   const configs = new Map(merchants.map((m) => [m.merchantId, m])); const out: Candidate[] = [];
   for (const root of roots(rows)) { const m = configs.get(root.merchantId); if (!m) continue;
-    const providers = childValues(rows, coverage, root, "providerId");
-    for (const { parent, dim } of splitsOf(root, providers)) for (const value of childValues(rows, coverage, parent, dim)) {
+    for (const { parent, dim } of splitsOf(root)) for (const value of childValues(rows, coverage, parent, dim)) {
       const filter = { ...parent, [dim]: value } as SliceFilter;
       const past = aggregate(history, { filter });
       if (past.rate === null || past.attempts < MIN_VOLUME) continue;
