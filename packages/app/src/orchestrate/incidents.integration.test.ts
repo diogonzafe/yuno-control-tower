@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { afterEach, describe, expect, it } from "vitest";
-import { eq, inArray } from "drizzle-orm";
+import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { eq, inArray, sql } from "drizzle-orm";
 import type { EvidenceObject } from "@control-tower/contracts";
 import { db } from "../db/client";
 import { incidents } from "../db/schema";
@@ -76,6 +76,20 @@ afterEach(async () => {
     await db.delete(incidents).where(inArray(incidents.incidentId, created));
     created.length = 0;
   }
+});
+
+// The per-test bookkeeping above is not enough on its own. A test that times
+// out never reaches the line recording its id, and a hook that times out never
+// runs the delete — the flaky-network runs of 2026-09-04 leaked two incidents
+// that way, and because their bucket is in 2999 planTransitions can never
+// resolve them, so they sat open on the production dashboard indefinitely.
+//
+// Nothing but this fixture writes a `test-` merchant at a far-future bucket, so
+// the pair identifies exactly this suite's rows and nothing else.
+afterAll(async () => {
+  await db
+    .delete(incidents)
+    .where(sql`${incidents.dimensions}->>'merchantId' like 'test-%' and ${incidents.detectedAt} > '2500-01-01'`);
 });
 
 describe("incident writer", () => {
