@@ -9,7 +9,7 @@ doc_related:
   - "YCT-DETECT-001"
 domain: "agentic-orchestration"
 dimension_schema: []
-time: "2026-09-10T18:25:43Z"
+time: "2026-09-10T18:52:00Z"
 ---
 
 # Design do refactor agêntico
@@ -128,7 +128,7 @@ determinístico, agêntico e de narração:
 | `agent/agents/narrator.ts` | agente C, criado uma vez |
 | `agent/workflows/investigate-incident.ts` | o grafo |
 | `agent/processors/evidence-numbers.ts` | guarda numérica do narrador como output processor |
-| `agent/tools.ts` | inalterado — as seis tools tipadas são a parte correta do módulo |
+| `agent/tools.ts` | seis tools e schemas mantidos; o estado por-run sai da closure e passa a viajar no `RequestContext` (§4.1) |
 | `agent/persistence.ts` | inalterado — `investigation_runs`/`investigation_steps` continuam sendo auditoria de domínio |
 | `agent/coordinator.ts` | **apagado** |
 | `agent/investigator.ts` | **apagado** (o `withDeadline` migra para limite de passo) |
@@ -143,6 +143,21 @@ narrativa parecer narrada quando nenhum modelo tinha respondido (registrado em
 `agent/config.ts`). Como processor ela roda no pipeline do framework, aparece no
 trace, e pode usar `abort(reason, { retry: true })` para devolver ao modelo
 *"você usou um número ausente da evidência"* antes de desistir.
+
+### 4.1 O estado por-run sai da closure
+
+`createInvestigationToolset` fecha hoje sobre `runId`, `auditStore`, `dataSource`,
+`maxToolCalls` e um `StepCounter`, o que obriga um toolset novo — e portanto um
+`Agent` novo — a cada investigação. É a causa mecânica de os agentes serem
+construídos por chamada, e não dá para removê-la sem mover esse estado.
+
+`RequestContext` é o canal por-run do Mastra: é encaminhado por
+`agent.generate/stream({ requestContext })` e por `run.start/resume({ requestContext })`,
+lido dentro da tool em `context.requestContext`, e todas as tools da mesma run
+recebem a mesma instância. As seis tools passam a ser definidas uma vez, e o
+orçamento, a numeração de passos e a auditoria seguem idênticos — inclusive a
+garantia de um contador por run, que agora é dada pelo escopo do contexto em vez
+do escopo da closure.
 
 **Dependências novas**, ambas exigindo justificativa pela AGENTS.md:
 
@@ -440,8 +455,10 @@ O escopo não cabe num único plano de implementação. Ele quebra em quatro fas
 cada uma entregável e verificável sozinha, na ordem em que uma depende da
 anterior:
 
-**Fase 1 — Runtime.** A raiz Mastra, os agentes como módulos registrados, o
-`PostgresStore`, o processor numérico do narrador, o mock por modelo nos testes.
+**Fase 1 — Runtime.** O estado por-run das tools movido para `RequestContext`
+(§4.1), a raiz Mastra, os agentes como módulos registrados, o `PostgresStore`, o
+processor numérico do narrador, o mock por modelo nos testes, e a separação de
+`AGENT_MAX_STEPS` (§9.2).
 Nenhuma mudança de comportamento visível: o `coordinator.ts` continua chamando,
 só que agentes registrados. É a fase que pode ser validada com a suíte atual
 praticamente intacta.
