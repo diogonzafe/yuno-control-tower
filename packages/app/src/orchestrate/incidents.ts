@@ -207,25 +207,37 @@ export function createIncidentWriter(database: Database = defaultDatabase): Inci
         return;
       }
 
-      // Peeling can put two evidence objects under one signal, each with its
-      // own incident (spec.md §4 criterion 5). The agent picks its cell out of
-      // the same candidate list, so it can settle on a sibling's — and that
-      // object belongs to the sibling's row, not this one. Measured columns
-      // stay untouched either way: the narrator verbalizes, it never recomputes
-      // (rules.md §3 boundary #2).
+      // The triple travels together or not at all. Evidence, narrative and
+      // playbook were written from one object, and rules.md §4 forbids text
+      // citing a number absent from the evidence beside it — so writing the
+      // prose while rejecting the numbers is not a safe half-measure. Incident
+      // f9cb4b1c on 2026-09-10 is what that produced: columns naming
+      // `stripe x itau x CARD`, narrative describing "BR_STORE_01 in BR, no
+      // clear driver, INCONCLUSIVE".
       //
-      // The test is the same containment openOrUpdate matches on. Comparing
-      // fingerprints here rejected the agent's own object whenever the dominant
-      // code moved between the tick that opened the row and the investigation
-      // that finished after it — a sibling's cell contradicts this one, a
-      // restated code does not.
-      const enriches =
-        row !== undefined && compatible(row.dimensions as Cell, input.evidence.dimensions);
+      // Two ways the agent's object can be about somewhere else. It picks its
+      // cell from the same candidate list the peel used, so it can settle on a
+      // sibling's — `compatible` rejects that, since the two disagree on a
+      // dimension both name. And it can step back up toward the root, which is
+      // compatible and still not this incident: openOrUpdate already refuses to
+      // let a coarser reading rewrite a sharper diagnosis (4aa2333), and a
+      // wider view is no better a diagnosis here than it is there.
+      //
+      // An incident whose investigation ended coarser therefore keeps the cell
+      // the peel found and carries no prose, rather than naming one slice and
+      // describing another. Measured columns stay untouched either way: the
+      // narrator verbalizes, it never recomputes (rules.md §3 boundary #2).
+      const describesThisIncident =
+        row !== undefined
+        && compatible(row.dimensions as Cell, input.evidence.dimensions)
+        && specificity(input.evidence.dimensions) >= specificity(row.dimensions as Cell);
+
+      if (!describesThisIncident) return;
 
       await database
         .update(incidents)
         .set({
-          ...(enriches ? { evidence: input.evidence } : {}),
+          evidence: input.evidence,
           narrativeOps: input.narrativeOps,
           narrativeExec: input.narrativeExec,
           playbookId: input.playbookId,

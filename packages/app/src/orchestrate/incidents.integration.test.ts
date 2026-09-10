@@ -376,9 +376,11 @@ describe("incident writer", () => {
     expect(after?.playbookId).toBe("method-country-default");
   });
 
-  // An agent that settles on a peeled sibling's cell produces an object keyed
-  // by the sibling's fingerprint. It belongs to that row, not this one.
-  it("keeps the deterministic evidence when the agent's object is for another cell", async () => {
+  // An agent that settles on a peeled sibling's cell produces an object about
+  // that cell. It belongs to the sibling's row, not this one — and so does the
+  // narrative written from it: rules.md §4 forbids text citing a number absent
+  // from the evidence it sits next to, so the triple is dropped whole.
+  it("drops the whole triple when the agent's object is for another cell", async () => {
     const writer = createIncidentWriter();
     const fingerprint = `test-${randomUUID()}`;
     const opened = await writer.openOrUpdate(evidenceFixture(fingerprint, BUCKET_1));
@@ -395,7 +397,74 @@ describe("incident writer", () => {
     const [after] = await db.select().from(incidents).where(eq(incidents.incidentId, opened.incidentId));
     expect((after?.evidence as EvidenceObject).fingerprint).toBe(fingerprint);
     expect((after?.evidence as EvidenceObject).diagnosisSource).toBe("beam_search");
-    expect(after?.narrativeOps).toBe("ops");
+    // Writing the text while rejecting the numbers is what left a row naming
+    // one cell in its columns and describing another in its prose.
+    expect(after?.narrativeOps).toBeNull();
+  });
+
+  /**
+   * Measured in production, incident f9cb4b1c on 2026-09-10: the columns said
+   * `stripe x itau x CARD` and the narrative said "BR_STORE_01 in BR ... no
+   * clear driver, INCONCLUSIVE". The investigator had stepped back up to the
+   * merchant root, and `compatible()` alone accepts a coarser cell — so the
+   * agent's wider object overwrote the peel's precise one.
+   *
+   * Same rule openOrUpdate applies (4aa2333): a wider view of a fault is
+   * evidence it is still running, never a better diagnosis of it.
+   */
+  it("drops the whole triple when the agent stepped back up to a coarser cell", async () => {
+    const writer = createIncidentWriter();
+    const merchantId = `test-${randomUUID()}`;
+    const precise: EvidenceObject["dimensions"] =
+      { merchantId, country: "BR", paymentMethod: "CARD", providerId: "stripe", issuerId: "itau" };
+
+    const opened = await writer.openOrUpdate(
+      evidenceFixture(`test-${randomUUID()}`, BUCKET_1, precise),
+    );
+    created.push(opened.incidentId);
+
+    await writer.attachNarrative({
+      incidentId: opened.incidentId,
+      evidence: {
+        ...evidenceFixture(`test-${randomUUID()}`, BUCKET_2, { merchantId, country: "BR" }),
+        diagnosisSource: "agent",
+      },
+      narrativeOps: "the whole merchant looks off, no driver isolated",
+      narrativeExec: "exec",
+      playbookId: "merchant-default",
+    });
+
+    const [after] = await db.select().from(incidents).where(eq(incidents.incidentId, opened.incidentId));
+    // The row keeps the cell the peel found, and stays silent rather than
+    // describing a slice it does not name.
+    expect((after?.evidence as EvidenceObject).dimensions).toMatchObject(precise);
+    expect(after?.narrativeOps).toBeNull();
+    expect(after?.playbookId).toBeNull();
+  });
+
+  it("still takes the agent's object when it sharpens the cell", async () => {
+    const writer = createIncidentWriter();
+    const merchantId = `test-${randomUUID()}`;
+    const coarse: EvidenceObject["dimensions"] =
+      { merchantId, country: "BR", paymentMethod: "CARD", providerId: "stripe" };
+
+    const opened = await writer.openOrUpdate(evidenceFixture(`test-${randomUUID()}`, BUCKET_1, coarse));
+    created.push(opened.incidentId);
+
+    await writer.attachNarrative({
+      incidentId: opened.incidentId,
+      evidence: {
+        ...evidenceFixture(`test-${randomUUID()}`, BUCKET_2, { ...coarse, issuerId: "itau" }),
+        diagnosisSource: "agent",
+      },
+      narrativeOps: "stripe is failing on itau cards",
+      narrativeExec: "exec",
+      playbookId: "issuer-default",
+    });
+
+    const [after] = await db.select().from(incidents).where(eq(incidents.incidentId, opened.incidentId));
+    expect((after?.evidence as EvidenceObject).diagnosisSource).toBe("agent");
+    expect(after?.narrativeOps).toBe("stripe is failing on itau cards");
   });
 
   // priority_score was numeric(10,4), so anything past 999999.9999 minor units
