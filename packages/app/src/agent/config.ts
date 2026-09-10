@@ -31,13 +31,20 @@ function readFallbackEnabled(value: string | undefined): boolean {
 
 export function loadAgentConfig(env: NodeJS.ProcessEnv = process.env): AgentConfig {
   return {
-    // Deliberately all on Kimi now (moved off the rules.md §6.4.1 OpenAI
-    // split) — the reserve no longer being a different model than the
-    // narrator's means a Kimi-side rate limit takes both down together
-    // (§6.8's original reasoning for keeping them apart); accepted knowingly.
-    investigatorModel: env.INVESTIGATOR_MODEL ?? "kimi-for-coding/k3",
-    narratorModel: env.NARRATOR_MODEL ?? "kimi-for-coding/k3",
-    narratorFallbackModel: env.NARRATOR_FALLBACK_MODEL ?? "kimi-for-coding/k3",
+    // Back on OpenAI (3751c26 had moved all three to Kimi). Measured
+    // 2026-09-10: no provider in @mastra or ai resolves a Kimi model id, so
+    // every call failed and renderNarratives silently served its deterministic
+    // narrative — an incident read as narrated when nothing had narrated it.
+    // A default that cannot work is worse than none, so these are the ids the
+    // deployment actually runs on.
+    //
+    // The narrator and its reserve stay on different models, which is §6.8's
+    // reason for keeping them apart: one model's rate limit must not take both
+    // down. The investigator shares the reserve's model — the two rarely run at
+    // once, since the reserve only wakes when the narrator has already failed.
+    investigatorModel: env.INVESTIGATOR_MODEL ?? "openai/gpt-5.6-luna",
+    narratorModel: env.NARRATOR_MODEL ?? "openai/gpt-5.6-terra",
+    narratorFallbackModel: env.NARRATOR_FALLBACK_MODEL ?? "openai/gpt-5.6-luna",
     maxToolCalls: readPositiveInt(env.AGENT_MAX_TOOL_CALLS, 12),
     timeoutMs: readPositiveInt(env.AGENT_TIMEOUT_MS, 45_000),
     fallbackEnabled: readFallbackEnabled(env.AGENT_FALLBACK_ENABLED),
