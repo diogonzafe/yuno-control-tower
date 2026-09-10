@@ -12,9 +12,9 @@
     "start": "tsx src/run.ts"
   },
   "dependencies": {
-    "@mastra/core": "1.37.1",
     "@control-tower/contracts": "workspace:^",
     "@fastify/cors": "^10",
+    "@mastra/core": "1.37.1",
     "dotenv": "^16.4.7",
     "drizzle-orm": "^0.36.4",
     "fastify": "^5.2.0",

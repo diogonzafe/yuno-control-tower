@@ -3,6 +3,7 @@ export * from "./coordinator.js";
 export * from "./config.js";
 export * from "./fixtures.js";
 export * from "./investigator.js";
+export * from "./mastra.js";
 export * from "./narrator.js";
 export * from "./persistence.js";
 export * from "./playbooks.js";

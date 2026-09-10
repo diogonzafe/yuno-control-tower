@@ -1,4 +1,3 @@
-import { Agent } from "@mastra/core/agent";
 import {
   NarrativeOutput,
   NarrationInput,
@@ -6,22 +5,13 @@ import {
   type NarrationInput as NarrationInputType,
 } from "@control-tower/contracts";
 import type { AgentConfig } from "./config.js";
+import { getNarratorAgent, getNarratorFallbackAgent } from "./mastra.js";
 
 export interface NarratorAgentLike {
   generate(
     prompt: string,
     options: Record<string, unknown>,
   ): Promise<{ object?: unknown }>;
-}
-
-export function createNarratorAgent(model: string): Agent {
-  return new Agent({
-    id: "incident-narrator",
-    name: "Incident Narrator",
-    instructions:
-      "You narrate a closed payment-incident evidence object. Never calculate new numbers and never add numbers that are not present in the evidence object or recommendation.",
-    model,
-  });
 }
 
 export function buildNarratorPrompt(input: NarrationInputType): string {
@@ -108,14 +98,17 @@ function renderNarrativeTemplate(input: NarrationInputType): NarrativeOutputType
 }
 
 export async function renderNarratives(
-  config: AgentConfig,
+  // Kept for signature compatibility with existing call sites (coordinator.ts,
+  // agent.test.ts); model selection now lives on the Mastra root, resolved via
+  // getNarratorAgent()/getNarratorFallbackAgent() below.
+  _config: AgentConfig,
   input: NarrationInputType,
   agent?: NarratorAgentLike,
   fallbackAgent?: NarratorAgentLike,
 ): Promise<NarrativeOutputType> {
   const parsedInput = NarrationInput.parse(input);
-  const primary = agent ?? createNarratorAgent(config.narratorModel);
-  const secondary = fallbackAgent ?? createNarratorAgent(config.narratorFallbackModel);
+  const primary = agent ?? getNarratorAgent();
+  const secondary = fallbackAgent ?? getNarratorFallbackAgent();
   const render = async (runner: NarratorAgentLike) => {
     const response = await runner.generate(buildNarratorPrompt(parsedInput), {
       structuredOutput: {

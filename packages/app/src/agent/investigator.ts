@@ -1,4 +1,3 @@
-import { Agent } from "@mastra/core/agent";
 import {
   AgentDiagnosisWire,
   AgentRunResult,
@@ -11,12 +10,9 @@ import { ZodError } from "zod";
 import type { InvestigationAuditStore } from "./audit.js";
 import type { AgentConfig } from "./config.js";
 import { InMemoryInvestigationAuditStore } from "./audit.js";
+import { getInvestigatorAgent } from "./mastra.js";
 import type { InvestigationDataSource } from "./tools.js";
-import {
-  StepBudgetExceededError,
-  createInvestigationRequestContext,
-  investigationToolset,
-} from "./tools.js";
+import { StepBudgetExceededError, createInvestigationRequestContext } from "./tools.js";
 
 export interface InvestigatorAgentLike {
   generate(
@@ -55,20 +51,6 @@ export function buildInvestigationPrompt(request: InvestigationRequestV1): strin
     `Root dimensions: ${JSON.stringify(request.context.rootDimensions)}`,
     `Similar incidents: ${JSON.stringify(request.context.similarIncidents)}`,
   ].join("\n");
-}
-
-export function createInvestigatorAgent(
-  config: AgentConfig,
-  tools: typeof investigationToolset,
-): Agent {
-  return new Agent({
-    id: "investigator-agent",
-    name: "Investigator Agent",
-    instructions:
-      "You investigate payment conversion incidents. Use only the available tools, stay within the tool budget, always include a public decisionContext for each tool call, and return a structured diagnosis without hidden reasoning.",
-    model: config.investigatorModel,
-    tools,
-  });
 }
 
 export function validateConclusiveDiagnosis(
@@ -187,7 +169,7 @@ export async function runInvestigation(
     dataSource: options.dataSource,
     now,
   });
-  const agent = options.agent ?? createInvestigatorAgent(options.config, investigationToolset);
+  const agent = options.agent ?? getInvestigatorAgent();
 
   try {
     const response = await withDeadline(
