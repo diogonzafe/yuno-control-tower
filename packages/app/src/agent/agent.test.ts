@@ -33,11 +33,15 @@ describe("agent module", () => {
     decisionContext,
   } as const;
 
-  it("defaults all three roles to Kimi", () => {
+  it("defaults the investigator and the narrator reserve to one model, the narrator to another", () => {
+    // §6.8: narrator and reserve must not share a model, so one model's rate
+    // limit cannot take both down. The investigator shares the reserve's model
+    // because the two rarely run at once — the reserve only wakes after the
+    // narrator has already failed.
     expect(loadAgentConfig({} as NodeJS.ProcessEnv)).toEqual({
-      investigatorModel: "kimi-for-coding/k3",
-      narratorModel: "kimi-for-coding/k3",
-      narratorFallbackModel: "kimi-for-coding/k3",
+      investigatorModel: "openai/gpt-5.6-luna",
+      narratorModel: "openai/gpt-5.6-terra",
+      narratorFallbackModel: "openai/gpt-5.6-luna",
       maxToolCalls: 12,
       timeoutMs: 45_000,
       // The deterministic fallback ships off; AGENT_FALLBACK_ENABLED=true opts in.
