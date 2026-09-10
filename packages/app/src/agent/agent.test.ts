@@ -1,4 +1,6 @@
 import type { InvestigationAuditTrail, NarrationInput } from "@control-tower/contracts";
+import type { RequestContext } from "@mastra/core/request-context";
+import { noopObserve } from "@mastra/core/tools";
 import { describe, expect, it } from "vitest";
 import { InMemoryInvestigationAuditStore } from "./audit.js";
 import { loadAgentConfig } from "./config.js";
@@ -8,9 +10,17 @@ import { renderNarratives } from "./narrator.js";
 import { runInvestigation, validateConclusiveDiagnosis } from "./investigator.js";
 import {
   StepBudgetExceededError,
-  createInvestigationToolset,
+  createInvestigationRequestContext,
   createMockInvestigationDataSource,
+  investigationToolset,
 } from "./tools.js";
+
+// Mastra's ToolExecutionContext requires `observe`; noopObserve is Mastra's
+// own null-safe stand-in for when no tracing context is active, which is
+// always true in these unit tests.
+function toolContext(requestContext: RequestContext) {
+  return { requestContext, observe: noopObserve };
+}
 
 const decisionContext = {
   tag: "DRILL_DOWN" as const,
@@ -54,7 +64,7 @@ describe("agent module", () => {
       "4dfbc6f5-70dd-47da-8cb1-b18b241647bf",
       "agent",
     );
-    const tools = createInvestigationToolset({
+    const requestContext = createInvestigationRequestContext({
       runId: "4dfbc6f5-70dd-47da-8cb1-b18b241647bf",
       maxToolCalls: 12,
       auditStore,
@@ -62,7 +72,10 @@ describe("agent module", () => {
       now: () => new Date("2026-08-30T14:06:00.000Z"),
     });
 
-    const result = await tools.query_conversion_slice.execute!(validSliceInput, {} as never);
+    const result = await investigationToolset.query_conversion_slice.execute!(
+      validSliceInput,
+      toolContext(requestContext),
+    );
     if (!result || typeof result !== "object" || !("conversionRate" in result)) {
       throw new Error("Expected a conversion slice result");
     }
@@ -79,7 +92,7 @@ describe("agent module", () => {
       "4dfbc6f5-70dd-47da-8cb1-b18b241647bf",
       "agent",
     );
-    const tools = createInvestigationToolset({
+    const requestContext = createInvestigationRequestContext({
       runId: "4dfbc6f5-70dd-47da-8cb1-b18b241647bf",
       maxToolCalls: 1,
       auditStore,
@@ -87,10 +100,10 @@ describe("agent module", () => {
       now: () => new Date("2026-08-30T14:06:00.000Z"),
     });
 
-    await tools.query_conversion_slice.execute!(validSliceInput, {} as never);
+    await investigationToolset.query_conversion_slice.execute!(validSliceInput, toolContext(requestContext));
 
     await expect(
-      tools.query_conversion_slice.execute!(validSliceInput, {} as never),
+      investigationToolset.query_conversion_slice.execute!(validSliceInput, toolContext(requestContext)),
     ).rejects.toBeInstanceOf(StepBudgetExceededError);
   });
 
@@ -99,7 +112,7 @@ describe("agent module", () => {
       "4dfbc6f5-70dd-47da-8cb1-b18b241647bf",
       "agent",
     );
-    const tools = createInvestigationToolset({
+    const requestContext = createInvestigationRequestContext({
       runId: "4dfbc6f5-70dd-47da-8cb1-b18b241647bf",
       maxToolCalls: 12,
       auditStore,
@@ -110,14 +123,14 @@ describe("agent module", () => {
     // Two DIFFERENT tools. A per-tool counter would number both as step 1,
     // colliding on investigation_steps' (run_id, step_no) primary key and
     // making cross-tool basedOnStepNos unresolvable.
-    await tools.query_conversion_slice.execute!(validSliceInput, {} as never);
-    await tools.query_decline_mix.execute!(
+    await investigationToolset.query_conversion_slice.execute!(validSliceInput, toolContext(requestContext));
+    await investigationToolset.query_decline_mix.execute!(
       {
         dimensions: selectedCell,
         windowBucket: "2026-08-30T14:06:00.000Z",
         decisionContext,
       },
-      {} as never,
+      toolContext(requestContext),
     );
 
     const trail = await auditStore.getTrail();
@@ -133,7 +146,7 @@ describe("agent module", () => {
       "4dfbc6f5-70dd-47da-8cb1-b18b241647bf",
       "agent",
     );
-    const tools = createInvestigationToolset({
+    const requestContext = createInvestigationRequestContext({
       runId: "4dfbc6f5-70dd-47da-8cb1-b18b241647bf",
       maxToolCalls: 1,
       auditStore,
@@ -141,18 +154,18 @@ describe("agent module", () => {
       now: () => new Date("2026-08-30T14:06:00.000Z"),
     });
 
-    await tools.query_conversion_slice.execute!(validSliceInput, {} as never);
+    await investigationToolset.query_conversion_slice.execute!(validSliceInput, toolContext(requestContext));
 
     // The budget is per run (rules.md §6.8, roadmap H+13: 12 calls per run), so a
     // second call to a DIFFERENT tool must exhaust it too.
     await expect(
-      tools.query_decline_mix.execute!(
+      investigationToolset.query_decline_mix.execute!(
         {
           dimensions: selectedCell,
           windowBucket: "2026-08-30T14:06:00.000Z",
           decisionContext,
         },
-        {} as never,
+        toolContext(requestContext),
       ),
     ).rejects.toBeInstanceOf(StepBudgetExceededError);
   });
@@ -162,7 +175,7 @@ describe("agent module", () => {
       "4dfbc6f5-70dd-47da-8cb1-b18b241647bf",
       "agent",
     );
-    const tools = createInvestigationToolset({
+    const requestContext = createInvestigationRequestContext({
       runId: "4dfbc6f5-70dd-47da-8cb1-b18b241647bf",
       maxToolCalls: 12,
       auditStore,
@@ -171,12 +184,12 @@ describe("agent module", () => {
     });
 
     await expect(
-      tools.query_conversion_slice.execute!(
+      investigationToolset.query_conversion_slice.execute!(
         {
           ...validSliceInput,
           decisionContext: { ...decisionContext, basedOnStepNos: [1] },
         },
-        {} as never,
+        toolContext(requestContext),
       ),
     ).rejects.toThrow(/future step/);
   });

@@ -1,4 +1,5 @@
 import { createTool } from "@mastra/core/tools";
+import { RequestContext } from "@mastra/core/request-context";
 import {
   DecisionContext,
   InvestigationToolName,
@@ -217,6 +218,34 @@ export interface ToolsetOptions {
   auditStore: InvestigationAuditStore;
   dataSource: InvestigationDataSource;
   now?: () => Date;
+}
+
+export const INVESTIGATION_RUN_KEY = "investigation-run";
+
+// One counter per run, shared by every tool. Owning it per tool would make the
+// budget `maxToolCalls * tool count`, make cross-tool `basedOnStepNos`
+// unresolvable, and collide on investigation_steps' (run_id, step_no) key.
+export type InvestigationRunState = ToolsetOptions & { counter: { value: number } };
+
+export function createInvestigationRequestContext(options: ToolsetOptions): RequestContext {
+  const requestContext = new RequestContext();
+  requestContext.set(INVESTIGATION_RUN_KEY, { ...options, counter: { value: 0 } });
+  return requestContext;
+}
+
+function requireRunState(
+  context: { requestContext?: RequestContext } | undefined,
+): InvestigationRunState {
+  const state = context?.requestContext?.get(INVESTIGATION_RUN_KEY) as
+    | InvestigationRunState
+    | undefined;
+  // A missing run state means the agent was invoked without
+  // createInvestigationRequestContext. Failing here keeps a silent run with no
+  // audit trail from ever reaching investigation_steps.
+  if (!state) {
+    throw new Error("Missing investigation run state on the request context");
+  }
+  return state;
 }
 
 type ToolInputWithDecision<T> = T & { decisionContext: DecisionContextType };
@@ -638,38 +667,34 @@ export function createMockInvestigationDataSource(
   };
 }
 
-// One counter per run, shared by every tool. Owning it per tool would make the
-// budget `maxToolCalls * tool count`, make cross-tool `basedOnStepNos` unresolvable
-// (every second tool would restart at 1 and its references read as "future"), and
-// collide on investigation_steps' (run_id, step_no) primary key.
-type StepCounter = { value: number };
-
 function createToolExecutor<TInput extends { decisionContext: DecisionContextType }, TResult extends Record<string, unknown>>(
-  options: ToolsetOptions,
-  counter: StepCounter,
   toolName: z.infer<typeof InvestigationToolName>,
-  execute: (input: Omit<TInput, "decisionContext">) => Promise<TResult>,
+  execute: (state: InvestigationRunState, input: Omit<TInput, "decisionContext">) => Promise<TResult>,
 ) {
-  const now = options.now ?? (() => new Date());
+  return async (
+    input: TInput,
+    context: { requestContext?: RequestContext } | undefined,
+  ): Promise<TResult> => {
+    const state = requireRunState(context);
+    const now = state.now ?? (() => new Date());
 
-  return async (input: TInput): Promise<TResult> => {
-    counter.value += 1;
-    const stepNo = counter.value;
-    if (stepNo > options.maxToolCalls) {
-      throw new StepBudgetExceededError(options.maxToolCalls);
+    state.counter.value += 1;
+    const stepNo = state.counter.value;
+    if (stepNo > state.maxToolCalls) {
+      throw new StepBudgetExceededError(state.maxToolCalls);
     }
 
     const [toolArgs, decisionContext] = stripDecisionContext(input);
-    await validateDecisionReferences(options.auditStore, stepNo, decisionContext);
+    await validateDecisionReferences(state.auditStore, stepNo, decisionContext);
     const createdAt = now().toISOString();
 
     try {
-      const result = await execute(toolArgs);
+      const result = await execute(state, toolArgs);
       const completedAt = now().toISOString();
       await recordCompletedStep(
-        options.auditStore,
+        state.auditStore,
         stepNo,
-        options.runId,
+        state.runId,
         toolName,
         toolArgs as Record<string, unknown>,
         result,
@@ -681,9 +706,9 @@ function createToolExecutor<TInput extends { decisionContext: DecisionContextTyp
     } catch (error) {
       const completedAt = now().toISOString();
       await recordFailedStep(
-        options.auditStore,
+        state.auditStore,
         stepNo,
-        options.runId,
+        state.runId,
         toolName,
         toolArgs as Record<string, unknown>,
         decisionContext,
@@ -696,87 +721,80 @@ function createToolExecutor<TInput extends { decisionContext: DecisionContextTyp
   };
 }
 
-export function createInvestigationToolset(options: ToolsetOptions) {
-  const counter: StepCounter = { value: 0 };
-  const executeSlice = createToolExecutor<QueryConversionSliceInput, QueryConversionSliceResult>(
-    options,
-    counter,
-    "query_conversion_slice",
-    (input) => options.dataSource.queryConversionSlice(input),
-  );
-  const executeHistory = createToolExecutor<QueryConversionHistoryInput, QueryConversionHistoryResult>(
-    options,
-    counter,
-    "query_conversion_history",
-    (input) => options.dataSource.queryConversionHistory(input),
-  );
-  const executeDeclineMix = createToolExecutor<QueryDeclineMixInput, QueryDeclineMixResult>(
-    options,
-    counter,
-    "query_decline_mix",
-    (input) => options.dataSource.queryDeclineMix(input),
-  );
-  const executeResidual = createToolExecutor<RunResidualTestInput, RunResidualTestResult>(
-    options,
-    counter,
-    "run_residual_test",
-    (input) => options.dataSource.runResidualTest(input),
-  );
-  const executeOnset = createToolExecutor<ScanIncidentOnsetInput, ScanIncidentOnsetResult>(
-    options,
-    counter,
-    "scan_incident_onset",
-    (input) => options.dataSource.scanIncidentOnset(input),
-  );
-  const executeImpact = createToolExecutor<EstimateIncidentImpactInput, EstimateIncidentImpactResult>(
-    options,
-    counter,
-    "estimate_incident_impact",
-    (input) => options.dataSource.estimateIncidentImpact(input),
-  );
+const executeSlice = createToolExecutor<QueryConversionSliceInput, QueryConversionSliceResult>(
+  "query_conversion_slice",
+  (state, input) => state.dataSource.queryConversionSlice(input),
+);
+const executeHistory = createToolExecutor<QueryConversionHistoryInput, QueryConversionHistoryResult>(
+  "query_conversion_history",
+  (state, input) => state.dataSource.queryConversionHistory(input),
+);
+const executeDeclineMix = createToolExecutor<QueryDeclineMixInput, QueryDeclineMixResult>(
+  "query_decline_mix",
+  (state, input) => state.dataSource.queryDeclineMix(input),
+);
+const executeResidual = createToolExecutor<RunResidualTestInput, RunResidualTestResult>(
+  "run_residual_test",
+  (state, input) => state.dataSource.runResidualTest(input),
+);
+const executeOnset = createToolExecutor<ScanIncidentOnsetInput, ScanIncidentOnsetResult>(
+  "scan_incident_onset",
+  (state, input) => state.dataSource.scanIncidentOnset(input),
+);
+const executeImpact = createToolExecutor<EstimateIncidentImpactInput, EstimateIncidentImpactResult>(
+  "estimate_incident_impact",
+  (state, input) => state.dataSource.estimateIncidentImpact(input),
+);
 
-  return {
-    query_conversion_slice: createTool({
-      id: "query_conversion_slice",
-      description: "Returns aggregate conversion metrics, Wilson interval and state for one allowed rollup slice.",
-      inputSchema: queryConversionSliceInputSchema,
-      outputSchema: queryConversionSliceResultSchema,
-      execute: (context: QueryConversionSliceInput) => executeSlice(context),
-    }),
-    query_conversion_history: createTool({
-      id: "query_conversion_history",
-      description: "Returns aggregate conversion history over an allowed bucket range.",
-      inputSchema: queryConversionHistoryInputSchema,
-      outputSchema: queryConversionHistoryResultSchema,
-      execute: (context: QueryConversionHistoryInput) => executeHistory(context),
-    }),
-    query_decline_mix: createTool({
-      id: "query_decline_mix",
-      description: "Returns decline mix shifts, dominant decline and reference source for an allowed slice.",
-      inputSchema: queryDeclineMixInputSchema,
-      outputSchema: queryDeclineMixResultSchema,
-      execute: (context: QueryDeclineMixInput) => executeDeclineMix(context),
-    }),
-    run_residual_test: createTool({
-      id: "run_residual_test",
-      description: "Runs the deterministic residual test to separate one candidate cell from its echoes.",
-      inputSchema: runResidualTestInputSchema,
-      outputSchema: runResidualTestResultSchema,
-      execute: (context: RunResidualTestInput) => executeResidual(context),
-    }),
-    scan_incident_onset: createTool({
-      id: "scan_incident_onset",
-      description: "Finds the incident onset from historical rollup buckets and returns supporting buckets.",
-      inputSchema: scanIncidentOnsetInputSchema,
-      outputSchema: scanIncidentOnsetResultSchema,
-      execute: (context: ScanIncidentOnsetInput) => executeOnset(context),
-    }),
-    estimate_incident_impact: createTool({
-      id: "estimate_incident_impact",
-      description: "Returns deterministic incident cost and priority estimates.",
-      inputSchema: estimateIncidentImpactInputSchema,
-      outputSchema: estimateIncidentImpactResultSchema,
-      execute: (context: EstimateIncidentImpactInput) => executeImpact(context),
-    }),
-  };
-}
+/**
+ * The six typed tools, defined once.
+ *
+ * Per-run state (runId, audit store, data source, budget, step counter) travels
+ * on the RequestContext instead of a closure, which is what lets the
+ * investigator be a registered singleton rather than an Agent rebuilt for every
+ * incident. Every tool in one run reads the same context instance.
+ */
+export const investigationToolset = {
+  query_conversion_slice: createTool({
+    id: "query_conversion_slice",
+    description: "Returns aggregate conversion metrics, Wilson interval and state for one allowed rollup slice.",
+    inputSchema: queryConversionSliceInputSchema,
+    outputSchema: queryConversionSliceResultSchema,
+    execute: (input: QueryConversionSliceInput, context) => executeSlice(input, context),
+  }),
+  query_conversion_history: createTool({
+    id: "query_conversion_history",
+    description: "Returns aggregate conversion history over an allowed bucket range.",
+    inputSchema: queryConversionHistoryInputSchema,
+    outputSchema: queryConversionHistoryResultSchema,
+    execute: (input: QueryConversionHistoryInput, context) => executeHistory(input, context),
+  }),
+  query_decline_mix: createTool({
+    id: "query_decline_mix",
+    description: "Returns decline mix shifts, dominant decline and reference source for an allowed slice.",
+    inputSchema: queryDeclineMixInputSchema,
+    outputSchema: queryDeclineMixResultSchema,
+    execute: (input: QueryDeclineMixInput, context) => executeDeclineMix(input, context),
+  }),
+  run_residual_test: createTool({
+    id: "run_residual_test",
+    description: "Runs the deterministic residual test to separate one candidate cell from its echoes.",
+    inputSchema: runResidualTestInputSchema,
+    outputSchema: runResidualTestResultSchema,
+    execute: (input: RunResidualTestInput, context) => executeResidual(input, context),
+  }),
+  scan_incident_onset: createTool({
+    id: "scan_incident_onset",
+    description: "Finds the incident onset from historical rollup buckets and returns supporting buckets.",
+    inputSchema: scanIncidentOnsetInputSchema,
+    outputSchema: scanIncidentOnsetResultSchema,
+    execute: (input: ScanIncidentOnsetInput, context) => executeOnset(input, context),
+  }),
+  estimate_incident_impact: createTool({
+    id: "estimate_incident_impact",
+    description: "Returns deterministic incident cost and priority estimates.",
+    inputSchema: estimateIncidentImpactInputSchema,
+    outputSchema: estimateIncidentImpactResultSchema,
+    execute: (input: EstimateIncidentImpactInput, context) => executeImpact(input, context),
+  }),
+};

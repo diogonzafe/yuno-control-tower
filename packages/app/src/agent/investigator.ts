@@ -12,7 +12,11 @@ import type { InvestigationAuditStore } from "./audit.js";
 import type { AgentConfig } from "./config.js";
 import { InMemoryInvestigationAuditStore } from "./audit.js";
 import type { InvestigationDataSource } from "./tools.js";
-import { StepBudgetExceededError, createInvestigationToolset } from "./tools.js";
+import {
+  StepBudgetExceededError,
+  createInvestigationRequestContext,
+  investigationToolset,
+} from "./tools.js";
 
 export interface InvestigatorAgentLike {
   generate(
@@ -55,7 +59,7 @@ export function buildInvestigationPrompt(request: InvestigationRequestV1): strin
 
 export function createInvestigatorAgent(
   config: AgentConfig,
-  tools: ReturnType<typeof createInvestigationToolset>,
+  tools: typeof investigationToolset,
 ): Agent {
   return new Agent({
     id: "investigator-agent",
@@ -176,14 +180,14 @@ export async function runInvestigation(
   const startedAt = now().toISOString();
   const auditStore =
     options.auditStore ?? new InMemoryInvestigationAuditStore(options.request.runId, "agent");
-  const tools = createInvestigationToolset({
+  const requestContext = createInvestigationRequestContext({
     runId: options.request.runId,
     maxToolCalls: options.config.maxToolCalls,
     auditStore,
     dataSource: options.dataSource,
     now,
   });
-  const agent = options.agent ?? createInvestigatorAgent(options.config, tools);
+  const agent = options.agent ?? createInvestigatorAgent(options.config, investigationToolset);
 
   try {
     const response = await withDeadline(
@@ -228,6 +232,7 @@ export async function runInvestigation(
           maxSteps: options.config.maxToolCalls,
           toolCallConcurrency: 1,
           abortSignal,
+          requestContext,
         }),
       options.config.timeoutMs,
     );
