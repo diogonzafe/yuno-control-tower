@@ -2,12 +2,15 @@ import type { InvestigationAuditTrail, NarrationInput } from "@control-tower/con
 import type { RequestContext } from "@mastra/core/request-context";
 import { noopObserve } from "@mastra/core/tools";
 import { describe, expect, it } from "vitest";
+import { buildInvestigatorAgent } from "./agents/investigator.js";
+import { buildNarratorAgent } from "./agents/narrator.js";
 import { InMemoryInvestigationAuditStore } from "./audit.js";
 import { loadAgentConfig } from "./config.js";
 import { defaultMockScenario } from "./fixtures.js";
 import { matchRecommendation } from "./playbooks.js";
 import { renderNarratives } from "./narrator.js";
 import { runInvestigation, validateConclusiveDiagnosis } from "./investigator.js";
+import { stubModel, throwingModel } from "./testing/stub-model.js";
 import {
   StepBudgetExceededError,
   createInvestigationRequestContext,
@@ -30,6 +33,28 @@ const decisionContext = {
 };
 
 describe("agent module", () => {
+  it("runs the real Agent against a stub model", async () => {
+    // The duck-typed InvestigatorAgentLike this replaces meant no test ever
+    // exercised the tools, the schema or the processors — only our own mock.
+    const agent = buildInvestigatorAgent(
+      stubModel([
+        {
+          object: {
+            status: "INCONCLUSIVE",
+            conclusionTag: "STOP_INCONCLUSIVE",
+            summary: "Not enough evidence.",
+            supportingStepNos: [],
+            reason: "INSUFFICIENT_EVIDENCE",
+            missingEvidence: ["residual"],
+          },
+        },
+      ]),
+    );
+
+    expect(agent.id).toBe("investigator");
+    expect(Object.keys(await agent.listTools())).toContain("run_residual_test");
+  });
+
   const selectedCell = {
     merchantId: "merchant-1",
     providerId: "adyen",
@@ -229,11 +254,7 @@ describe("agent module", () => {
       request: defaultMockScenario.request,
       config: loadAgentConfig({} as NodeJS.ProcessEnv),
       dataSource: createMockInvestigationDataSource(defaultMockScenario.toolResults),
-      agent: {
-        async generate() {
-          return { object: { status: "CONCLUSIVE" } };
-        },
-      },
+      agent: buildInvestigatorAgent(stubModel([{ object: { status: "CONCLUSIVE" } }])),
       now: () => new Date("2026-08-30T14:06:00.000Z"),
     });
 
@@ -337,21 +358,18 @@ describe("agent module", () => {
     const output = await renderNarratives(
       loadAgentConfig({} as NodeJS.ProcessEnv),
       narrationInput,
-      {
-        async generate() {
-          return {
+      buildNarratorAgent(
+        "narrator",
+        stubModel([
+          {
             object: {
               operations: "Impact is 999 USD minor units.",
               executive: "Escalate now.",
             },
-          };
-        },
-      },
-      {
-        async generate() {
-          throw new Error("fallback model failed");
-        },
-      },
+          },
+        ]),
+      ),
+      buildNarratorAgent("narrator-fallback", throwingModel("fallback model failed")),
     );
 
     expect(output.executive).toContain("160400");

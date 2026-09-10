@@ -1,3 +1,4 @@
+import type { Agent } from "@mastra/core/agent";
 import {
   AgentDiagnosisWire,
   AgentRunResult,
@@ -6,6 +7,7 @@ import {
   type AgentRunResult as AgentRunResultType,
   type InvestigationRequestV1,
 } from "@control-tower/contracts";
+import { MastraError } from "@mastra/core/error";
 import { ZodError } from "zod";
 import type { InvestigationAuditStore } from "./audit.js";
 import type { AgentConfig } from "./config.js";
@@ -14,18 +16,11 @@ import { getInvestigatorAgent } from "./mastra.js";
 import type { InvestigationDataSource } from "./tools.js";
 import { StepBudgetExceededError, createInvestigationRequestContext } from "./tools.js";
 
-export interface InvestigatorAgentLike {
-  generate(
-    prompt: string,
-    options: Record<string, unknown>,
-  ): Promise<{ object?: unknown }>;
-}
-
 export interface RunInvestigationOptions {
   request: InvestigationRequestV1;
   config: AgentConfig;
   dataSource: InvestigationDataSource;
-  agent?: InvestigatorAgentLike;
+  agent?: Agent;
   auditStore?: InvestigationAuditStore;
   now?: () => Date;
 }
@@ -97,7 +92,8 @@ function classifyFailure(
     return { failureCode: "STEP_BUDGET_EXHAUSTED", message: error.message };
   }
   // Our own deadline (TimeoutError / AbortError from the AbortController) and
-  // Mastra's native modelSettings.timeout (MastraTimeoutError) both land here.
+  // a Mastra-internal timeout (MastraTimeoutError, should Mastra ever surface
+  // one of its own) both land here.
   if (
     error instanceof Error &&
     (error.name === "TimeoutError" ||
@@ -116,19 +112,28 @@ function classifyFailure(
   if (error instanceof ZodError) {
     return { failureCode: "INVALID_OUTPUT", message: error.message };
   }
+  // Driving the real Agent (rather than a duck-typed mock) surfaced this:
+  // Mastra validates structuredOutput itself before generate() ever returns,
+  // so a model that emits JSON failing AgentDiagnosisWire never reaches the
+  // ZodError branch above — it rejects generate() with a MastraError first.
+  // Still the same "the model produced output that doesn't fit the schema"
+  // failure, so it gets the same code.
+  if (error instanceof MastraError && error.id === "STRUCTURED_OUTPUT_SCHEMA_VALIDATION_FAILED") {
+    return { failureCode: "INVALID_OUTPUT", message: error.message };
+  }
   return {
     failureCode: "MODEL_ERROR",
     message: error instanceof Error ? error.message : "Unknown model error",
   };
 }
 
-// Race a deadline that also *aborts* the underlying work. Mastra honours
-// `modelSettings.timeout` natively, but a hung socket or a provider SDK
-// swallowing the signal used to leave `agent.generate` pending for tens of
-// minutes (one recorded run ran 44 min) while the outer promise had already
-// rejected — and that stuck promise kept run.ts's orchestrationTail queue
-// blocked behind it. Firing the AbortController on the same timer cancels the
-// request for real; `withDeadline` still rejects so classifyFailure sees TIMEOUT.
+// Race a deadline that also *aborts* the underlying work. A hung socket or a
+// provider SDK swallowing the signal used to leave `agent.generate` pending
+// for tens of minutes (one recorded run ran 44 min) while the outer promise
+// had already rejected — and that stuck promise kept run.ts's
+// orchestrationTail queue blocked behind it. Firing the AbortController on
+// the same timer cancels the request for real; `withDeadline` still rejects
+// so classifyFailure sees TIMEOUT even if the abort itself goes unheeded.
 function withDeadline<T>(
   start: (signal: AbortSignal) => Promise<T>,
   timeoutMs: number,
@@ -194,12 +199,16 @@ export async function runInvestigation(
           },
           modelSettings: {
             // One transient schema/API miss shouldn't sink the whole run.
+            //
+            // No `timeout` here: the pinned @mastra/core@1.37.1's CallSettings
+            // (Omit<CallSettings, "abortSignal">, see loop/types.d.ts) has no
+            // such field — typing `agent` as the real Agent (this task) turned
+            // what used to be a silently-ignored extra property under the
+            // duck-typed InvestigatorAgentLike into a compile error. It was
+            // never Mastra's own enforcement doing the work anyway; withDeadline
+            // below already fires a real AbortController on the same timer,
+            // which is the actual ceiling a stuck step can't outlive.
             maxRetries: 2,
-            // Native ceiling so a stuck step can't outlive the deadline.
-            timeout: {
-              totalMs: options.config.timeoutMs,
-              stepMs: Math.min(options.config.timeoutMs, 30_000),
-            },
           },
           // Mastra caps the agentic loop at 5 steps when this is unset, and
           // the loop is what carries the run to a final answer. The tool-side

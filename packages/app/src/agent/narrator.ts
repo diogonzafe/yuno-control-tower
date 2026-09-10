@@ -1,3 +1,4 @@
+import type { Agent } from "@mastra/core/agent";
 import {
   NarrativeOutput,
   NarrationInput,
@@ -6,13 +7,6 @@ import {
 } from "@control-tower/contracts";
 import type { AgentConfig } from "./config.js";
 import { getNarratorAgent, getNarratorFallbackAgent } from "./mastra.js";
-
-export interface NarratorAgentLike {
-  generate(
-    prompt: string,
-    options: Record<string, unknown>,
-  ): Promise<{ object?: unknown }>;
-}
 
 export function buildNarratorPrompt(input: NarrationInputType): string {
   return [
@@ -103,13 +97,13 @@ export async function renderNarratives(
   // getNarratorAgent()/getNarratorFallbackAgent() below.
   _config: AgentConfig,
   input: NarrationInputType,
-  agent?: NarratorAgentLike,
-  fallbackAgent?: NarratorAgentLike,
+  agent?: Agent,
+  fallbackAgent?: Agent,
 ): Promise<NarrativeOutputType> {
   const parsedInput = NarrationInput.parse(input);
   const primary = agent ?? getNarratorAgent();
   const secondary = fallbackAgent ?? getNarratorFallbackAgent();
-  const render = async (runner: NarratorAgentLike) => {
+  const render = async (runner: Agent) => {
     const response = await runner.generate(buildNarratorPrompt(parsedInput), {
       structuredOutput: {
         schema: NarrativeOutput,

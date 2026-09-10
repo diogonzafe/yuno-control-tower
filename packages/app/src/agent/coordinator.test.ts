@@ -13,6 +13,61 @@ import {
 } from "../diagnose/fixtures.js";
 import type { RoutingCoverage } from "../detect/types.js";
 
+// coordinator.ts resolves the investigator/narrator agents itself
+// (runInvestigation and renderNarratives default to getInvestigatorAgent()/
+// getNarratorAgent()/getNarratorFallbackAgent() when no override is passed)
+// and it has no injection point for a test to reach past that — it is
+// rewritten in phase 2, and adding one now is out of scope here. Mocking
+// ./mastra.js is the seam that already exists: it makes every test below
+// resolve to a real Agent driven by a stub model instead of a live provider,
+// which is what makes this file deterministic. Before this, every test that
+// reached renderNarratives made a real network call with no timeout of its
+// own — 4.2s to 8.5s per test against this suite's 5s default, so 1-8 of the
+// 10 tests failed on any given run purely from provider latency jitter.
+//
+// Dynamic imports inside the factory (rather than importing at module scope
+// and closing over the bindings) sidestep vi.mock's hoisting entirely: the
+// factory only runs when something actually imports "./mastra.js", by which
+// point these dependency-free modules are safe to load regardless of where
+// vi.mock ends up relative to the rest of this file's imports.
+vi.mock("./mastra.js", async () => {
+  const { buildInvestigatorAgent } = await import("./agents/investigator.js");
+  const { buildNarratorAgent } = await import("./agents/narrator.js");
+  const { hangingModel, stubModel } = await import("./testing/stub-model.js");
+
+  // Every test below wants the investigator to fail — that's rules.md §3
+  // boundary #3, "every agentic path has a deterministic fallback", and it's
+  // exactly what a real network call with no API key used to provide, by
+  // accident, at the cost of several real seconds per test. A model that
+  // never resolves forces the same TIMEOUT outcome through investigator.ts's
+  // own 50ms deadline (config.timeoutMs below), deterministically and with no
+  // socket ever opened.
+  const investigator = buildInvestigatorAgent(hangingModel());
+
+  // The narrator path only needs to stay off the network; its content is
+  // never asserted here (narrator.test.ts and agent.test.ts already cover
+  // that). A narrative with no digits in it trivially satisfies
+  // assertNarrativeUsesOnlyEvidenceNumbers, so persistOutcome's agent path
+  // succeeds here instead of silently falling through to the deterministic
+  // template.
+  const narrativeResponse = [
+    {
+      object: {
+        operations: "Narrative generated for the test fixture.",
+        executive: "Narrative generated for the test fixture.",
+      },
+    },
+  ];
+  const narrator = buildNarratorAgent("narrator", stubModel(narrativeResponse));
+  const narratorFallback = buildNarratorAgent("narrator-fallback", stubModel(narrativeResponse));
+
+  return {
+    getInvestigatorAgent: () => investigator,
+    getNarratorAgent: () => narrator,
+    getNarratorFallbackAgent: () => narratorFallback,
+  };
+});
+
 const COVERAGE: RoutingCoverage = ["stripe", "adyen", "mercado_pago"].map((providerId) => ({
   providerId,
   country: "BR",
