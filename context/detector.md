@@ -224,7 +224,7 @@ export interface RollupSource {
 | Nome | Valor | Origem |
 |---|---|---|
 | `MIN_VOLUME` | `30` | DD14 — volume mínimo por janela para avaliar |
-| `Z` | `1.96` | DD11 — 95% de confiança, único parâmetro do teste |
+| `Z` | `1.96` | DD11 — 95% de confiança para **um** teste. A varredura corrige pelo número de fatias testadas na janela (`detect/family-wise.ts`, Šidák); `familyWiseZ(1) = 1.96`, então DD11 é o caso m = 1. Ver `flight_logs/one_window_is_one_family.md` |
 | `DELTA_PP_DEFAULT` | `3.0` | DD14 — usado só se `merchants.min_material_drop_pp` faltar |
 | `PERSISTENCE_WINDOWS` | `3` | DD11 — janelas consecutivas para confirmar |
 | `THIN_CELL_WINDOW_MIN` | `5` | schema §6.3 — janela móvel para célula fina |

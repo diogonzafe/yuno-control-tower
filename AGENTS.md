@@ -43,7 +43,10 @@ record the outcome in the decision log before implementing work that depends
 on it.
 
 DD11 is resolved: the detector's test is the **Wilson interval** (closed-form
-formula, `z = 1.96`, 3-window persistence). `context/schema.md` §6.3 is the
+formula, `z = 1.96`, 3-window persistence). Refined 2026-09-10: `1.96` is the
+value for a *single* test, and the sweep corrects it for how many slices it
+tests in the window (Šidák, `detect/family-wise.ts`) — `familyWiseZ(1)` is
+`1.96`, so this answers open question P3 without contradicting DD11. `context/schema.md` §6.3 is the
 normative reference; the decision record is at
 `flight_logs/wilson_detection.md`. The detector's spec is `context/detector.md`
 (`YCT-DETECT-001`).

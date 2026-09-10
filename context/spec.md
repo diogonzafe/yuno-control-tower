@@ -132,7 +132,11 @@ Isto é minha análise, não está escrito no briefing. Vale discutir cada ponto
 **Detecção**
 1. Janela: fixa, deslizante ou EWMA? Qual o trade-off aceito entre latência de detecção e tamanho de amostra?
 2. Baseline: mesma hora/dia da semana anterior, modelo sazonal, ou previsão? Quanto histórico o gerador precisa produzir?
-3. Teste estatístico: z-test de proporções, qui-quadrado, ou beta-binomial bayesiano? Como controlar múltiplas comparações?
+3. ~~Teste estatístico: z-test de proporções, qui-quadrado, ou beta-binomial bayesiano? Como controlar múltiplas comparações?~~
+   **Respondida (2026-09-10).** Intervalo de Wilson (DD11) com correção de Šidák
+   sobre o número de fatias testadas na janela. Medido: 69 fatias/minuto a 95% fixo
+   produziam alguns incidentes/hora em células comprovadamente saudáveis. Ver
+   `flight_logs/one_window_is_one_family.md`.
 4. Volume mínimo por célula para sequer avaliar.
 
 **Diagnóstico**
