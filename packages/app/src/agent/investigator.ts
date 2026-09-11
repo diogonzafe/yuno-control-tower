@@ -109,17 +109,27 @@ function classifyFailure(
   if (error instanceof Error && error.message.includes("supporting step")) {
     return { failureCode: "INVALID_OUTPUT", message: error.message };
   }
-  if (error instanceof ZodError) {
-    return { failureCode: "INVALID_OUTPUT", message: error.message };
-  }
   // Driving the real Agent (rather than a duck-typed mock) surfaced this:
   // Mastra validates structuredOutput itself before generate() ever returns,
-  // so a model that emits JSON failing AgentDiagnosisWire never reaches the
-  // ZodError branch above — it rejects generate() with a MastraError first.
-  // Still the same "the model produced output that doesn't fit the schema"
-  // failure, so it gets the same code.
-  if (error instanceof MastraError && error.id === "STRUCTURED_OUTPUT_SCHEMA_VALIDATION_FAILED") {
-    return { failureCode: "INVALID_OUTPUT", message: error.message };
+  // so a model that emits JSON failing AgentDiagnosisWire never reaches
+  // narrowAgentDiagnosis / AgentDiagnosisWire.parse above — it rejects
+  // generate() with a MastraError first. Both this Zod schema (Mastra's
+  // structuredOutput, which we build from Zod) and this repo's own two
+  // structured schemas raise ZodError; measured against the installed
+  // @mastra/core@1.37.1, Mastra attaches the original ZodError as
+  // MastraError.cause rather than a serialized copy, so unwrapping it here
+  // gives the field-level Zod message instead of Mastra's wrapper text.
+  // MastraError.id is an untyped `Uppercase<string>` with no compile-time
+  // guarantee it stays "STRUCTURED_OUTPUT_SCHEMA_VALIDATION_FAILED" across a
+  // Mastra upgrade; the cause's type is the actual contract.
+  const zodError =
+    error instanceof ZodError
+      ? error
+      : error instanceof MastraError && error.cause instanceof ZodError
+        ? error.cause
+        : undefined;
+  if (zodError) {
+    return { failureCode: "INVALID_OUTPUT", message: zodError.message };
   }
   return {
     failureCode: "MODEL_ERROR",
