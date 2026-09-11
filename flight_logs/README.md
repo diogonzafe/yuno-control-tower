@@ -41,3 +41,4 @@ Files:
 21. `reconfirm_while_the_drop_stands.md` — A confirmed drop re-confirms every window; `emitted` stops gating promotion and only marks a streak as confirmed
 22. `the_cell_the_sweep_could_not_see.md` — Splitting issuers inside each provider: tried, measured, **reverted** (5.4 → 21.2 incidents/h). The masking is real; multiple comparisons must be answered first
 23. `one_window_is_one_family.md` — Šidák correction over the slices tested per window; answers `spec.md` §8 P3 and refines DD11 (`familyWiseZ(1) = 1.96`)
+24. `framework_storage_waits_for_the_workflow.md` — Mastra storage deferred to the phase that suspends

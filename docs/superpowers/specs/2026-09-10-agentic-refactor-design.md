@@ -9,7 +9,7 @@ doc_related:
   - "YCT-DETECT-001"
 domain: "agentic-orchestration"
 dimension_schema: []
-time: "2026-09-10T21:30:00Z"
+time: "2026-09-11T10:00:00Z"
 ---
 
 # Design do refactor agêntico
@@ -156,8 +156,14 @@ A guarda "o narrador não inventa número" sai do regex à mão em
 e degrada em silêncio para o template — o mesmo modo de falha que fez uma
 narrativa parecer narrada quando nenhum modelo tinha respondido (registrado em
 `agent/config.ts`). Como processor ela roda no pipeline do framework, aparece no
-trace, e pode usar `abort(reason, { retry: true })` para devolver ao modelo
-*"você usou um número ausente da evidência"* antes de desistir.
+trace.
+
+Uma ressalva medida em 2026-09-10: o `abort(reason, { retry: true })` só devolve
+de fato ao modelo se `maxProcessorRetries` estiver configurado no agente ou na
+chamada. Sem isso — que é o estado da Fase 1 — `retry: true` e `retry: false`
+são indistinguíveis: a chamada resolve com `tripwire` nos dois casos e o
+`renderNarratives` converte em falha. A segunda chance existe no desenho, não no
+comportamento, até alguém setar esse teto.
 
 ### 4.1 O estado por-run sai da closure
 
