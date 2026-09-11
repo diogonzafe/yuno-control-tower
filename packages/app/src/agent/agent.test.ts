@@ -392,4 +392,58 @@ describe("agent module", () => {
 
     expect(output.executive).toContain("160400");
   });
+
+  it("forwards maxSteps from config.maxSteps, not config.maxToolCalls", async () => {
+    // Regression test: maxSteps and maxToolCalls were once conflated. This
+    // asserts they are separate by verifying the agent receives the value
+    // from its own config field, not the tool budget.
+    let capturedMaxSteps: number | undefined;
+
+    const agent = buildInvestigatorAgent(
+      stubModel([
+        {
+          object: {
+            status: "INCONCLUSIVE",
+            conclusionTag: "STOP_INCONCLUSIVE",
+            summary: "Not enough data.",
+            supportingStepNos: [],
+            causalDimension: null,
+            declineFamily: null,
+            reason: "INSUFFICIENT_EVIDENCE",
+          },
+        },
+      ]),
+    );
+
+    // Wrap the agent to spy on the generate() call and capture maxSteps
+    const spyAgent = {
+      ...agent,
+      async generate(prompt: string, options: unknown) {
+        const opts = options as Record<string, unknown>;
+        capturedMaxSteps = opts.maxSteps as number;
+        return agent.generate(prompt, options);
+      },
+    } as typeof agent;
+
+    const config = loadAgentConfig({
+      AGENT_MAX_TOOL_CALLS: "12",
+      AGENT_MAX_STEPS: "20",
+    } as NodeJS.ProcessEnv);
+
+    // Run with the config where maxSteps != maxToolCalls.
+    // If the fix is reverted and investigator.ts uses config.maxToolCalls
+    // for maxSteps, this test fails.
+    await runInvestigation({
+      request: defaultMockScenario.request,
+      config,
+      dataSource: createMockInvestigationDataSource(defaultMockScenario.toolResults),
+      agent: spyAgent,
+      now: () => new Date("2026-08-30T14:06:00.000Z"),
+    });
+
+    // Verify the fix: maxSteps came from config.maxSteps (20),
+    // not config.maxToolCalls (12). If someone reverts the fix in
+    // investigator.ts:223 to use config.maxToolCalls, this assertion fails.
+    expect(capturedMaxSteps).toBe(20);
+  });
 });

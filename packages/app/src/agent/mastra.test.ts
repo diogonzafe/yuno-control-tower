@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getInvestigatorAgent, getMastra, getNarratorAgent, getNarratorFallbackAgent } from "./mastra.js";
+import { getInvestigatorAgent, getMastra, getNarratorAgent } from "./mastra.js";
 import { loadAgentConfig } from "./config.js";
 
 describe("mastra root", () => {

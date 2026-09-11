@@ -211,15 +211,11 @@ export async function runInvestigation(
             maxRetries: 2,
           },
           // Mastra caps the agentic loop at 5 steps when this is unset, and
-          // the loop is what carries the run to a final answer. The tool-side
-          // budget in tools.ts never got to fire: the model was still calling
-          // tools at step 5, so generate() returned finishReason "tool-calls"
-          // with empty text and no structured object, and AgentDiagnosisWire
-          // parsed `undefined` — INVALID_OUTPUT on a run that had done nothing
-          // wrong. maxToolCalls is the ceiling an operator already configured,
-          // and it stays the real cap: a step may issue several tool calls, so
-          // StepBudgetExceededError still bounds the work, this only stops
-          // Mastra from cutting the conversation off before its conclusion.
+          // the loop is what carries the run to a final answer. maxSteps reads
+          // its own AGENT_MAX_STEPS config field; it is not the tool budget.
+          // maxToolCalls (tools.ts StepBudgetExceededError) is the separate
+          // hard cap on work done: a step may issue several tool calls, so
+          // the two are distinct.
           maxSteps: options.config.maxSteps,
           toolCallConcurrency: 1,
           abortSignal,
