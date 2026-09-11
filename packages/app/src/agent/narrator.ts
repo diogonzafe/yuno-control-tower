@@ -1,4 +1,5 @@
 import type { Agent } from "@mastra/core/agent";
+import { RequestContext } from "@mastra/core/request-context";
 import {
   NarrativeOutput,
   NarrationInput,
@@ -7,6 +8,16 @@ import {
 } from "@control-tower/contracts";
 import type { AgentConfig } from "./config.js";
 import { getNarratorAgent, getNarratorFallbackAgent } from "./mastra.js";
+import {
+  assertNarrativeUsesOnlyEvidenceNumbers,
+  NARRATION_INPUT_KEY,
+} from "./processors/evidence-numbers.js";
+
+// narrator.test.ts imports this symbol from here; the implementation moved to
+// processors/evidence-numbers.ts so EvidenceNumbersProcessor can depend on it
+// without narrator.ts -> mastra.ts -> agents/narrator.ts -> that module ->
+// narrator.ts becoming a cycle.
+export { assertNarrativeUsesOnlyEvidenceNumbers };
 
 export function buildNarratorPrompt(input: NarrationInputType): string {
   return [
@@ -15,60 +26,6 @@ export function buildNarratorPrompt(input: NarrationInputType): string {
     "Do not invent any number, percentage, duration, count, date, or currency amount.",
     JSON.stringify(input),
   ].join("\n");
-}
-
-function collectAllowedNumbers(value: unknown, collector: Set<string>): void {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    collector.add(value.toString());
-    // A rate is stored as 0.12 but read aloud as "12%". Admitting the
-    // percentage form is not a loophole — the number still has to come from a
-    // field of the evidence object; it just may be spoken the way an operator
-    // speaks it. Without this every readable narrative would be rejected and
-    // fall back to the template, defeating spec.md §4 criterion 4.
-    if (value >= 0 && value <= 1) {
-      const asPercent = value * 100;
-      collector.add(asPercent.toString());
-      collector.add(Math.round(asPercent).toString());
-      collector.add(asPercent.toFixed(1));
-    }
-    return;
-  }
-
-  if (typeof value === "string") {
-    const matches = value.match(/-?\d+(?:\.\d+)?/g) ?? [];
-    for (const match of matches) {
-      collector.add(match);
-    }
-    return;
-  }
-
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      collectAllowedNumbers(item, collector);
-    }
-    return;
-  }
-
-  if (value && typeof value === "object") {
-    for (const nested of Object.values(value)) {
-      collectAllowedNumbers(nested, collector);
-    }
-  }
-}
-
-export function assertNarrativeUsesOnlyEvidenceNumbers(
-  text: string,
-  input: NarrationInputType,
-): void {
-  const allowedNumbers = new Set<string>();
-  collectAllowedNumbers(input, allowedNumbers);
-
-  const matches = text.match(/-?\d+(?:\.\d+)?/g) ?? [];
-  for (const match of matches) {
-    if (!allowedNumbers.has(match)) {
-      throw new Error(`Narrative introduced a number not present in the evidence object: ${match}`);
-    }
-  }
 }
 
 function renderNarrativeTemplate(input: NarrationInputType): NarrativeOutputType {
@@ -104,7 +61,14 @@ export async function renderNarratives(
   const primary = agent ?? getNarratorAgent();
   const secondary = fallbackAgent ?? getNarratorFallbackAgent();
   const render = async (runner: Agent) => {
+    // Carries this request's evidence object to EvidenceNumbersProcessor,
+    // which agents/narrator.ts wires as a dynamic outputProcessor reading
+    // this same key back off the RequestContext it receives.
+    const requestContext = new RequestContext();
+    requestContext.set(NARRATION_INPUT_KEY, parsedInput);
+
     const response = await runner.generate(buildNarratorPrompt(parsedInput), {
+      requestContext,
       structuredOutput: {
         schema: NarrativeOutput,
         errorStrategy: "strict",
@@ -118,10 +82,21 @@ export async function renderNarratives(
         maxRetries: 0,
       },
     });
-    const output = NarrativeOutput.parse(response.object);
-    assertNarrativeUsesOnlyEvidenceNumbers(output.operations, parsedInput);
-    assertNarrativeUsesOnlyEvidenceNumbers(output.executive, parsedInput);
-    return output;
+
+    // Measured against the installed @mastra/core@1.37.1: EvidenceNumbers-
+    // Processor's abort() call does NOT reject this generate() call — it
+    // resolves normally with `tripwire` set and `object`/`text` still
+    // carrying the violating narrative (a fabricated number came back
+    // intact in the probe that established this). Without this check,
+    // NarrativeOutput.parse below would happily return the fabricated
+    // narrative as valid and the primary -> reserve -> template cascade
+    // would never fire. Throwing here is what puts the tripwire back on the
+    // cascade's existing try/catch.
+    if (response.tripwire) {
+      throw new Error(response.tripwire.reason);
+    }
+
+    return NarrativeOutput.parse(response.object);
   };
 
   try {
