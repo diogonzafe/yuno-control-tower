@@ -3,6 +3,7 @@ export interface AgentConfig {
   narratorModel: string;
   narratorFallbackModel: string;
   maxToolCalls: number;
+  maxSteps: number;
   timeoutMs: number;
   fallbackEnabled: boolean;
 }
@@ -46,6 +47,11 @@ export function loadAgentConfig(env: NodeJS.ProcessEnv = process.env): AgentConf
     narratorModel: env.NARRATOR_MODEL ?? "openai/gpt-5.6-terra",
     narratorFallbackModel: env.NARRATOR_FALLBACK_MODEL ?? "openai/gpt-5.6-luna",
     maxToolCalls: readPositiveInt(env.AGENT_MAX_TOOL_CALLS, 12),
+    // A model step may issue several tool calls, so this is not the tool
+    // budget. maxToolCalls stays the hard cap on work done
+    // (StepBudgetExceededError); this only stops Mastra from ending the
+    // conversation before the model reaches its conclusion.
+    maxSteps: readPositiveInt(env.AGENT_MAX_STEPS, 12),
     timeoutMs: readPositiveInt(env.AGENT_TIMEOUT_MS, 45_000),
     fallbackEnabled: readFallbackEnabled(env.AGENT_FALLBACK_ENABLED),
   };

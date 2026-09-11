@@ -220,7 +220,7 @@ export async function runInvestigation(
           // and it stays the real cap: a step may issue several tool calls, so
           // StepBudgetExceededError still bounds the work, this only stops
           // Mastra from cutting the conversation off before its conclusion.
-          maxSteps: options.config.maxToolCalls,
+          maxSteps: options.config.maxSteps,
           toolCallConcurrency: 1,
           abortSignal,
           requestContext,

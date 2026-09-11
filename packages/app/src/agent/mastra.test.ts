@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { getInvestigatorAgent, getMastra, getNarratorAgent, getNarratorFallbackAgent } from "./mastra.js";
+import { loadAgentConfig } from "./config.js";
 
 describe("mastra root", () => {
   it("registers the investigator and both narrator roles", () => {
@@ -19,7 +20,10 @@ describe("mastra root", () => {
   });
 
   it("keeps the narrator and its reserve on different models (§6.8)", () => {
-    // One model's rate limit must not take both down.
-    expect(getNarratorAgent()).not.toBe(getNarratorFallbackAgent());
+    // One model's rate limit must not take both down. not.toBe only proves
+    // the instances are distinct (which construction guarantees anyway), not
+    // that they use different models. Assert on the config values instead.
+    const config = loadAgentConfig({} as NodeJS.ProcessEnv);
+    expect(config.narratorModel).not.toBe(config.narratorFallbackModel);
   });
 });

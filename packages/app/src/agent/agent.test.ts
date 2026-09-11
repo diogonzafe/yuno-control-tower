@@ -78,10 +78,28 @@ describe("agent module", () => {
       narratorModel: "openai/gpt-5.6-terra",
       narratorFallbackModel: "openai/gpt-5.6-luna",
       maxToolCalls: 12,
+      maxSteps: 12,
       timeoutMs: 45_000,
       // The deterministic fallback ships off; AGENT_FALLBACK_ENABLED=true opts in.
       fallbackEnabled: false,
     });
+  });
+
+  it("reads the step ceiling separately from the tool budget", () => {
+    const config = loadAgentConfig({
+      AGENT_MAX_TOOL_CALLS: "12",
+      AGENT_MAX_STEPS: "20",
+    } as NodeJS.ProcessEnv);
+    // A model step may issue several tool calls, so tying maxSteps to the tool
+    // budget cuts the conversation off before its conclusion — the run then
+    // returns finishReason "tool-calls" with no object and reads as
+    // INVALID_OUTPUT on a run that did nothing wrong.
+    expect(config.maxToolCalls).toBe(12);
+    expect(config.maxSteps).toBe(20);
+  });
+
+  it("defaults the step ceiling to 12", () => {
+    expect(loadAgentConfig({} as NodeJS.ProcessEnv).maxSteps).toBe(12);
   });
 
   it("records structured audit entries for deterministic tools", async () => {
