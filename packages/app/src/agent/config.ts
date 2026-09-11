@@ -51,7 +51,15 @@ export function loadAgentConfig(env: NodeJS.ProcessEnv = process.env): AgentConf
     // budget. maxToolCalls stays the hard cap on work done
     // (StepBudgetExceededError); this only stops Mastra from ending the
     // conversation before the model reaches its conclusion.
-    maxSteps: readPositiveInt(env.AGENT_MAX_STEPS, 12),
+    //
+    // Defaults to the tool budget, not a bare 12: before this field existed,
+    // maxSteps received config.maxToolCalls directly, so a deployment with
+    // only AGENT_MAX_TOOL_CALLS set in its environment must keep getting a
+    // loop that long rather than silently dropping to this field's own
+    // default. (A next-phase improvement would default to maxToolCalls + 1,
+    // since the step that emits the final answer consumes a step of its own
+    // — deliberately not done here, as that would be a behaviour change.)
+    maxSteps: readPositiveInt(env.AGENT_MAX_STEPS, readPositiveInt(env.AGENT_MAX_TOOL_CALLS, 12)),
     timeoutMs: readPositiveInt(env.AGENT_TIMEOUT_MS, 45_000),
     fallbackEnabled: readFallbackEnabled(env.AGENT_FALLBACK_ENABLED),
   };
