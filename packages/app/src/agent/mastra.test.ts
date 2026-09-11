@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getInvestigatorAgent, getMastra, getNarratorAgent } from "./mastra.js";
-import { loadAgentConfig } from "./config.js";
+import { getInvestigatorAgent, getMastra, getNarratorAgent, getNarratorFallbackAgent } from "./mastra.js";
 
 describe("mastra root", () => {
   it("registers the investigator and both narrator roles", () => {
@@ -19,11 +18,18 @@ describe("mastra root", () => {
     expect(getNarratorAgent()).toBe(getNarratorAgent());
   });
 
-  it("keeps the narrator and its reserve on different models (§6.8)", () => {
-    // One model's rate limit must not take both down. not.toBe only proves
-    // the instances are distinct (which construction guarantees anyway), not
-    // that they use different models. Assert on the config values instead.
-    const config = loadAgentConfig({} as NodeJS.ProcessEnv);
-    expect(config.narratorModel).not.toBe(config.narratorFallbackModel);
+  it("keeps the narrator and its reserve on different models (§6.8)", async () => {
+    // One model's rate limit must not take both down. not.toBe on the
+    // Agent instances only proves they're distinct objects (construction
+    // guarantees that anyway); asserting on loadAgentConfig() only proves
+    // the config's own defaults differ, which agent.test.ts's defaults test
+    // already covers and says nothing about the *registered* agents this
+    // file exists to test. Resolve what the two agents this root actually
+    // wires up will call, and assert those differ.
+    const narratorModel = await getNarratorAgent().getModel();
+    const fallbackModel = await getNarratorFallbackAgent().getModel();
+    expect((narratorModel as { modelId: string }).modelId).not.toBe(
+      (fallbackModel as { modelId: string }).modelId,
+    );
   });
 });

@@ -1,7 +1,8 @@
 import type { InvestigationAuditTrail, NarrationInput } from "@control-tower/contracts";
+import { Agent } from "@mastra/core/agent";
 import type { RequestContext } from "@mastra/core/request-context";
 import { noopObserve } from "@mastra/core/tools";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { buildInvestigatorAgent } from "./agents/investigator.js";
 import { buildNarratorAgent } from "./agents/narrator.js";
 import { InMemoryInvestigationAuditStore } from "./audit.js";
@@ -68,6 +69,56 @@ describe("agent module", () => {
     decisionContext,
   } as const;
 
+  it("forwards RequestContext through the real Agent into a tool call (regression)", async () => {
+    // The single most load-bearing claim of this phase: that Mastra forwards
+    // the RequestContext runInvestigation builds into ToolExecutionContext
+    // when a real Agent drives the call — not only when a test invokes
+    // investigationToolset.<tool>.execute! directly, which every other test
+    // in this file does. If Mastra ever stopped forwarding requestContext,
+    // every production investigation would throw "Missing investigation run
+    // state" on its first tool call, get classified MODEL_ERROR, and this
+    // suite would still be green without a test exercising this path.
+    const auditStore = new InMemoryInvestigationAuditStore(defaultMockScenario.request.runId, "agent");
+
+    const agent = buildInvestigatorAgent(
+      stubModel([
+        // Step 1: the model issues a real tool call. Mastra must execute it
+        // against investigationToolset with the RequestContext runInvestigation
+        // built, which is what lets the tool find its run state at all.
+        { toolCalls: [{ toolName: "query_conversion_slice", args: validSliceInput }] },
+        // Step 2: with the tool result in hand, the model returns its
+        // structured diagnosis.
+        {
+          object: {
+            status: "INCONCLUSIVE",
+            conclusionTag: "STOP_INCONCLUSIVE",
+            selectedCell,
+            summary: "Not enough evidence to conclude.",
+            supportingStepNos: [1],
+            causalDimension: null,
+            declineFamily: null,
+            reason: "INSUFFICIENT_EVIDENCE",
+          },
+        },
+      ]),
+    );
+
+    const result = await runInvestigation({
+      request: defaultMockScenario.request,
+      config: loadAgentConfig({} as NodeJS.ProcessEnv),
+      dataSource: createMockInvestigationDataSource(defaultMockScenario.toolResults),
+      agent,
+      auditStore,
+      now: () => new Date("2026-08-30T14:06:00.000Z"),
+    });
+
+    expect(result.outcome).toBe("COMPLETED");
+    const trail = await auditStore.getTrail();
+    expect(trail.steps).toHaveLength(1);
+    expect(trail.steps[0]?.toolName).toBe("query_conversion_slice");
+    expect(trail.steps[0]?.status).toBe("completed");
+  });
+
   it("defaults the investigator and the narrator reserve to one model, the narrator to another", () => {
     // §6.8: narrator and reserve must not share a model, so one model's rate
     // limit cannot take both down. The investigator shares the reserve's model
@@ -100,6 +151,17 @@ describe("agent module", () => {
 
   it("defaults the step ceiling to 12", () => {
     expect(loadAgentConfig({} as NodeJS.ProcessEnv).maxSteps).toBe(12);
+  });
+
+  it("falls the step ceiling back to the tool budget when only AGENT_MAX_TOOL_CALLS is set", () => {
+    // Before this phase, maxSteps received config.maxToolCalls directly. A
+    // deployment with AGENT_MAX_TOOL_CALLS=20 and no AGENT_MAX_STEPS set must
+    // still get a 20-step loop, not silently drop to the new field's own
+    // default of 12 — that would cut runs off before their conclusion, the
+    // exact pathology the maxSteps/maxToolCalls split exists to remove.
+    const config = loadAgentConfig({ AGENT_MAX_TOOL_CALLS: "20" } as NodeJS.ProcessEnv);
+    expect(config.maxToolCalls).toBe(20);
+    expect(config.maxSteps).toBe(20);
   });
 
   it("records structured audit entries for deterministic tools", async () => {
@@ -393,6 +455,73 @@ describe("agent module", () => {
     expect(output.executive).toContain("160400");
   });
 
+  it("blocks a fabricated number even from an agent not built by buildNarratorAgent", async () => {
+    // Boundary #2 must hold at the call site, not only inside the processor
+    // buildNarratorAgent wires up. An agent constructed some other way (or a
+    // generate() call that forgets to set NARRATION_INPUT_KEY, which makes
+    // agents/narrator.ts's resolver return []) carries no
+    // EvidenceNumbersProcessor at all — render() itself is what must still
+    // catch the fabrication.
+    const narrationInput: NarrationInput = {
+      evidence: {
+        fingerprint: "country=BR|merchantId=merchant-1|providerId=adyen#91",
+        dimensions: selectedCell,
+        observedRate: 0.51,
+        expectedRate: 0.92,
+        expectedSource: "cross_sectional",
+        deltaPp: 41,
+        ci: { low: 0.47, high: 0.55, level: 0.95 },
+        attempts: 420,
+        approved: 214,
+        windowBucket: "2026-08-30T14:06:00.000Z",
+        windowUsed: "1m",
+        consecutiveWindows: 3,
+        startedAt: "2026-08-30T14:03:00.000Z",
+        startedAtExact: true,
+        declineMix: [],
+        dominantDecline: "91",
+        suppressedEchoes: [],
+        lostApprovals: 173,
+        costUsdMinor: 481200,
+        costUsdPerMin: 160400,
+        costLocal: { BRL: 2500000 },
+        priorityScore: 88.2,
+        diagnosisSource: "agent",
+        investigationTrail: [] as InvestigationAuditTrail["steps"],
+      },
+      recommendation: defaultMockScenario.recommendation,
+    };
+
+    const bareAgent = new Agent({
+      id: "bare-narrator",
+      name: "Bare Narrator",
+      instructions: "Narrate freely.",
+      model: stubModel([
+        {
+          object: {
+            operations: "Impact is 999 USD minor units.",
+            executive: "Escalate now.",
+          },
+        },
+      ]),
+      // Deliberately no outputProcessors: this is the "agent not built by
+      // buildNarratorAgent" this test exists to cover.
+    });
+
+    const output = await renderNarratives(
+      loadAgentConfig({} as NodeJS.ProcessEnv),
+      narrationInput,
+      bareAgent,
+      buildNarratorAgent("narrator-fallback", throwingModel("fallback model failed")),
+    );
+
+    // Falls all the way through to the template: the bare primary's
+    // fabricated 999 must never reach the caller, and the throwing fallback
+    // never produces a usable narrative either.
+    expect(output.executive).toContain("160400");
+    expect(output.executive).not.toContain("999");
+  });
+
   it("forwards maxSteps from config.maxSteps, not config.maxToolCalls", async () => {
     // Regression test: maxSteps and maxToolCalls were once conflated. This
     // asserts they are separate by verifying the agent receives the value
@@ -405,6 +534,7 @@ describe("agent module", () => {
           object: {
             status: "INCONCLUSIVE",
             conclusionTag: "STOP_INCONCLUSIVE",
+            selectedCell,
             summary: "Not enough data.",
             supportingStepNos: [],
             causalDimension: null,
@@ -415,15 +545,21 @@ describe("agent module", () => {
       ]),
     );
 
-    // Wrap the agent to spy on the generate() call and capture maxSteps
-    const spyAgent = {
-      ...agent,
-      async generate(prompt: string, options: unknown) {
-        const opts = options as Record<string, unknown>;
-        capturedMaxSteps = opts.maxSteps as number;
-        return agent.generate(prompt, options);
-      },
-    } as typeof agent;
+    // Spy on the real instance rather than rebuilding it: `{ ...agent }`
+    // spreads only own enumerable properties, dropping the Agent prototype
+    // (listTools, etc.) — harmless today because runInvestigation calls
+    // nothing but generate(), but a trap for the next caller that does.
+    const original = agent.generate.bind(agent);
+    vi.spyOn(agent, "generate").mockImplementation(((
+      prompt: string,
+      options: { maxSteps?: number } & Record<string, unknown>,
+    ) => {
+      capturedMaxSteps = options.maxSteps;
+      // `never` is assignable to every overload's options parameter; the
+      // outer cast to `typeof agent.generate` is what makes this mock
+      // assignable back onto the real (overloaded) method.
+      return original(prompt, options as never);
+    }) as typeof agent.generate);
 
     const config = loadAgentConfig({
       AGENT_MAX_TOOL_CALLS: "12",
@@ -433,13 +569,18 @@ describe("agent module", () => {
     // Run with the config where maxSteps != maxToolCalls.
     // If the fix is reverted and investigator.ts uses config.maxToolCalls
     // for maxSteps, this test fails.
-    await runInvestigation({
+    const result = await runInvestigation({
       request: defaultMockScenario.request,
       config,
       dataSource: createMockInvestigationDataSource(defaultMockScenario.toolResults),
-      agent: spyAgent,
+      agent,
       now: () => new Date("2026-08-30T14:06:00.000Z"),
     });
+
+    // The run must complete cleanly: a failing run (missing wire fields)
+    // used to dump a large MastraError to stderr on every suite run even
+    // though this assertion only cares about the captured value.
+    expect(result.outcome).toBe("COMPLETED");
 
     // Verify the fix: maxSteps came from config.maxSteps (20),
     // not config.maxToolCalls (12). If someone reverts the fix in
