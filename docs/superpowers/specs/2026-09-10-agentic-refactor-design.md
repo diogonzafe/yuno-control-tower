@@ -9,7 +9,7 @@ doc_related:
   - "YCT-DETECT-001"
 domain: "agentic-orchestration"
 dimension_schema: []
-time: "2026-09-10T18:52:00Z"
+time: "2026-09-10T21:30:00Z"
 ---
 
 # Design do refactor agêntico
@@ -108,14 +108,29 @@ Raiz única em `agent/mastra.ts`:
 export const mastra = new Mastra({
   agents:    { investigator, verifier, narrator },
   workflows: { investigateIncident },
+  // Fase 4 apenas — ver §4.2. Antes do workflow nada lê ou escreve storage.
   storage:   new PostgresStore({ id: "mastra", connectionString: DATABASE_URL }),
-  logger:    createLogger("mastra"),
   observability: new Observability({ configs: { default: {
     serviceName: "control-tower",
     exporters: [new MastraStorageExporter()],
   }}}),
 });
 ```
+
+Sem `logger`. O Mastra tipa `logger?: TLogger | false` exigindo `IMastraLogger`,
+e o `createLogger()` do app devolve um `Logger` do pino; satisfazer isso custaria
+`@mastra/loggers`, uma dependência de produção só para formatação de log. O
+Mastra usa o logger padrão dele.
+
+### 4.2 Storage e tracing só chegam na Fase 4
+
+Medido em 2026-09-10, com a store na raiz desde a Fase 1: qualquer suíte sem
+injeção de agente alcança `getMastra()` por `renderNarratives` e dispara
+`PostgresStore.init()` — DDL real contra o banco do produto, com deadlock em
+`ALTER TABLE` concorrente, e duas suítes que passavam quebraram. Antes do
+workflow, nada lê ou escreve storage: na Fase 1 ela é infraestrutura
+especulativa, que a AGENTS.md proíbe. O `MastraStorageExporter` do tracing
+escreve nessa mesma store, então acompanha.
 
 Layout de módulos, preservando a separação exigida pela AGENTS.md entre código
 determinístico, agêntico e de narração:
@@ -164,9 +179,10 @@ do escopo da closure.
 - `@mastra/pg` — obrigatório para suspender e retomar workflow. A documentação
   do Mastra é explícita: *"Storage is required to persist workflow execution
   state across suspension and resumption."* Usa o Postgres que já existe.
-- `@mastra/observability` — o AI tracing. Estritamente opcional para o
-  funcionamento, mas sem ele o argumento de observabilidade que motivou a
-  escolha do framework continua sem contrapartida.
+  Entra na **Fase 4** (§4.2).
+- `@mastra/observability` — o AI tracing. Também **Fase 4**, porque escreve na
+  storage. Sem ele, o argumento de observabilidade que motivou a escolha do
+  framework continua sem contrapartida.
 
 ## 5. Agentes e grafo
 
@@ -353,11 +369,20 @@ horário. O feed ganha o estado `awaiting decision`.
 ## 9. Falhas e fallback
 
 **9.1 O deadline fica, e muda de lugar.** O `withDeadline` de
-`agent/investigator.ts:140` não é redundância a ser deletada: ele documenta um
+`agent/investigator.ts` não é redundância a ser deletada: ele documenta um
 incidente real — socket pendurado, SDK engolindo o signal, uma run de 44
-minutos — em que o `modelSettings.timeout` nativo não bastou. Ele deixa de ser
-corrida montada à mão dentro da chamada do agente e vira limite do passo do
-workflow. O que muda de verdade é o raio de explosão: com D2, uma run pendurada
+minutos. Ele deixa de ser corrida montada à mão dentro da chamada do agente e
+vira limite do passo do workflow.
+
+Correção medida em 2026-09-10, ao dirigir o `Agent` real em teste pela primeira
+vez: **não existe teto nativo nenhum.** `timeout` não é campo do `modelSettings`
+do `@mastra/core@1.37.1` — o objeto `{ totalMs, stepMs }` que o código passava
+era descartado em silêncio, e o comentário que afirmava *"Mastra honours
+modelSettings.timeout natively"* estava errado. O `AbortController` do
+`withDeadline` sempre foi a única coisa segurando a chamada. Isso não enfraquece
+a decisão de manter o deadline; endurece: não há segunda linha de defesa para
+herdar, e o limite de passo do workflow passa a ser a única, o que o torna
+obrigatório e não redundante. O que muda de verdade é o raio de explosão: com D2, uma run pendurada
 custa um incidente, não a fila de ticks.
 
 **9.2 `maxSteps` deixa de ser `maxToolCalls`.** Hoje os dois são o mesmo número
@@ -456,9 +481,9 @@ cada uma entregável e verificável sozinha, na ordem em que uma depende da
 anterior:
 
 **Fase 1 — Runtime.** O estado por-run das tools movido para `RequestContext`
-(§4.1), a raiz Mastra, os agentes como módulos registrados, o `PostgresStore`, o
-processor numérico do narrador, o mock por modelo nos testes, e a separação de
-`AGENT_MAX_STEPS` (§9.2).
+(§4.1), a raiz Mastra, os agentes como módulos registrados, o processor numérico
+do narrador, o mock por modelo nos testes, e a separação de `AGENT_MAX_STEPS`
+(§9.2). **Sem storage e sem tracing** (§4.2).
 Nenhuma mudança de comportamento visível: o `coordinator.ts` continua chamando,
 só que agentes registrados. É a fase que pode ser validada com a suíte atual
 praticamente intacta.
@@ -471,7 +496,8 @@ sem aguardar. Aqui a orquestração muda de dono.
 vindo do ramo. Inclui o teste de regressão do trail — o defeito que motivou boa
 parte deste design.
 
-**Fase 4 — Decisão e UI.** `incident_decisions`, o endpoint, a suspensão, o web
+**Fase 4 — Decisão e UI.** O `PostgresStore` e o tracing adiados da Fase 1 (§4.2),
+`incident_decisions`, o endpoint, a suspensão, o web
 ligado ao stream real do app, investigação ao vivo, bloco de dissenso e a
 superfície de decisão.
 
