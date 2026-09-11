@@ -79,8 +79,15 @@ export function assertNarrativeUsesOnlyEvidenceNumbers(
  *
  * The check itself is unchanged — every number printed must appear in the
  * closed evidence object. What changes is that a violation is now a visible
- * event with one chance to correct, instead of an exception swallowed by a
- * bare catch that silently served the template.
+ * event in the trace, instead of an exception swallowed by a bare catch that
+ * silently served the template.
+ *
+ * `retry: args.retryCount < MAX_RETRIES` below signals a retry is wanted, but
+ * nothing currently sets `maxProcessorRetries` on the agent, and per Mastra's
+ * own docs `retry: true` and `retry: false` are indistinguishable without
+ * it — the call resolves with a tripwire either way, on the first violation.
+ * The signal is in place but inert; wiring `maxProcessorRetries` would be a
+ * behaviour change this phase does not permit (spec.md §4).
  *
  * `abort()` throws synchronously (it is typed to return `never`), so a
  * violation turns this method's promise into a rejection. That rejection
