@@ -96,7 +96,18 @@ export async function renderNarratives(
       throw new Error(response.tripwire.reason);
     }
 
-    return NarrativeOutput.parse(response.object);
+    const parsed = NarrativeOutput.parse(response.object);
+    // Unconditional, same as before this phase: EvidenceNumbersProcessor
+    // only fires for an agent built by buildNarratorAgent with
+    // NARRATION_INPUT_KEY set on its RequestContext (agents/narrator.ts's
+    // resolver returns [] otherwise). An injected `agent`/`fallbackAgent`
+    // built some other way, or a call that forgets that key, must not be
+    // able to skip boundary #2 — this call is what still catches it. The
+    // cost is microseconds; the processor still earns its place by being
+    // visible in the trace and by being where retry will eventually live.
+    assertNarrativeUsesOnlyEvidenceNumbers(parsed.operations, parsedInput);
+    assertNarrativeUsesOnlyEvidenceNumbers(parsed.executive, parsedInput);
+    return parsed;
   };
 
   try {
